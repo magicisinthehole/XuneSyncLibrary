@@ -1,0 +1,57 @@
+# Development artifacts
+*.log
+test_*.log
+
+# Analysis and debug scripts
+*.py
+!CMakeLists.txt
+
+# Build artifacts
+CMakeCache.txt
+CMakeFiles/
+Makefile
+cmake_install.cmake
+build/
+
+# Compiled binaries
+*.dylib
+*.a
+*.o
+*.so
+
+# Test executables
+tests/test_library_json
+tests/test_zmdb_fast
+tests/test_zmdb_extractor
+tests/test_http_interceptor
+tests/test_http_monitor_boot
+tests/test_network_stack
+
+# Tool executables
+tools/artist_images_tool_cli
+
+# Device artifacts
+device
+
+# Python virtual environment
+venv/
+venv*/
+
+# Vendor build directory (CMake generated)
+vendor/android-file-transfer-linux-build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# OS
+.DS_Store
+Thumbs.db
