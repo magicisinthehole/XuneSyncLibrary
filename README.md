@@ -225,9 +225,9 @@ If using static mode, organize files as:
 artist_data/
 └── {musicbrainz-uuid}/
     ├── biography.xml
-    ├── image_small.jpg
-    ├── image_medium.jpg
-    └── image_large.jpg
+    ├── 1.jpg
+    ├── 2.jpg
+    └── thumb.jpg
 ```
 
 The device requests URLs like `/v3.0/en-US/music/artist/{uuid}/...`, and the static handler maps these to the filesystem.
