@@ -1,7 +1,0 @@
-ENUM_VALUE(GenericMtpDevice, 0)
-ENUM_VALUE(DigitalStillCamera, 1)
-ENUM_VALUE(MediaPlayer, 2)
-ENUM_VALUE(MobilePhone, 3)
-ENUM_VALUE(DigitalVideoCamera, 4)
-ENUM_VALUE(PDA, 5)
-ENUM_VALUE(AudioRecorder, 6)
