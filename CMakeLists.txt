@@ -162,14 +162,14 @@ if(CMAKE_BUILD_TYPE STREQUAL Debug)
 endif()
 
 # Automatically copy library to Xune app runtime directories after build (if parent project exists)
-set(XUNE_RUNTIME_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../Xune/src/Xune.App/bin/Debug/net8.0/runtimes")
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../Xune/src/Xune.App")
+set(XUNE_RUNTIME_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../src/Xune.App/bin/${CMAKE_BUILD_TYPE}/net8.0/runtimes")
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../src/Xune.App")
     add_custom_command(TARGET zune_wireless POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E make_directory "${XUNE_RUNTIME_DIR}/osx/native"
         COMMAND ${CMAKE_COMMAND} -E make_directory "${XUNE_RUNTIME_DIR}/osx-arm64/native"
         COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:zune_wireless>" "${XUNE_RUNTIME_DIR}/osx/native/libzune_wireless.dylib"
         COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:zune_wireless>" "${XUNE_RUNTIME_DIR}/osx-arm64/native/libzune_wireless.dylib"
-        COMMENT "Copying libzune_wireless.dylib to Xune app bin/Debug runtime directories"
+        COMMENT "Copying libzune_wireless.dylib to Xune app runtime directories"
         VERBATIM
     )
     message(STATUS "Xune parent project detected - will auto-copy library after build")
