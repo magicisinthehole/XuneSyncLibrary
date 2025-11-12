@@ -1,4 +1,4 @@
-# Zune Wireless Native Library
+# Xune Sync Library
 
 **WARNING: This library is in early active development. Use of this library with your device may result in corruption of your Zune device's media library or other unknown issues. Always maintain backups of your media and use at your own risk.**
 
