@@ -1,0 +1,3 @@
+[submodule "vendor/android-file-transfer-linux"]
+	path = vendor/android-file-transfer-linux
+	url = https://github.com/magicisinthehole/android-file-transfer-linux.git
