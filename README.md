@@ -354,15 +354,6 @@ Not supported. AFTL has Windows USB backend code, but integration with this libr
 - Video and podcast sync is not implemented
 - Two-way wireless sync is not implemented
 
-## Documentation
-
-Additional documentation is available:
-
-- `TEST_LIBRARY_JSON_README.md` - Details on the library JSON exporter
-- `TRACK_LOADING_ANALYSIS.md` - Analysis of track upload sequences
-
-Network traffic analysis methodology is documented in the parent project.
-
 ## License
 
 This library is licensed under the GNU Lesser General Public License v2.1 (LGPL-2.1).
