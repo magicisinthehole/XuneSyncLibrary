@@ -18,7 +18,7 @@
 #include <mtp/ptp/ObjectPropertyListParser.h>
 #include <cli/PosixStreams.h>
 #include <unordered_map>
-#include "ZMDBLibraryExtractor.h"
+#include "zmdb/ZMDBParserFactory.h"
 
 using namespace mtp;
 
@@ -137,7 +137,7 @@ bool ZuneDevice::ConnectUSB() {
 
 bool ZuneDevice::ConnectWireless(const std::string& ip_address) {
     // Note: This is a placeholder for the actual wireless connection logic
-    // which would use the ptpip_client. For now, it's not implemented.
+    // which would use the ptpip_client. 
     Log("Wireless connection is not yet implemented.");
     return false;
 }
@@ -616,114 +616,167 @@ const char* ZuneDevice::GetSessionGuidCached() {
     return cached_session_guid_.c_str();
 }
 
-std::vector<ZuneArtistInfo> ZuneDevice::GetMusicLibrary() {
-    std::vector<ZuneArtistInfo> results;
+ZuneMusicLibrary* ZuneDevice::GetMusicLibrarySlow() {
+    ZuneMusicLibrary* result = new ZuneMusicLibrary();
+    result->tracks = nullptr;
+    result->track_count = 0;
+    result->albums = nullptr;
+    result->album_count = 0;
+    result->artworks = nullptr;
+    result->artwork_count = 0;
+
     if (!IsConnected()) {
         Log("Error: Not connected to a device.");
-        return results;
+        return result;
     }
+
     try {
         Library lib(mtp_session_);
-        for (auto const& [artist_name, artist_ptr] : lib._artists) {
-            ZuneArtistInfo artist_info;
-            artist_info.Name = strdup(artist_ptr->Name.c_str());
 
-            std::vector<ZuneAlbumInfo> albums;
-            for (auto const& [album_key, album_ptr] : lib._albums) {
-                if (album_ptr->Artist != artist_ptr) continue;
+        // Build flat arrays using AFTL enumeration
+        std::vector<ZuneMusicTrack> tracks_vec;
+        std::vector<ZuneMusicAlbum> albums_vec;
+        std::map<std::string, uint32_t> artwork_map;  // alb_reference -> mtp_object_id
 
-                ZuneAlbumInfo album_info;
-                album_info.Title = strdup(album_ptr->Name.c_str());
-                album_info.Artist = strdup(artist_ptr->Name.c_str());
-                album_info.Year = album_ptr->Year;
+        uint32_t album_index = 0;
 
-                // Load all tracks for this album from the device
-                lib.LoadRefs(album_ptr);
+        // Iterate all albums
+        for (auto const& [album_key, album_ptr] : lib._albums) {
+            // Add album metadata
+            ZuneMusicAlbum album;
+            album.title = strdup(album_ptr->Name.c_str());
+            album.artist_name = strdup(album_ptr->Artist->Name.c_str());
+            album.release_year = album_ptr->Year;
 
-                std::vector<ZuneTrackInfo> tracks;
-                for (auto const& [track_name, track_index] : album_ptr->Tracks) {
-                    ZuneTrackInfo track_info;
-                    track_info.Title = strdup(track_name.c_str());
-                    track_info.Artist = strdup(artist_ptr->Name.c_str());
-                    track_info.Album = strdup(album_ptr->Name.c_str());
-                    track_info.TrackNumber = track_index;
-                    for (auto const& ref : album_ptr->Refs) {
-                        auto info = mtp_session_->GetObjectInfo(ref);
-                        if (info.Filename == track_name) {
-                            track_info.MtpObjectId = ref.Id;
-                            break;
-                        }
+            // album_key is pair<Artist*, string> - extract the string (album reference)
+            album.alb_reference = strdup(album_key.second.c_str());
+            album.atom_id = album_index;
+
+            albums_vec.push_back(album);
+
+            // Load tracks for this album
+            lib.LoadRefs(album_ptr);
+
+            // Iterate tracks and add to flat track array
+            for (auto const& [track_name, track_index] : album_ptr->Tracks) {
+                ZuneMusicTrack track;
+                track.title = strdup(track_name.c_str());
+                track.artist_name = strdup(album_ptr->Artist->Name.c_str());
+                track.album_name = strdup(album_ptr->Name.c_str());
+                track.genre = strdup("");  // AFTL doesn't provide genre
+                track.track_number = track_index;
+                track.duration_ms = 0;  // AFTL doesn't provide duration
+                track.album_ref = album_index;  // Link to album by index
+                track.atom_id = 0;  // AFTL doesn't provide atom_id
+
+                // Find MTP ObjectId by filename
+                for (auto const& ref : album_ptr->Refs) {
+                    auto info = mtp_session_->GetObjectInfo(ref);
+                    if (info.Filename == track_name) {
+                        track.filename = strdup(info.Filename.c_str());
+                        track.atom_id = ref.Id;
+                        break;
                     }
-                    tracks.push_back(track_info);
                 }
-                album_info.TrackCount = tracks.size();
-                album_info.Tracks = new ZuneTrackInfo[tracks.size()];
-                std::copy(tracks.begin(), tracks.end(), album_info.Tracks);
 
-                albums.push_back(album_info);
+                if (track.atom_id == 0) {
+                    track.filename = strdup(track_name.c_str());
+                }
+
+                tracks_vec.push_back(track);
             }
-            artist_info.AlbumCount = albums.size();
-            artist_info.Albums = new ZuneAlbumInfo[albums.size()];
-            std::copy(albums.begin(), albums.end(), artist_info.Albums);
 
-            results.push_back(artist_info);
+            // Store artwork reference if available (AFTL provides album artwork)
+            // Refs is an unordered_set, so get first element via iterator
+            if (!album_ptr->Refs.empty()) {
+                auto first_ref = *album_ptr->Refs.begin();
+                artwork_map[album_key.second] = first_ref.Id;
+            }
+
+            album_index++;
         }
+
+        // Allocate and copy tracks
+        result->track_count = tracks_vec.size();
+        if (result->track_count > 0) {
+            result->tracks = new ZuneMusicTrack[result->track_count];
+            std::copy(tracks_vec.begin(), tracks_vec.end(), result->tracks);
+        }
+
+        // Allocate and copy albums
+        result->album_count = albums_vec.size();
+        if (result->album_count > 0) {
+            result->albums = new ZuneMusicAlbum[result->album_count];
+            std::copy(albums_vec.begin(), albums_vec.end(), result->albums);
+        }
+
+        // Build artwork array
+        std::vector<ZuneAlbumArtwork> artworks_vec;
+        for (const auto& [alb_ref, object_id] : artwork_map) {
+            ZuneAlbumArtwork artwork;
+            artwork.alb_reference = strdup(alb_ref.c_str());
+            artwork.mtp_object_id = object_id;
+            artworks_vec.push_back(artwork);
+        }
+
+        result->artwork_count = artworks_vec.size();
+        if (result->artwork_count > 0) {
+            result->artworks = new ZuneAlbumArtwork[result->artwork_count];
+            std::copy(artworks_vec.begin(), artworks_vec.end(), result->artworks);
+        }
+
+        Log("GetMusicLibrarySlow: Retrieved " + std::to_string(result->track_count) +
+            " tracks, " + std::to_string(result->album_count) + " albums (AFTL enumeration)");
+
     } catch (const std::exception& e) {
-        Log("Error getting music library: " + std::string(e.what()));
+        Log("Error getting music library (slow): " + std::string(e.what()));
     }
-    return results;
+
+    return result;
 }
 
-std::vector<ZuneArtistInfo> ZuneDevice::GetMusicLibraryFast() {
-    std::vector<ZuneArtistInfo> results;
-
+ZuneMusicLibrary* ZuneDevice::GetMusicLibrary() {
     if (!IsConnected()) {
         Log("Error: Not connected to a device.");
-        return results;
+        return nullptr;
     }
 
     try {
-        Log("Starting fast library retrieval using zmdb extraction...");
+        Log("Starting library retrieval using zmdb extraction...");
 
         // Step 1: Get zmdb binary from device
         std::vector<uint8_t> library_object_id = {0x03, 0x92, 0x1f};
-
         mtp::ByteArray zmdb_data = GetZuneMetadata(library_object_id);
 
         if (zmdb_data.empty()) {
-            Log("Warning: zmdb data is empty, falling back to slow method");
-            return GetMusicLibrary();
+            Log("Error: zmdb data is empty");
+            return nullptr;
         }
 
         Log("Retrieved zmdb: " + std::to_string(zmdb_data.size()) + " bytes");
 
-        // Step 2: Get device model from AFTL
+        // Step 2: Get device model and parse zmdb
         std::string device_model = GetModel();
         if (device_model.empty()) {
             Log("Error: Could not retrieve device model from AFTL");
-            return results;
+            return nullptr;
         }
 
-        // Step 3: Parse zmdb using high-level extractor with device model
-        zmdb::ZMDBLibraryExtractor extractor;
-        zmdb::ZMDBLibrary library = extractor.ExtractLibrary(zmdb_data, device_model);
+        zmdb::DeviceType device_type = (device_model.find("HD") != std::string::npos)
+            ? zmdb::DeviceType::ZuneHD
+            : zmdb::DeviceType::Zune30;
 
-        if (library.albums.empty()) {
-            Log("Warning: No albums extracted from zmdb, falling back to slow method");
-            return GetMusicLibrary();
-        }
+        auto parser = zmdb::ZMDBParserFactory::CreateParser(device_type);
+        zmdb::ZMDBLibrary library = parser->ExtractLibrary(zmdb_data);
 
-        Log("Extracted " + std::to_string(library.album_count) + " albums, " +
-            std::to_string(library.artist_count) + " artists");
+        Log("Extracted " + std::to_string(library.track_count) + " tracks, " +
+            std::to_string(library.album_count) + " albums");
 
-        // Step 4: Get album ObjectIds with filenames (ONE fast query - no metadata!)
+        // Step 3: Query MTP for album artwork ObjectIds
         Log("Querying album list for .alb references...");
-
-        // Map of .alb filename -> ObjectId for artwork
         std::unordered_map<std::string, uint32_t> alb_to_objectid;
 
         try {
-            // Get list of all album objects with their filenames in ONE query
             mtp::ByteArray album_list = mtp_session_->GetObjectPropertyList(
                 mtp::Session::Root,
                 mtp::ObjectFormat::AbstractAudioAlbum,
@@ -732,7 +785,6 @@ std::vector<ZuneArtistInfo> ZuneDevice::GetMusicLibraryFast() {
                 1
             );
 
-            // Parse the result to build alb reference -> ObjectId map
             mtp::ObjectStringPropertyListParser::Parse(album_list,
                 [&](mtp::ObjectId id, mtp::ObjectProperty property, const std::string &filename) {
                     alb_to_objectid[filename] = id.Id;
@@ -743,78 +795,60 @@ std::vector<ZuneArtistInfo> ZuneDevice::GetMusicLibraryFast() {
 
         } catch (const std::exception& e) {
             Log("Warning: Could not query album list: " + std::string(e.what()));
-            // Continue without MTP correlation
         }
 
-        // Step 5: Build results using zmdb metadata + MTP ObjectIds for artwork
-        for (const auto& [artist_name, albums] : library.albums_by_artist) {
-            ZuneArtistInfo artist_info;
-            artist_info.Name = strdup(artist_name.c_str());
+        // Step 4: Build flat data structure (no grouping - C# does that with LINQ)
+        ZuneMusicLibrary* result = new ZuneMusicLibrary();
 
-            std::vector<ZuneAlbumInfo> artist_albums;
-
-            for (const auto& zmdb_album : albums) {
-                ZuneAlbumInfo album_info;
-                album_info.Title = strdup(zmdb_album.title.c_str());
-                album_info.Artist = strdup(zmdb_album.artist_name.c_str());
-                album_info.Year = zmdb_album.release_year;
-
-                // Try to find MTP ObjectId by .alb reference
-                // zmdb now extracts the full filename in format: "Artist--Album.alb"
-                uint32_t artwork_object_id = 0;
-                if (!zmdb_album.alb_reference.empty()) {
-                    Log("  Looking for .alb: '" + zmdb_album.alb_reference + "' for album '" + zmdb_album.title + "'");
-
-                    auto it = alb_to_objectid.find(zmdb_album.alb_reference);
-                    if (it != alb_to_objectid.end()) {
-                        artwork_object_id = it->second;
-                        Log("  ✓ Matched album '" + zmdb_album.title + "' to ObjectId " +
-                            std::to_string(artwork_object_id));
-                    } else {
-                        Log("  ✗ No match found for '" + zmdb_album.alb_reference + "'");
-                    }
-                } else {
-                    Log("  No .alb reference for album '" + zmdb_album.title + "'");
-                }
-
-                // Build tracks from zmdb (tracks will be queried dynamically by track title)
-                // MtpObjectId is left as 0 and will be resolved at playback time using GetAudioTrackObjectId
-                std::vector<ZuneTrackInfo> tracks;
-                for (const auto& zmdb_track : zmdb_album.tracks) {
-                    ZuneTrackInfo track_info;
-                    track_info.Title = strdup(zmdb_track.title.c_str());
-                    track_info.Artist = strdup(zmdb_album.artist_name.c_str());
-                    track_info.Album = strdup(zmdb_album.title.c_str());
-                    track_info.TrackNumber = zmdb_track.track_number;
-                    track_info.MtpObjectId = 0;  // Will be queried dynamically; use album's ObjectId to search
-                    track_info.Filename = strdup(zmdb_track.filename_hint.c_str());
-                    tracks.push_back(track_info);
-                }
-
-                album_info.TrackCount = tracks.size();
-                album_info.Tracks = new ZuneTrackInfo[tracks.size()];
-                std::copy(tracks.begin(), tracks.end(), album_info.Tracks);
-                album_info.ArtworkObjectId = artwork_object_id;  // Store artwork ObjectId
-
-                artist_albums.push_back(album_info);
-            }
-
-            artist_info.AlbumCount = artist_albums.size();
-            artist_info.Albums = new ZuneAlbumInfo[artist_albums.size()];
-            std::copy(artist_albums.begin(), artist_albums.end(), artist_info.Albums);
-
-            results.push_back(artist_info);
+        // Copy tracks (already in array form, just convert std::string to char*)
+        result->track_count = library.track_count;
+        result->tracks = new ZuneMusicTrack[result->track_count];
+        for (uint32_t i = 0; i < library.track_count; i++) {
+            const auto& t = library.tracks[i];
+            result->tracks[i].title = strdup(t.title.c_str());
+            result->tracks[i].artist_name = strdup(t.artist_name.c_str());
+            result->tracks[i].album_name = strdup(t.album_name.c_str());
+            result->tracks[i].genre = strdup(t.genre.c_str());
+            result->tracks[i].filename = strdup(t.filename.c_str());
+            result->tracks[i].track_number = t.track_number;
+            result->tracks[i].duration_ms = t.duration_ms;
+            result->tracks[i].album_ref = t.album_ref;
+            result->tracks[i].atom_id = t.atom_id;
         }
 
-        Log("Fast library retrieval complete: " + std::to_string(results.size()) + " artists");
+        // Allocate and copy albums
+        result->album_count = library.album_metadata.size();
+        result->albums = new ZuneMusicAlbum[result->album_count];
+        size_t album_idx = 0;
+        for (const auto& [atom_id, album] : library.album_metadata) {
+            result->albums[album_idx].title = strdup(album.title.c_str());
+            result->albums[album_idx].artist_name = strdup(album.artist_name.c_str());
+            result->albums[album_idx].alb_reference = strdup(album.alb_reference.c_str());
+            result->albums[album_idx].release_year = album.release_year;
+            result->albums[album_idx].atom_id = album.atom_id;
+            album_idx++;
+        }
+
+        // Build artwork array from MTP query results
+        result->artwork_count = alb_to_objectid.size();
+        result->artworks = new ZuneAlbumArtwork[result->artwork_count];
+        size_t artwork_idx = 0;
+        for (const auto& [alb_ref, object_id] : alb_to_objectid) {
+            result->artworks[artwork_idx].alb_reference = strdup(alb_ref.c_str());
+            result->artworks[artwork_idx].mtp_object_id = object_id;
+            artwork_idx++;
+        }
+
+        Log("Library retrieval complete: " + std::to_string(result->track_count) + " tracks, " +
+            std::to_string(result->album_count) + " albums, " +
+            std::to_string(result->artwork_count) + " artworks");
+
+        return result;
 
     } catch (const std::exception& e) {
-        Log("Error in fast library retrieval: " + std::string(e.what()));
-        Log("Falling back to slow method");
-        return GetMusicLibrary();
+        Log("Error in library retrieval: " + std::string(e.what()));
+        return nullptr;
     }
-
-    return results;
 }
 
 std::vector<ZunePlaylistInfo> ZuneDevice::GetPlaylists() {
@@ -1358,10 +1392,10 @@ mtp::ByteArray ZuneDevice::GetZuneMetadata(const std::vector<uint8_t>& object_id
             pipe->Read(payloadStream, mtp::Session::LongTimeout);
             Log("Metadata payload received: " + std::to_string(payloadStream->data.size()) + " bytes");
 
-            // Combine header and payload
-            result = headerStream->data;
-            result.insert(result.end(), payloadStream->data.begin(), payloadStream->data.end());
-            Log("Total response: " + std::to_string(result.size()) + " bytes");
+            // Return only the payload (strip 12-byte header)
+            // The header contains size/response metadata, but the parser expects raw ZMDB data
+            result = payloadStream->data;
+            Log("Returning ZMDB payload: " + std::to_string(result.size()) + " bytes (header stripped)");
 
             // Drain any remaining buffered data from the pipe to clean up state
             // This prevents the next request from receiving echoed data from the previous one

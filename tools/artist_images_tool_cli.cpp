@@ -1,5 +1,6 @@
 #include "lib/src/ZuneDevice.h"
 #include "lib/src/protocols/http/ZuneHTTPInterceptor.h"
+#include "zune_wireless/zune_wireless_api.h"
 #include <iostream>
 #include <iomanip>
 #include <thread>
@@ -7,6 +8,8 @@
 #include <csignal>
 #include <fstream>
 #include <sstream>
+#include <map>
+#include <set>
 #include <taglib/fileref.h>
 #include <taglib/tag.h>
 #include <taglib/tpropertymap.h>
@@ -169,26 +172,39 @@ void operation_retrofit_artist(ZuneDevice& device) {
 
     // Get list of artists from device
     std::cout << "Querying device for artists..." << std::endl;
-    std::vector<ZuneArtistInfo> artists;
+    ZuneMusicLibrary* library = nullptr;
     try {
-        artists = device.GetMusicLibrary();
+        library = device.GetMusicLibrary();
     } catch (const std::exception& e) {
         std::cerr << "ERROR: Failed to get artist list: " << e.what() << std::endl;
         return;
     }
 
-    if (artists.empty()) {
+    if (!library || library->track_count == 0) {
         std::cout << "No artists found on device." << std::endl;
+        if (library) zune_device_free_music_library(library);
         return;
+    }
+
+    // Build list of unique artists with album counts
+    std::map<std::string, std::set<std::string>> artist_albums;
+    for (uint32_t i = 0; i < library->track_count; ++i) {
+        artist_albums[library->tracks[i].artist_name].insert(library->tracks[i].album_name);
+    }
+
+    // Convert to vector for indexed access
+    std::vector<std::pair<std::string, size_t>> artists;
+    for (const auto& [artist_name, albums] : artist_albums) {
+        artists.push_back({artist_name, albums.size()});
     }
 
     // Display numbered list of artists
     std::cout << std::endl;
     std::cout << "Artists on device:" << std::endl;
     for (size_t i = 0; i < artists.size(); ++i) {
-        std::cout << "  " << (i + 1) << ". " << artists[i].Name
-                  << " (" << artists[i].AlbumCount << " album";
-        if (artists[i].AlbumCount != 1) std::cout << "s";
+        std::cout << "  " << (i + 1) << ". " << artists[i].first
+                  << " (" << artists[i].second << " album";
+        if (artists[i].second != 1) std::cout << "s";
         std::cout << ")" << std::endl;
     }
 
@@ -201,15 +217,20 @@ void operation_retrofit_artist(ZuneDevice& device) {
         choice = std::stoul(choice_str);
     } catch (...) {
         std::cerr << "Invalid selection" << std::endl;
+        zune_device_free_music_library(library);
         return;
     }
 
     if (choice < 1 || choice > artists.size()) {
         std::cerr << "Invalid selection" << std::endl;
+        zune_device_free_music_library(library);
         return;
     }
 
-    std::string selected_artist_name = artists[choice - 1].Name;
+    std::string selected_artist_name = artists[choice - 1].first;
+
+    // Free library before continuing
+    zune_device_free_music_library(library);
 
     // Get GUID from user
     std::cout << std::endl;

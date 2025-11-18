@@ -90,8 +90,8 @@ public:
 
     // --- File System Operations ---
     std::vector<ZuneObjectInfoInternal> ListStorage(uint32_t parent_handle = 0);
-    std::vector<ZuneArtistInfo> GetMusicLibrary();  // Slow: Uses AFTL Library iteration
-    std::vector<ZuneArtistInfo> GetMusicLibraryFast();  // Fast: Uses zmdb parsing + AFTL correlation
+    ZuneMusicLibrary* GetMusicLibrary();  // Fast: Returns flat data (tracks, albums, artworks) using zmdb
+    ZuneMusicLibrary* GetMusicLibrarySlow();  // Slow: For testing only (uses AFTL enumeration)
     std::vector<ZunePlaylistInfo> GetPlaylists();
     int DownloadFile(uint32_t object_handle, const std::string& destination_path);
     int UploadFile(const std::string& source_path, const std::string& destination_folder);

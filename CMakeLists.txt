@@ -122,6 +122,11 @@ add_library(zune_wireless SHARED
     lib/src/ZuneDevice.cpp
     lib/src/ZuneDeviceHTTP.cpp
     lib/src/ZMDBLibraryExtractor.cpp
+    lib/src/zmdb/ZMDBParserBase.cpp
+    lib/src/zmdb/ZMDBUtils.cpp
+    lib/src/zmdb/ZuneHDParser.cpp
+    lib/src/zmdb/ZuneClassicParser.cpp
+    lib/src/zmdb/ZMDBParserFactory.cpp
     lib/src/ptpip_client.cpp
     lib/src/ssdp_discovery.cpp
     lib/src/zune_wireless_api.cpp
@@ -183,6 +188,11 @@ add_executable(test_library_json
     lib/src/ZuneDevice.cpp
     lib/src/ZuneDeviceHTTP.cpp
     lib/src/ZMDBLibraryExtractor.cpp
+    lib/src/zmdb/ZMDBParserBase.cpp
+    lib/src/zmdb/ZMDBUtils.cpp
+    lib/src/zmdb/ZuneHDParser.cpp
+    lib/src/zmdb/ZuneClassicParser.cpp
+    lib/src/zmdb/ZMDBParserFactory.cpp
     lib/src/ptpip_client.cpp
     lib/src/ssdp_discovery.cpp
     lib/src/zune_wireless_api.cpp
@@ -223,6 +233,11 @@ add_executable(test_zmdb_fast
     lib/src/ZuneDevice.cpp
     lib/src/ZuneDeviceHTTP.cpp
     lib/src/ZMDBLibraryExtractor.cpp
+    lib/src/zmdb/ZMDBParserBase.cpp
+    lib/src/zmdb/ZMDBUtils.cpp
+    lib/src/zmdb/ZuneHDParser.cpp
+    lib/src/zmdb/ZuneClassicParser.cpp
+    lib/src/zmdb/ZMDBParserFactory.cpp
     lib/src/ptpip_client.cpp
     lib/src/ssdp_discovery.cpp
     lib/src/zune_wireless_api.cpp
@@ -263,6 +278,11 @@ add_executable(test_zmdb_extractor
     lib/src/ZuneDevice.cpp
     lib/src/ZuneDeviceHTTP.cpp
     lib/src/ZMDBLibraryExtractor.cpp
+    lib/src/zmdb/ZMDBParserBase.cpp
+    lib/src/zmdb/ZMDBUtils.cpp
+    lib/src/zmdb/ZuneHDParser.cpp
+    lib/src/zmdb/ZuneClassicParser.cpp
+    lib/src/zmdb/ZMDBParserFactory.cpp
     lib/src/ptpip_client.cpp
     lib/src/ssdp_discovery.cpp
     lib/src/zune_wireless_api.cpp
@@ -303,6 +323,11 @@ add_executable(test_http_interceptor
     lib/src/ZuneDevice.cpp
     lib/src/ZuneDeviceHTTP.cpp
     lib/src/ZMDBLibraryExtractor.cpp
+    lib/src/zmdb/ZMDBParserBase.cpp
+    lib/src/zmdb/ZMDBUtils.cpp
+    lib/src/zmdb/ZuneHDParser.cpp
+    lib/src/zmdb/ZuneClassicParser.cpp
+    lib/src/zmdb/ZMDBParserFactory.cpp
     lib/src/ptpip_client.cpp
     lib/src/ssdp_discovery.cpp
     lib/src/zune_wireless_api.cpp
@@ -344,6 +369,11 @@ add_executable(test_http_monitor_boot
     lib/src/ZuneDevice.cpp
     lib/src/ZuneDeviceHTTP.cpp
     lib/src/ZMDBLibraryExtractor.cpp
+    lib/src/zmdb/ZMDBParserBase.cpp
+    lib/src/zmdb/ZMDBUtils.cpp
+    lib/src/zmdb/ZuneHDParser.cpp
+    lib/src/zmdb/ZuneClassicParser.cpp
+    lib/src/zmdb/ZMDBParserFactory.cpp
     lib/src/ptpip_client.cpp
     lib/src/ssdp_discovery.cpp
     lib/src/zune_wireless_api.cpp
@@ -385,6 +415,11 @@ add_executable(artist_images_tool_cli
     lib/src/ZuneDevice.cpp
     lib/src/ZuneDeviceHTTP.cpp
     lib/src/ZMDBLibraryExtractor.cpp
+    lib/src/zmdb/ZMDBParserBase.cpp
+    lib/src/zmdb/ZMDBUtils.cpp
+    lib/src/zmdb/ZuneHDParser.cpp
+    lib/src/zmdb/ZuneClassicParser.cpp
+    lib/src/zmdb/ZMDBParserFactory.cpp
     lib/src/ptpip_client.cpp
     lib/src/ssdp_discovery.cpp
     lib/src/zune_wireless_api.cpp

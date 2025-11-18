@@ -7,8 +7,11 @@
 #include <cstring>
 #include <cstdio>
 #include <chrono>
+#include <map>
+#include <set>
 
 #include "lib/src/ZuneDevice.h"
+#include "zune_wireless/zune_wireless_api.h"
 
 // Simple JSON escaping function
 std::string EscapeJsonString(const std::string& input) {
@@ -45,11 +48,19 @@ std::string GetTimestamp() {
     return oss.str();
 }
 
-// Build JSON output from library data
-std::string BuildLibraryJson(const std::vector<ZuneArtistInfo>& artists,
+// Build JSON output from flat library data
+std::string BuildLibraryJson(ZuneMusicLibrary* library,
                               const std::string& device_name = "",
                               const std::string& device_serial = "") {
     std::ostringstream json;
+
+    // Group tracks by artist -> album
+    std::map<std::string, std::map<std::string, std::vector<const ZuneMusicTrack*>>> grouped;
+
+    for (uint32_t i = 0; i < library->track_count; ++i) {
+        const auto& track = library->tracks[i];
+        grouped[track.artist_name][track.album_name].push_back(&track);
+    }
 
     // Start JSON object
     json << "{\n";
@@ -57,56 +68,42 @@ std::string BuildLibraryJson(const std::vector<ZuneArtistInfo>& artists,
     json << "    \"generated\": \"" << GetTimestamp() << "\",\n";
     json << "    \"device_name\": \"" << EscapeJsonString(device_name) << "\",\n";
     json << "    \"device_serial\": \"" << EscapeJsonString(device_serial) << "\",\n";
-
-    // Count totals
-    uint32_t total_albums = 0;
-    uint32_t total_tracks = 0;
-
-    for (const auto& artist : artists) {
-        total_albums += artist.AlbumCount;
-        for (uint32_t i = 0; i < artist.AlbumCount; ++i) {
-            total_tracks += artist.Albums[i].TrackCount;
-        }
-    }
-
-    json << "    \"total_artists\": " << artists.size() << ",\n";
-    json << "    \"total_albums\": " << total_albums << ",\n";
-    json << "    \"total_tracks\": " << total_tracks << "\n";
+    json << "    \"total_artists\": " << grouped.size() << ",\n";
+    json << "    \"total_albums\": " << library->album_count << ",\n";
+    json << "    \"total_tracks\": " << library->track_count << "\n";
     json << "  },\n";
 
     // Start library array
     json << "  \"library\": [\n";
 
-    for (size_t artist_idx = 0; artist_idx < artists.size(); ++artist_idx) {
-        const auto& artist = artists[artist_idx];
-
+    size_t artist_idx = 0;
+    for (const auto& [artist_name, albums] : grouped) {
         json << "    {\n";
-        json << "      \"artist_name\": \"" << EscapeJsonString(artist.Name) << "\",\n";
-        json << "      \"album_count\": " << artist.AlbumCount << ",\n";
+        json << "      \"artist_name\": \"" << EscapeJsonString(artist_name) << "\",\n";
+        json << "      \"album_count\": " << albums.size() << ",\n";
         json << "      \"albums\": [\n";
 
-        for (uint32_t album_idx = 0; album_idx < artist.AlbumCount; ++album_idx) {
-            const auto& album = artist.Albums[album_idx];
-
+        size_t album_idx = 0;
+        for (const auto& [album_name, tracks] : albums) {
             json << "        {\n";
-            json << "          \"title\": \"" << EscapeJsonString(album.Title) << "\",\n";
-            json << "          \"artist\": \"" << EscapeJsonString(album.Artist) << "\",\n";
-            json << "          \"year\": " << album.Year << ",\n";
-            json << "          \"track_count\": " << album.TrackCount << ",\n";
+            json << "          \"title\": \"" << EscapeJsonString(album_name) << "\",\n";
+            json << "          \"artist\": \"" << EscapeJsonString(artist_name) << "\",\n";
+            json << "          \"track_count\": " << tracks.size() << ",\n";
             json << "          \"tracks\": [\n";
 
-            for (uint32_t track_idx = 0; track_idx < album.TrackCount; ++track_idx) {
-                const auto& track = album.Tracks[track_idx];
+            for (size_t track_idx = 0; track_idx < tracks.size(); ++track_idx) {
+                const auto* track = tracks[track_idx];
 
                 json << "            {\n";
-                json << "              \"title\": \"" << EscapeJsonString(track.Title) << "\",\n";
-                json << "              \"artist\": \"" << EscapeJsonString(track.Artist) << "\",\n";
-                json << "              \"album\": \"" << EscapeJsonString(track.Album) << "\",\n";
-                json << "              \"track_number\": " << track.TrackNumber << ",\n";
-                json << "              \"mtp_object_id\": " << track.MtpObjectId << "\n";
+                json << "              \"title\": \"" << EscapeJsonString(track->title) << "\",\n";
+                json << "              \"artist\": \"" << EscapeJsonString(track->artist_name) << "\",\n";
+                json << "              \"album\": \"" << EscapeJsonString(track->album_name) << "\",\n";
+                json << "              \"track_number\": " << track->track_number << ",\n";
+                json << "              \"duration_ms\": " << track->duration_ms << ",\n";
+                json << "              \"filename\": \"" << EscapeJsonString(track->filename) << "\"\n";
                 json << "            }";
 
-                if (track_idx < album.TrackCount - 1) {
+                if (track_idx < tracks.size() - 1) {
                     json << ",";
                 }
                 json << "\n";
@@ -115,30 +112,27 @@ std::string BuildLibraryJson(const std::vector<ZuneArtistInfo>& artists,
             json << "          ]\n";
             json << "        }";
 
-            if (album_idx < artist.AlbumCount - 1) {
+            if (album_idx < albums.size() - 1) {
                 json << ",";
             }
             json << "\n";
+            album_idx++;
         }
 
         json << "      ]\n";
         json << "    }";
 
-        if (artist_idx < artists.size() - 1) {
+        if (artist_idx < grouped.size() - 1) {
             json << ",";
         }
         json << "\n";
+        artist_idx++;
     }
 
     json << "  ]\n";
     json << "}\n";
 
     return json.str();
-}
-
-// Logging callback
-void LogCallback(const std::string& message) {
-    std::cout << "[LOG] " << message << std::endl;
 }
 
 int main(int argc, char* argv[]) {
@@ -187,61 +181,67 @@ int main(int argc, char* argv[]) {
     std::cout << "Retrieving music library from device...\n";
     std::cout << "This may take a moment...\n\n";
 
-    auto artists = device.GetMusicLibrary();
+    ZuneMusicLibrary* library = device.GetMusicLibrary();
 
-    std::cout << "Library retrieval complete!\n";
-    std::cout << "  Artists: " << artists.size() << "\n";
-
-    uint32_t total_albums = 0;
-    uint32_t total_tracks = 0;
-
-    for (const auto& artist : artists) {
-        total_albums += artist.AlbumCount;
-        for (uint32_t i = 0; i < artist.AlbumCount; ++i) {
-            total_tracks += artist.Albums[i].TrackCount;
-        }
+    if (!library) {
+        std::cerr << "ERROR: Failed to retrieve music library\n";
+        device.Disconnect();
+        return 1;
     }
 
-    std::cout << "  Albums: " << total_albums << "\n";
-    std::cout << "  Tracks: " << total_tracks << "\n\n";
+    std::cout << "Library retrieval complete!\n";
+    std::cout << "  Tracks: " << library->track_count << "\n";
+    std::cout << "  Albums: " << library->album_count << "\n";
+    std::cout << "  Artworks: " << library->artwork_count << "\n\n";
+
+    // Group for summary display
+    std::map<std::string, std::set<std::string>> artist_albums;
+    for (uint32_t i = 0; i < library->track_count; ++i) {
+        const auto& track = library->tracks[i];
+        artist_albums[track.artist_name].insert(track.album_name);
+    }
 
     // Print library summary
     std::cout << "Library Summary (First 10 Artists):\n";
     std::cout << "-----------------------------------\n";
 
-    size_t artists_to_print = std::min(size_t(10), artists.size());
-    for (size_t i = 0; i < artists_to_print; ++i) {
-        const auto& artist = artists[i];
-        std::cout << "\n" << (i + 1) << ". " << artist.Name << " ("
-                  << artist.AlbumCount << " albums)\n";
+    size_t count = 0;
+    for (const auto& [artist_name, albums] : artist_albums) {
+        if (count >= 10) break;
 
-        // Show first 3 albums of this artist
-        size_t albums_to_print = std::min(size_t(3), size_t(artist.AlbumCount));
-        for (uint32_t j = 0; j < albums_to_print; ++j) {
-            const auto& album = artist.Albums[j];
-            std::cout << "   - " << album.Title << " (" << album.TrackCount << " tracks)\n";
+        std::cout << "\n" << (count + 1) << ". " << artist_name << " (" << albums.size() << " albums)\n";
+
+        // Show first 3 albums
+        size_t album_count = 0;
+        for (const auto& album_name : albums) {
+            if (album_count >= 3) break;
+            std::cout << "   - " << album_name << "\n";
+            album_count++;
         }
 
-        if (artist.AlbumCount > 3) {
-            std::cout << "   ... and " << (artist.AlbumCount - 3) << " more albums\n";
+        if (albums.size() > 3) {
+            std::cout << "   ... and " << (albums.size() - 3) << " more albums\n";
         }
+
+        count++;
     }
 
-    if (artists.size() > 10) {
-        std::cout << "\n... and " << (artists.size() - 10) << " more artists\n";
+    if (artist_albums.size() > 10) {
+        std::cout << "\n... and " << (artist_albums.size() - 10) << " more artists\n";
     }
 
     std::cout << "\n-----------------------------------\n\n";
 
     // Generate JSON
     std::cout << "Generating JSON output...\n";
-    std::string json_output = BuildLibraryJson(artists, device_name, device_serial);
+    std::string json_output = BuildLibraryJson(library, device_name, device_serial);
 
     // Write to file
     std::cout << "Writing to file: " << output_file << "\n";
     std::ofstream outfile(output_file);
     if (!outfile.is_open()) {
         std::cerr << "ERROR: Failed to open output file for writing\n";
+        zune_device_free_music_library(library);
         device.Disconnect();
         return 1;
     }
@@ -252,6 +252,9 @@ int main(int argc, char* argv[]) {
     std::cout << "File written successfully!\n\n";
 
     // Cleanup
+    std::cout << "Freeing library memory...\n";
+    zune_device_free_music_library(library);
+
     std::cout << "Disconnecting device...\n";
     device.Disconnect();
 

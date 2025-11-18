@@ -32,29 +32,39 @@ struct ZuneObjectInfo {
     bool is_folder;
 };
 
-// Structs for structured media library data
-struct ZuneTrackInfo {
-    const char* Title;
-    const char* Artist;
-    const char* Album;
-    int TrackNumber;
-    uint32_t MtpObjectId;
-    const char* Filename;
+// Flat music library structures - grouping done in C# with LINQ
+struct ZuneMusicTrack {
+    const char* title;
+    const char* artist_name;
+    const char* album_name;
+    const char* genre;
+    const char* filename;
+    int track_number;
+    int duration_ms;
+    uint32_t album_ref;  // References album atom_id for grouping
+    uint32_t atom_id;
 };
 
-struct ZuneAlbumInfo {
-    const char* Title;
-    const char* Artist;
-    int Year;
-    uint32_t TrackCount;
-    ZuneTrackInfo* Tracks;
-    uint32_t ArtworkObjectId;  // MTP ObjectId for album artwork (.alb file)
+struct ZuneMusicAlbum {
+    const char* title;
+    const char* artist_name;
+    const char* alb_reference;  // For artwork lookup (e.g., "Artist--Album.alb")
+    int release_year;
+    uint32_t atom_id;
 };
 
-struct ZuneArtistInfo {
-    const char* Name;
-    uint32_t AlbumCount;
-    ZuneAlbumInfo* Albums;
+struct ZuneAlbumArtwork {
+    const char* alb_reference;  // e.g., "Artist--Album.alb"
+    uint32_t mtp_object_id;     // MTP ObjectId for .alb file
+};
+
+struct ZuneMusicLibrary {
+    ZuneMusicTrack* tracks;
+    uint32_t track_count;
+    ZuneMusicAlbum* albums;
+    uint32_t album_count;
+    ZuneAlbumArtwork* artworks;
+    uint32_t artwork_count;
 };
 
 struct ZunePlaylistInfo {
@@ -86,9 +96,8 @@ ZUNE_WIRELESS_API const char* zune_device_get_model(zune_device_handle_t handle)
 // File System Functions
 ZUNE_WIRELESS_API ZuneObjectInfo* zune_device_list_storage(zune_device_handle_t handle, uint32_t parent_handle, uint32_t* count);
 ZUNE_WIRELESS_API void zune_device_free_object_info_array(ZuneObjectInfo* array, uint32_t count);
-ZUNE_WIRELESS_API ZuneArtistInfo* zune_device_get_music_library(zune_device_handle_t handle, uint32_t* count);  // Slow method
-ZUNE_WIRELESS_API ZuneArtistInfo* zune_device_get_music_library_fast(zune_device_handle_t handle, uint32_t* count);  // Fast method using zmdb
-ZUNE_WIRELESS_API void zune_device_free_music_library(ZuneArtistInfo* artists, uint32_t count);
+ZUNE_WIRELESS_API ZuneMusicLibrary* zune_device_get_music_library(zune_device_handle_t handle);
+ZUNE_WIRELESS_API void zune_device_free_music_library(ZuneMusicLibrary* library);
 ZUNE_WIRELESS_API ZunePlaylistInfo* zune_device_get_playlists(zune_device_handle_t handle, uint32_t* count);
 ZUNE_WIRELESS_API void zune_device_free_playlists(ZunePlaylistInfo* playlists, uint32_t count);
 ZUNE_WIRELESS_API int zune_device_download_file(zune_device_handle_t handle, uint32_t object_handle, const char* destination_path);

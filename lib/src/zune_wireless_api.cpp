@@ -140,54 +140,42 @@ ZUNE_WIRELESS_API int zune_device_upload_with_artwork(zune_device_handle_t handl
     return -1;
 }
 
-ZUNE_WIRELESS_API ZuneArtistInfo* zune_device_get_music_library(zune_device_handle_t handle, uint32_t* count) {
+ZUNE_WIRELESS_API ZuneMusicLibrary* zune_device_get_music_library(zune_device_handle_t handle) {
     if (!handle) {
-        *count = 0;
         return nullptr;
     }
     auto* device = static_cast<ZuneDevice*>(handle);
-    auto artists = device->GetMusicLibrary();
-    *count = artists.size();
-    auto* c_artists = new ZuneArtistInfo[artists.size()];
-    for (size_t i = 0; i < artists.size(); ++i) {
-        c_artists[i] = artists[i];
-    }
-    return c_artists;
+    return device->GetMusicLibrary();
 }
 
-ZUNE_WIRELESS_API ZuneArtistInfo* zune_device_get_music_library_fast(zune_device_handle_t handle, uint32_t* count) {
-    if (!handle) {
-        *count = 0;
-        return nullptr;
-    }
-    auto* device = static_cast<ZuneDevice*>(handle);
-    auto artists = device->GetMusicLibraryFast();
-    *count = artists.size();
-    auto* c_artists = new ZuneArtistInfo[artists.size()];
-    for (size_t i = 0; i < artists.size(); ++i) {
-        c_artists[i] = artists[i];
-    }
-    return c_artists;
-}
+ZUNE_WIRELESS_API void zune_device_free_music_library(ZuneMusicLibrary* library) {
+    if (!library) return;
 
-ZUNE_WIRELESS_API void zune_device_free_music_library(ZuneArtistInfo* artists, uint32_t count) {
-    if (!artists) return;
-    for (uint32_t i = 0; i < count; ++i) {
-        free((void*)artists[i].Name);
-        for (uint32_t j = 0; j < artists[i].AlbumCount; ++j) {
-            free((void*)artists[i].Albums[j].Title);
-            free((void*)artists[i].Albums[j].Artist);
-            for (uint32_t k = 0; k < artists[i].Albums[j].TrackCount; ++k) {
-                free((void*)artists[i].Albums[j].Tracks[k].Title);
-                free((void*)artists[i].Albums[j].Tracks[k].Artist);
-                free((void*)artists[i].Albums[j].Tracks[k].Album);
-                free((void*)artists[i].Albums[j].Tracks[k].Filename);
-            }
-            delete[] artists[i].Albums[j].Tracks;
-        }
-        delete[] artists[i].Albums;
+    // Free tracks
+    for (uint32_t i = 0; i < library->track_count; ++i) {
+        free((void*)library->tracks[i].title);
+        free((void*)library->tracks[i].artist_name);
+        free((void*)library->tracks[i].album_name);
+        free((void*)library->tracks[i].genre);
+        free((void*)library->tracks[i].filename);
     }
-    delete[] artists;
+    delete[] library->tracks;
+
+    // Free albums
+    for (uint32_t i = 0; i < library->album_count; ++i) {
+        free((void*)library->albums[i].title);
+        free((void*)library->albums[i].artist_name);
+        free((void*)library->albums[i].alb_reference);
+    }
+    delete[] library->albums;
+
+    // Free artworks
+    for (uint32_t i = 0; i < library->artwork_count; ++i) {
+        free((void*)library->artworks[i].alb_reference);
+    }
+    delete[] library->artworks;
+
+    delete library;
 }
 
 ZUNE_WIRELESS_API ZunePlaylistInfo* zune_device_get_playlists(zune_device_handle_t handle, uint32_t* count) {
