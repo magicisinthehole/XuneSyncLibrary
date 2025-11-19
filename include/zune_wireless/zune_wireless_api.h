@@ -74,6 +74,14 @@ struct ZunePlaylistInfo {
     uint32_t MtpObjectId;
 };
 
+// Result struct for upload operations
+struct ZuneUploadResult {
+    uint32_t track_object_id;   // MTP ObjectId of uploaded track
+    uint32_t album_object_id;   // MTP ObjectId of album metadata object
+    uint32_t artist_object_id;  // MTP ObjectId of artist metadata object
+    int status;                  // 0 = success, negative = error code
+};
+
 
 // API functions
 ZUNE_WIRELESS_API zune_device_handle_t zune_device_create();
@@ -110,7 +118,7 @@ ZUNE_WIRELESS_API int zune_device_delete_file(zune_device_handle_t handle, uint3
 ZUNE_WIRELESS_API int zune_device_upload_with_artwork(zune_device_handle_t handle, const char* media_path, const char* artwork_path);
 
 // Upload with metadata (uses Library for proper MTP structure)
-ZUNE_WIRELESS_API int zune_device_upload_track(
+ZUNE_WIRELESS_API ZuneUploadResult zune_device_upload_track(
     zune_device_handle_t handle,
     const char* audio_file_path,
     const char* artist_name,

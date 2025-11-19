@@ -909,7 +909,10 @@ int ZuneDevice::UploadTrackWithMetadata(
     int track_number,
     const uint8_t* artwork_data,
     size_t artwork_size,
-    const std::string& artist_guid
+    const std::string& artist_guid,
+    uint32_t* out_track_id,
+    uint32_t* out_album_id,
+    uint32_t* out_artist_id
 ) {
     if (!IsConnected()) {
         Log("Error: Not connected to device");
@@ -1049,6 +1052,17 @@ int ZuneDevice::UploadTrackWithMetadata(
 
         // NOTE: Artist GUID registration now happens BEFORE track upload (see line 933)
         // This matches Windows behavior where metadata linkage object is created before track
+
+        // Populate out-parameters with MTP ObjectIds
+        if (out_track_id) {
+            *out_track_id = track_info.Id.Id;
+        }
+        if (out_album_id) {
+            *out_album_id = album->Id.Id;
+        }
+        if (out_artist_id) {
+            *out_artist_id = artist->Id.Id;
+        }
 
         return 0;
 

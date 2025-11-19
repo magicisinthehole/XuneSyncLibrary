@@ -112,7 +112,10 @@ public:
         int track_number,
         const uint8_t* artwork_data,
         size_t artwork_size,
-        const std::string& artist_guid = ""
+        const std::string& artist_guid = "",
+        uint32_t* out_track_id = nullptr,
+        uint32_t* out_album_id = nullptr,
+        uint32_t* out_artist_id = nullptr
     );
 
     // --- Artist GUID Retrofit (for existing artists without GUID) ---

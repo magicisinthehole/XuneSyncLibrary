@@ -205,7 +205,7 @@ ZUNE_WIRELESS_API void zune_device_free_playlists(ZunePlaylistInfo* playlists, u
     delete[] playlists;
 }
 
-ZUNE_WIRELESS_API int zune_device_upload_track(
+ZUNE_WIRELESS_API ZuneUploadResult zune_device_upload_track(
     zune_device_handle_t handle,
     const char* audio_file_path,
     const char* artist_name,
@@ -217,8 +217,10 @@ ZUNE_WIRELESS_API int zune_device_upload_track(
     const uint8_t* artwork_data,
     uint32_t artwork_size
 ) {
+    ZuneUploadResult result = {0, 0, 0, -1};  // Initialize with failure status
+
     if (handle) {
-        return static_cast<ZuneDevice*>(handle)->UploadTrackWithMetadata(
+        result.status = static_cast<ZuneDevice*>(handle)->UploadTrackWithMetadata(
             audio_file_path ? audio_file_path : "",
             artist_name ? artist_name : "",
             album_name ? album_name : "",
@@ -227,10 +229,15 @@ ZUNE_WIRELESS_API int zune_device_upload_track(
             genre ? genre : "",
             track_number,
             artwork_data,
-            artwork_size
+            artwork_size,
+            "",  // artist_guid (empty string for default)
+            &result.track_object_id,
+            &result.album_object_id,
+            &result.artist_object_id
         );
     }
-    return -1;
+
+    return result;
 }
 
 ZUNE_WIRELESS_API int zune_device_get_partial_object(
