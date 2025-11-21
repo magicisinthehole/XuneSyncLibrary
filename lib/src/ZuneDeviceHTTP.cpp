@@ -397,7 +397,7 @@ void ZuneDevice::TriggerNetworkMode() {
     // Check if device requested invalid IP (0.0.0.0)
     if (device_requested_ip == 0) {
         // Send Config-Nak to tell device to request correct IP
-        Log("Building initial IPCP response (Config-Request + CCP + Config-Nak)...");
+        VerboseLog("Building initial IPCP response (Config-Request + CCP + Config-Nak)...");
         mtp::ByteArray config_nak_ipcp = IPCPParser::BuildConfigNak(device_ipcp_request_id, device_ip, dns_ip);
         mtp::ByteArray config_nak_ppp = PPPParser::WrapPayload(config_nak_ipcp, 0x8021);
 
@@ -410,9 +410,9 @@ void ZuneDevice::TriggerNetworkMode() {
         initial_ipcp_payload.insert(initial_ipcp_payload.end(),
                                    config_nak_ppp.begin(), config_nak_ppp.end());
 
-        Log("Sending IPCP Config-Request + CCP + Config-Nak...");
+        VerboseLog("Sending IPCP Config-Request + CCP + Config-Nak...");
         Log("  → Our Config-Request for " + IPParser::IPToString(host_ip));
-        Log("  → CCP Config-Request");
+        VerboseLog("  → CCP Config-Request");
         Log("  → Config-Nak suggesting device use " + IPParser::IPToString(device_ip));
         mtp_session_->Operation922c(initial_ipcp_payload, 3, 3);
         Log("  ✓ Initial IPCP sent");
@@ -536,7 +536,7 @@ void ZuneDevice::TriggerNetworkMode() {
         Log("  ✓ Second IPCP Config-Request + Config-Ack sent");
     } else {
         // Device sent valid IP - send Config-Request + CCP + Config-Ack
-        Log("Building initial IPCP response (Config-Request + CCP + Config-Ack)...");
+        VerboseLog("Building initial IPCP response (Config-Request + CCP + Config-Ack)...");
         Log("  → Device requested valid IP: " + IPParser::IPToString(device_requested_ip));
 
         mtp::ByteArray config_ack_ipcp = IPCPParser::BuildConfigAck(device_request);
@@ -551,9 +551,9 @@ void ZuneDevice::TriggerNetworkMode() {
         initial_ipcp_payload.insert(initial_ipcp_payload.end(),
                                    config_ack_ppp.begin(), config_ack_ppp.end());
 
-        Log("Sending IPCP Config-Request + CCP + Config-Ack...");
+        VerboseLog("Sending IPCP Config-Request + CCP + Config-Ack...");
         Log("  → Our Config-Request for " + IPParser::IPToString(host_ip));
-        Log("  → CCP Config-Request");
+        VerboseLog("  → CCP Config-Request");
         Log("  → Config-Ack for device's Config-Request");
         mtp_session_->Operation922c(initial_ipcp_payload, 3, 3);
         Log("  ✓ Initial IPCP sent");
@@ -673,4 +673,25 @@ USBHandlesWithEndpoints ZuneDevice::ExtractUSBHandles() {
     handles.endpoint_out = endpoint_out;
 
     return handles;
+}
+
+void ZuneDevice::SetPathResolverCallback(PathResolverCallback callback, void* user_data) {
+    if (!http_interceptor_) {
+        throw std::runtime_error("HTTP interceptor not initialized - call StartHTTPInterceptor() first");
+    }
+    http_interceptor_->SetPathResolverCallback(callback, user_data);
+}
+
+void ZuneDevice::SetCacheStorageCallback(CacheStorageCallback callback, void* user_data) {
+    if (!http_interceptor_) {
+        throw std::runtime_error("HTTP interceptor not initialized - call StartHTTPInterceptor() first");
+    }
+    http_interceptor_->SetCacheStorageCallback(callback, user_data);
+}
+
+void ZuneDevice::SetVerboseNetworkLogging(bool enable) {
+    verbose_logging_ = enable;  // Set local verbose logging flag
+    if (http_interceptor_) {
+        http_interceptor_->SetVerboseLogging(enable);
+    }
 }
