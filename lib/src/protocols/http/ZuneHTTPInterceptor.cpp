@@ -3,6 +3,7 @@
 #include "HTTPParser.h"
 #include "StaticModeHandler.h"
 #include "ProxyModeHandler.h"
+#include "HybridModeHandler.h"
 #include <mtp/ptp/PipePacketer.h>
 #include <mtp/usb/BulkPipe.h>
 #include <mtp/ptp/ByteArrayObjectStream.h>
@@ -153,10 +154,30 @@ void ZuneHTTPInterceptor::Start(const InterceptorConfig& config) {
         proxy_handler_ = std::make_unique<ProxyModeHandler>(proxy_config);
         proxy_handler_->SetLogCallback(log_callback_);
     }
+    else if (config_.mode == InterceptionMode::Hybrid) {
+        Log("Initializing hybrid mode handler");
+        hybrid_handler_ = std::make_unique<HybridModeHandler>(
+            config_.proxy_config.catalog_server,
+            config_.proxy_config.image_server,
+            config_.proxy_config.art_server,
+            config_.proxy_config.mix_server,
+            config_.proxy_config.timeout_ms);
+        hybrid_handler_->SetLogCallback(log_callback_);
 
-    // Start monitoring thread
+        // Set callbacks (will be nullptr if not registered from C# yet)
+        // Lock to safely read callback pointers
+        {
+            std::lock_guard<std::mutex> lock(callback_mutex_);
+            hybrid_handler_->SetPathResolverCallback(path_resolver_callback_, path_resolver_user_data_);
+            hybrid_handler_->SetCacheStorageCallback(cache_storage_callback_, cache_storage_user_data_);
+        }
+
+        Log("Hybrid mode handler initialized with proxy server: " + config_.proxy_config.catalog_server);
+    }
+
+    // Note: Monitoring thread will be started later by EnableNetworkPolling()
+    // This allows TriggerNetworkMode() to complete LCP negotiation without interference
     running_.store(true);
-    monitor_thread_ = std::make_unique<std::thread>(&ZuneHTTPInterceptor::MonitorThread, this);
 
     // Start request worker thread for serialized HTTP request processing
     request_worker_thread_ = std::make_unique<std::thread>(&ZuneHTTPInterceptor::RequestWorkerThread, this);
@@ -459,7 +480,7 @@ void ZuneHTTPInterceptor::MonitorThread() {
 
             // We got real data!
             event_count++;
-            Log("Event #" + std::to_string(event_count) + ": 0x922d returned " +
+            VerboseLog("Event #" + std::to_string(event_count) + ": 0x922d returned " +
                 std::to_string(response_data.size()) + " bytes (after " +
                 std::to_string(poll_count) + " polls)");
 
@@ -471,7 +492,7 @@ void ZuneHTTPInterceptor::MonitorThread() {
                 hex_dump << buf;
             }
             if (response_data.size() > 64) hex_dump << "...";
-            Log("  Data: " + hex_dump.str());
+            VerboseLog("  Data: " + hex_dump.str());
 
             // Process the received packet (should contain PPP-framed HTTP data)
             ProcessPacket(response_data);
@@ -504,12 +525,12 @@ void ZuneHTTPInterceptor::ProcessPacket(const mtp::ByteArray& usb_data) {
             if ((i + 1) % 32 == 0) hex_dump << "\n  ";
         }
         if (usb_data.size() > 1024) hex_dump << "... (truncated)";
-        Log(hex_dump.str());
+        VerboseLog(hex_dump.str());
 
         // Step 0: Prepend any incomplete frame from previous USB packet
         mtp::ByteArray combined_data;
         if (!incomplete_ppp_frame_buffer_.empty()) {
-            Log("Prepending " + std::to_string(incomplete_ppp_frame_buffer_.size()) +
+            VerboseLog("Prepending " + std::to_string(incomplete_ppp_frame_buffer_.size()) +
                 " bytes from incomplete PPP frame buffer");
             combined_data.insert(combined_data.end(),
                                incomplete_ppp_frame_buffer_.begin(),
@@ -556,11 +577,11 @@ void ZuneHTTPInterceptor::ProcessPacket(const mtp::ByteArray& usb_data) {
             incomplete_ppp_frame_buffer_.clear();
         }
 
-        Log("Found " + std::to_string(frames.size()) + " PPP frame(s) in USB packet");
+        VerboseLog("Found " + std::to_string(frames.size()) + " PPP frame(s) in USB packet");
 
         // Step 2: Process each PPP frame
         for (size_t frame_idx = 0; frame_idx < frames.size(); frame_idx++) {
-            Log("Processing PPP frame " + std::to_string(frame_idx + 1) + "/" +
+            VerboseLog("Processing PPP frame " + std::to_string(frame_idx + 1) + "/" +
                 std::to_string(frames.size()) + " (" + std::to_string(frames[frame_idx].size()) + " bytes)");
             ProcessPPPFrame(frames[frame_idx]);
         }
@@ -609,7 +630,7 @@ void ZuneHTTPInterceptor::ProcessPPPFrame(const mtp::ByteArray& frame_data) {
                 uint8_t identifier = payload[1];
 
                 if (code == 1) {  // Config-Request
-                    Log("CCP Config-Request received (id=" + std::to_string(identifier) + "), sending Config-Reject");
+                    VerboseLog("CCP Config-Request received (id=" + std::to_string(identifier) + "), sending Config-Reject");
 
                     // Build Config-Reject response
                     mtp::ByteArray ccp_reject;
@@ -626,7 +647,7 @@ void ZuneHTTPInterceptor::ProcessPPPFrame(const mtp::ByteArray& frame_data) {
                     {
                         std::lock_guard<std::mutex> lock(response_queue_mutex_);
                         response_queue_.push_back(ccp_frame);
-                        Log("CCP Config-Reject queued (" + std::to_string(response_queue_.size()) + " total in queue)");
+                        VerboseLog("CCP Config-Reject queued (" + std::to_string(response_queue_.size()) + " total in queue)");
                     }
                     // NOTE: Do NOT drain here - causes deadlock! Monitoring loop will drain.
                 }
@@ -653,7 +674,7 @@ void ZuneHTTPInterceptor::ProcessPPPFrame(const mtp::ByteArray& frame_data) {
                                    (ip_header.protocol == 17) ? "UDP" :
                                    (ip_header.protocol == 1) ? "ICMP" :
                                    "OTHER(" + std::to_string(ip_header.protocol) + ")";
-        Log("IP packet: " + IPParser::IPToString(ip_header.src_ip) + " -> " +
+        VerboseLog("IP packet: " + IPParser::IPToString(ip_header.src_ip) + " -> " +
             IPParser::IPToString(ip_header.dst_ip) + " protocol=" + protocol_name);
 
         // Handle UDP (protocol 17) for DNS queries
@@ -682,7 +703,7 @@ void ZuneHTTPInterceptor::ProcessPPPFrame(const mtp::ByteArray& frame_data) {
         // Step 4: Parse TCP header and extract HTTP data
         TCPParser::TCPHeader tcp_header = TCPParser::ParseHeader(tcp_segment);
 
-        Log("TCP packet: " + IPParser::IPToString(ip_header.src_ip) + ":" +
+        VerboseLog("TCP packet: " + IPParser::IPToString(ip_header.src_ip) + ":" +
             std::to_string(tcp_header.src_port) + " -> " +
             IPParser::IPToString(ip_header.dst_ip) + ":" +
             std::to_string(tcp_header.dst_port) + " [" +
@@ -1199,7 +1220,7 @@ void ZuneHTTPInterceptor::ProcessPPPFrame(const mtp::ByteArray& frame_data) {
                 // No complete request found
                 if (pipelined_request_count == 0) {
                     // No requests processed yet - just buffering
-                    Log("TCP stream: buffering " + std::to_string(http_data.size()) +
+                    VerboseLog("TCP stream: buffering " + std::to_string(http_data.size()) +
                         " bytes (total: " + std::to_string(conn_state.http_buffer.size()) + " bytes)");
 
                     // Log buffer contents for debugging
@@ -1226,7 +1247,7 @@ void ZuneHTTPInterceptor::ProcessPPPFrame(const mtp::ByteArray& frame_data) {
 
             if (!valid_http_start) {
                 // This is stale data from a previous response, not a new request
-                Log("TCP stream: clearing " + std::to_string(conn_state.http_buffer.size()) +
+                VerboseLog("TCP stream: clearing " + std::to_string(conn_state.http_buffer.size()) +
                     " bytes of stale response data (found \\r\\n\\r\\n but no valid HTTP method)");
                 std::string preview = buffer_str.substr(0, std::min(size_t(50), buffer_str.size()));
                 for (char& c : preview) {
@@ -1241,12 +1262,12 @@ void ZuneHTTPInterceptor::ProcessPPPFrame(const mtp::ByteArray& frame_data) {
             pipelined_request_count++;
             std::string pipeline_info = pipelined_request_count > 1 ?
                 " (pipelined request #" + std::to_string(pipelined_request_count) + ")" : "";
-            Log("TCP stream: complete HTTP request received (" +
+            VerboseLog("TCP stream: complete HTTP request received (" +
                 std::to_string(header_end + 4) + " bytes)" + pipeline_info);
 
             // Log full buffer contents for debugging
             std::string full_request = buffer_str.substr(0, header_end + 4);
-            Log("  Full request: " + full_request.substr(0, std::min(size_t(200), full_request.size())));
+            VerboseLog("  Full request: " + full_request.substr(0, std::min(size_t(200), full_request.size())));
 
             // Extract just this request from the buffer
             mtp::ByteArray request_data(conn_state.http_buffer.begin(),
@@ -1350,7 +1371,7 @@ void ZuneHTTPInterceptor::RequestWorkerThread() {
                 const int min_gap_ms = 1000;
                 if (elapsed.count() < min_gap_ms) {
                     int delay_needed = min_gap_ms - elapsed.count();
-                    Log("Connection reuse throttle: delaying " + std::to_string(delay_needed) + "ms on " + conn_key +
+                    VerboseLog("Connection reuse throttle: delaying " + std::to_string(delay_needed) + "ms on " + conn_key +
                         " (last completion " + std::to_string(elapsed.count()) + "ms ago)");
                     std::this_thread::sleep_for(std::chrono::milliseconds(delay_needed));
                 }
@@ -1392,6 +1413,20 @@ void ZuneHTTPInterceptor::RequestWorkerThread() {
 
             response = proxy_handler_->HandleRequest(simple_request);
         }
+        else if (config_.mode == InterceptionMode::Hybrid && hybrid_handler_) {
+            HTTPParser::HTTPRequest simple_request;
+            simple_request.method = request.method;
+            simple_request.path = request.path;
+            simple_request.protocol = request.protocol;
+            simple_request.headers = request.headers;
+
+            // Parse query string into query_params map
+            if (!request.query_string.empty() && request.query_string[0] == '?') {
+                simple_request.query_params = HTTPParser::ParseQueryString(request.query_string.substr(1));
+            }
+
+            response = hybrid_handler_->HandleRequest(simple_request);
+        }
         else {
             response = HTTPParser::BuildErrorResponse(503, "Service not configured");
         }
@@ -1413,7 +1448,7 @@ void ZuneHTTPInterceptor::RequestWorkerThread() {
                 const int min_gap_ms = 1500;
                 if (elapsed.count() < min_gap_ms) {
                     int delay_needed = min_gap_ms - elapsed.count();
-                    Log("Global large image throttle: delaying " + std::to_string(delay_needed) + "ms for " +
+                    VerboseLog("Global large image throttle: delaying " + std::to_string(delay_needed) + "ms for " +
                         std::to_string(response.body.size()) + " byte response " +
                         "(last large start " + std::to_string(elapsed.count()) + "ms ago)");
                     std::this_thread::sleep_for(std::chrono::milliseconds(delay_needed));
@@ -1422,7 +1457,7 @@ void ZuneHTTPInterceptor::RequestWorkerThread() {
 
             // Record start time for this large transmission
             last_large_response_start_time_ = std::chrono::steady_clock::now();
-            Log("Global large image throttle: Starting large transmission (" +
+            VerboseLog("Global large image throttle: Starting large transmission (" +
                 std::to_string(response.body.size()) + " bytes)");
         }
 
@@ -1518,17 +1553,17 @@ HTTPParser::HTTPResponse ZuneHTTPInterceptor::ProxyExternalHTTPRequest(
         " (" + std::to_string(response_body.size()) + " bytes)");
 
     // Log response headers
-    Log("Response headers:");
+    VerboseLog("Response headers:");
     for (const auto& header : response_headers) {
-        Log("  " + header.first + ": " + header.second);
+        VerboseLog("  " + header.first + ": " + header.second);
     }
 
     // Log response body (first 200 chars)
     if (!response_body.empty()) {
         std::string body_preview = response_body.substr(0, std::min<size_t>(200, response_body.size()));
-        Log("Response body preview: " + body_preview);
+        VerboseLog("Response body preview: " + body_preview);
         if (response_body.size() > 200) {
-            Log("  ... (+" + std::to_string(response_body.size() - 200) + " more bytes)");
+            VerboseLog("  ... (+" + std::to_string(response_body.size() - 200) + " more bytes)");
         }
     }
 
@@ -1559,7 +1594,7 @@ void ZuneHTTPInterceptor::SendNextBatch(const std::string& conn_key) {
             std::lock_guard<std::mutex> trans_lock(transmissions_mutex_);
             auto trans_it = active_transmissions_.find(conn_key);
             if (trans_it == active_transmissions_.end()) {
-                Log("SendNextBatch: No active transmission for connection " + conn_key);
+                VerboseLog("SendNextBatch: No active transmission for connection " + conn_key);
                 return;
             }
 
@@ -1568,13 +1603,13 @@ void ZuneHTTPInterceptor::SendNextBatch(const std::string& conn_key) {
             // Check if transmission is complete
             if (trans_state.transmission_complete ||
                 trans_state.next_segment_index >= trans_state.queued_segments.size()) {
-                Log("SendNextBatch: Transmission already complete for " + conn_key);
+                VerboseLog("SendNextBatch: Transmission already complete for " + conn_key);
                 return;
             }
 
             // Handle fast retransmit (RFC 2581)
             if (trans_state.retransmit_needed) {
-                Log("SendNextBatch: Fast retransmit - resending segment " +
+                VerboseLog("SendNextBatch: Fast retransmit - resending segment " +
                     std::to_string(trans_state.retransmit_segment_index) +
                     "/" + std::to_string(trans_state.queued_segments.size()));
 
@@ -1594,7 +1629,7 @@ void ZuneHTTPInterceptor::SendNextBatch(const std::string& conn_key) {
                     // Clear retransmit flag
                     trans_state.retransmit_needed = false;
 
-                    Log("SendNextBatch: Retransmitted segment " +
+                    VerboseLog("SendNextBatch: Retransmitted segment " +
                         std::to_string(trans_state.retransmit_segment_index) +
                         " (" + std::to_string(retransmit_payload) + " bytes), next_segment=" +
                         std::to_string(trans_state.next_segment_index) + ", bytes_in_flight=" +
@@ -1607,7 +1642,7 @@ void ZuneHTTPInterceptor::SendNextBatch(const std::string& conn_key) {
                     for (const auto& frame : frames_to_send) {
                         response_queue_.push_back(frame);
                     }
-                    Log("SendNextBatch: Queued retransmit frame (total in queue: " +
+                    VerboseLog("SendNextBatch: Queued retransmit frame (total in queue: " +
                         std::to_string(response_queue_.size()) + ")");
                 }
 
@@ -1629,7 +1664,7 @@ void ZuneHTTPInterceptor::SendNextBatch(const std::string& conn_key) {
             if (trans_state.bytes_in_flight < effective_window) {
                 available_window = effective_window - trans_state.bytes_in_flight;
             } else {
-                Log("SendNextBatch: Window full (" + std::to_string(trans_state.bytes_in_flight) +
+                VerboseLog("SendNextBatch: Window full (" + std::to_string(trans_state.bytes_in_flight) +
                     " in flight, effective_window=" + std::to_string(effective_window) +
                     " (cwnd=" + std::to_string(trans_state.cwnd) +
                     ", receiver_window=" + std::to_string(trans_state.window_size) + ")), waiting for ACK");
@@ -1666,11 +1701,11 @@ void ZuneHTTPInterceptor::SendNextBatch(const std::string& conn_key) {
 
             // If no segments fit at all, we're done (window is too small or we're at the end)
             if (segments_to_send == 0) {
-                Log("SendNextBatch: No segments fit in window");
+                VerboseLog("SendNextBatch: No segments fit in window");
                 return;
             }
 
-            Log("SendNextBatch: Sending batch of " + std::to_string(segments_to_send) +
+            VerboseLog("SendNextBatch: Sending batch of " + std::to_string(segments_to_send) +
                 " segments (" + std::to_string(bytes_to_send) + " bytes) for " + conn_key);
 
             // Copy the PPP frames we need to send (they're pre-built and stored in queued_segments)
@@ -1686,7 +1721,7 @@ void ZuneHTTPInterceptor::SendNextBatch(const std::string& conn_key) {
             // Check if this is the last batch
             is_last_batch = (trans_state.next_segment_index >= trans_state.queued_segments.size());
 
-            Log("SendNextBatch: Progress: " + std::to_string(trans_state.next_segment_index) +
+            VerboseLog("SendNextBatch: Progress: " + std::to_string(trans_state.next_segment_index) +
                 "/" + std::to_string(trans_state.queued_segments.size()) + " segments sent" +
                 (is_last_batch ? " (LAST BATCH)" : ""));
 
@@ -1698,7 +1733,7 @@ void ZuneHTTPInterceptor::SendNextBatch(const std::string& conn_key) {
             for (const auto& frame : frames_to_send) {
                 response_queue_.push_back(frame);
             }
-            Log("SendNextBatch: Queued " + std::to_string(frames_to_send.size()) +
+            VerboseLog("SendNextBatch: Queued " + std::to_string(frames_to_send.size()) +
                 " frames (total in queue: " + std::to_string(response_queue_.size()) + ")");
         }
 
@@ -1712,7 +1747,7 @@ void ZuneHTTPInterceptor::SendNextBatch(const std::string& conn_key) {
 
 void ZuneHTTPInterceptor::SendHTTPResponse(const HTTPRequest& request,
                                           const HTTPParser::HTTPResponse& response) {
-    Log("Queueing HTTP response: " + std::to_string(response.status_code) +
+    VerboseLog("Queueing HTTP response: " + std::to_string(response.status_code) +
         " (" + std::to_string(response.body.size()) + " bytes)");
 
     try {
@@ -1757,7 +1792,7 @@ void ZuneHTTPInterceptor::SendHTTPResponse(const HTTPRequest& request,
             body_offset += chunk_size;
         }
 
-        Log("TCP segmentation: " + std::to_string(segments.size()) + " segments " +
+        VerboseLog("TCP segmentation: " + std::to_string(segments.size()) + " segments " +
             "(header: " + std::to_string(segments[0].size()) + " bytes, " +
             "body: " + std::to_string(http_data.size() - header_end) + " bytes in " +
             std::to_string(segments.size() - 1) + " segments)");
@@ -1853,7 +1888,7 @@ void ZuneHTTPInterceptor::SendHTTPResponse(const HTTPRequest& request,
             trans_state.queued_segments.push_back(ppp_frame);
             trans_state.segment_payload_sizes.push_back(segment_data.size());
 
-            Log("  Segment " + std::to_string(i+1) + "/" + std::to_string(segments.size()) +
+            VerboseLog("  Segment " + std::to_string(i+1) + "/" + std::to_string(segments.size()) +
                 ": SEQ=" + std::to_string(current_seq) + ", " + std::to_string(segment_data.size()) +
                 " bytes payload, " + std::to_string(ppp_frame.size()) + " bytes PPP frame");
 
@@ -1861,13 +1896,13 @@ void ZuneHTTPInterceptor::SendHTTPResponse(const HTTPRequest& request,
             current_seq += segment_data.size();
         }
 
-        Log("HTTP response prepared: " + std::to_string(segments.size()) + " segments ready for transmission");
+        VerboseLog("HTTP response prepared: " + std::to_string(segments.size()) + " segments ready for transmission");
 
         // Initialize congestion control state (RFC 5681)
         // Start with 3 MSS (conservative initial window, matches lwIP and RFC 5681)
         trans_state.cwnd = 3 * HTTPResponseTransmissionState::mss;
         trans_state.ssthresh = 65535;  // Large initial ssthresh
-        Log("Congestion control initialized: cwnd=" + std::to_string(trans_state.cwnd) +
+        VerboseLog("Congestion control initialized: cwnd=" + std::to_string(trans_state.cwnd) +
             ", ssthresh=" + std::to_string(trans_state.ssthresh));
 
         // FIX: Use transmission key that includes base_seq to support multiple HTTP responses
@@ -1880,7 +1915,7 @@ void ZuneHTTPInterceptor::SendHTTPResponse(const HTTPRequest& request,
             active_transmissions_[trans_key] = trans_state;
         }
 
-        Log("Transmission key: " + trans_key + " (allows concurrent HTTP responses on same TCP connection)");
+        VerboseLog("Transmission key: " + trans_key + " (allows concurrent HTTP responses on same TCP connection)");
 
         // Send the first batch immediately (2-4 segments)
         // Subsequent batches will be sent as ACKs arrive
@@ -1937,7 +1972,7 @@ void ZuneHTTPInterceptor::SendTCPResponse(uint32_t src_ip, uint16_t src_port,
         {
             std::lock_guard<std::mutex> lock(response_queue_mutex_);
             response_queue_.push_back(ppp_frame);
-            Log("TCP " + TCPParser::FlagsToString(flags) + " queued: " +
+            VerboseLog("TCP " + TCPParser::FlagsToString(flags) + " queued: " +
                 IPParser::IPToString(src_ip) + ":" + std::to_string(src_port) + " -> " +
                 IPParser::IPToString(dst_ip) + ":" + std::to_string(dst_port) +
                 " (" + std::to_string(response_queue_.size()) + " total in queue)");
@@ -1994,7 +2029,7 @@ void ZuneHTTPInterceptor::SendTCPResponseWithData(uint32_t src_ip, uint16_t src_
         {
             std::lock_guard<std::mutex> lock(response_queue_mutex_);
             response_queue_.push_back(ppp_frame);
-            Log("TCP " + TCPParser::FlagsToString(flags) + " with data queued: " +
+            VerboseLog("TCP " + TCPParser::FlagsToString(flags) + " with data queued: " +
                 IPParser::IPToString(src_ip) + ":" + std::to_string(src_port) + " -> " +
                 IPParser::IPToString(dst_ip) + ":" + std::to_string(dst_port) +
                 " (data: " + std::to_string(data.size()) + " bytes, " +
@@ -2021,7 +2056,7 @@ void ZuneHTTPInterceptor::DrainResponseQueue() {
         return;  // Nothing to drain
     }
 
-    Log("Draining " + std::to_string(initial_queue_size) + " queued frame(s) via 0x922c");
+    VerboseLog("Draining " + std::to_string(initial_queue_size) + " queued frame(s) via 0x922c");
 
     // Drain the ENTIRE queue, sending back-to-back without polling
     while (true) {
@@ -2059,7 +2094,7 @@ void ZuneHTTPInterceptor::DrainResponseQueue() {
                                             response_queue_.front().end());
                     response_queue_[0] = remainder;
 
-                    Log("  Split frame: sent " + std::to_string(space_left) + " bytes, " +
+                    VerboseLog("  Split frame: sent " + std::to_string(space_left) + " bytes, " +
                         std::to_string(remainder.size()) + " bytes remaining");
                     break;  // Transfer full, send it
                 } else {
@@ -2080,7 +2115,7 @@ void ZuneHTTPInterceptor::DrainResponseQueue() {
                     remaining_frames = response_queue_.size();
                 }
 
-                Log("  ✓ Sent " + std::to_string(combined_payload.size()) + " bytes via 0x922c" +
+                VerboseLog("  ✓ Sent " + std::to_string(combined_payload.size()) + " bytes via 0x922c" +
                     (remaining_frames == 0 ? "" : " (" + std::to_string(remaining_frames) + " frames remaining)"));
             } catch (const std::exception& e) {
                 Log("Error sending via 0x922c: " + std::string(e.what()));
@@ -2089,7 +2124,7 @@ void ZuneHTTPInterceptor::DrainResponseQueue() {
         }
     }
 
-    Log("Queue drained - sent all data back-to-back");
+    VerboseLog("Queue drained - sent all data back-to-back");
 }
 
 mtp::ByteArray ZuneHTTPInterceptor::BuildPPPFrame(const HTTPRequest& request,
@@ -2163,13 +2198,28 @@ void ZuneHTTPInterceptor::Log(const std::string& message) {
     }
 }
 
+void ZuneHTTPInterceptor::VerboseLog(const std::string& message) {
+    if (verbose_logging_) {
+        Log(message);
+    }
+}
+
+void ZuneHTTPInterceptor::SetVerboseLogging(bool enable) {
+    verbose_logging_ = enable;
+    if (!enable) {
+        Log("Verbose network logging disabled");
+    } else {
+        Log("Verbose network logging enabled");
+    }
+}
+
 void ZuneHTTPInterceptor::HandleIPCPPacket(const mtp::ByteArray& ipcp_data) {
     // IPCP negotiation is handled in TriggerNetworkMode() before monitoring thread starts.
     // If we receive IPCP here, it means the device is retransmitting because negotiation
     // wasn't completed properly. Just log it for debugging.
     try {
         IPCPParser::IPCPPacket packet = IPCPParser::ParsePacket(ipcp_data);
-        Log("IPCP packet received in monitoring thread: code=" + std::to_string(packet.code) +
+        VerboseLog("IPCP packet received in monitoring thread: code=" + std::to_string(packet.code) +
             " id=" + std::to_string(packet.identifier) + " (unexpected - negotiation should be complete)");
     } catch (const std::exception& e) {
         Log("Error parsing IPCP packet: " + std::string(e.what()));
@@ -2188,6 +2238,13 @@ void ZuneHTTPInterceptor::InitializeDNSForTesting(const std::string& server_ip) 
 }
 
 void ZuneHTTPInterceptor::EnableNetworkPolling() {
+    // Start monitoring thread if not already started
+    if (!monitor_thread_) {
+        Log("Starting monitoring thread...");
+        monitor_thread_ = std::make_unique<std::thread>(&ZuneHTTPInterceptor::MonitorThread, this);
+        Log("Monitoring thread started");
+    }
+
     Log("Network polling enabled - monitoring thread will now poll with 0x922d");
     network_polling_enabled_.store(true);
 }
@@ -2265,7 +2322,7 @@ void ZuneHTTPInterceptor::HandleDNSQuery(const mtp::ByteArray& ip_packet) {
         {
             std::lock_guard<std::mutex> lock(response_queue_mutex_);
             response_queue_.push_back(ppp_frame);
-            Log("DNS response queued for " + hostname +
+            VerboseLog("DNS response queued for " + hostname +
                 " (" + std::to_string(response_queue_.size()) + " total in queue)");
         }
         // FIX: Drain immediately after queueing DNS response
@@ -2273,5 +2330,33 @@ void ZuneHTTPInterceptor::HandleDNSQuery(const mtp::ByteArray& ip_packet) {
 
     } catch (const std::exception& e) {
         Log("Error handling DNS query: " + std::string(e.what()));
+    }
+}
+
+// ============================================================================
+// Hybrid Mode Callback Setters
+// ============================================================================
+
+void ZuneHTTPInterceptor::SetPathResolverCallback(PathResolverCallback callback, void* user_data) {
+    std::lock_guard<std::mutex> lock(callback_mutex_);
+
+    path_resolver_callback_ = callback;
+    path_resolver_user_data_ = user_data;
+
+    // Forward to HybridModeHandler if it exists
+    if (hybrid_handler_) {
+        hybrid_handler_->SetPathResolverCallback(callback, user_data);
+    }
+}
+
+void ZuneHTTPInterceptor::SetCacheStorageCallback(CacheStorageCallback callback, void* user_data) {
+    std::lock_guard<std::mutex> lock(callback_mutex_);
+
+    cache_storage_callback_ = callback;
+    cache_storage_user_data_ = user_data;
+
+    // Forward to HybridModeHandler if it exists
+    if (hybrid_handler_) {
+        hybrid_handler_->SetCacheStorageCallback(callback, user_data);
     }
 }

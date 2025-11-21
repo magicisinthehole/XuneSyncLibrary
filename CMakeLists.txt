@@ -135,6 +135,7 @@ add_library(zune_wireless SHARED
     lib/src/protocols/http/HTTPParser.cpp
     lib/src/protocols/http/StaticModeHandler.cpp
     lib/src/protocols/http/ProxyModeHandler.cpp
+    lib/src/protocols/http/HybridModeHandler.cpp
 )
 
 target_include_directories(zune_wireless PUBLIC
@@ -201,6 +202,7 @@ add_executable(test_library_json
     lib/src/protocols/http/HTTPParser.cpp
     lib/src/protocols/http/StaticModeHandler.cpp
     lib/src/protocols/http/ProxyModeHandler.cpp
+    lib/src/protocols/http/HybridModeHandler.cpp
 )
 
 target_include_directories(test_library_json PRIVATE
@@ -246,6 +248,7 @@ add_executable(test_zmdb_fast
     lib/src/protocols/http/HTTPParser.cpp
     lib/src/protocols/http/StaticModeHandler.cpp
     lib/src/protocols/http/ProxyModeHandler.cpp
+    lib/src/protocols/http/HybridModeHandler.cpp
 )
 
 target_include_directories(test_zmdb_fast PRIVATE
@@ -291,6 +294,7 @@ add_executable(test_zmdb_extractor
     lib/src/protocols/http/HTTPParser.cpp
     lib/src/protocols/http/StaticModeHandler.cpp
     lib/src/protocols/http/ProxyModeHandler.cpp
+    lib/src/protocols/http/HybridModeHandler.cpp
 )
 
 target_include_directories(test_zmdb_extractor PRIVATE
@@ -336,6 +340,7 @@ add_executable(test_http_interceptor
     lib/src/protocols/http/HTTPParser.cpp
     lib/src/protocols/http/StaticModeHandler.cpp
     lib/src/protocols/http/ProxyModeHandler.cpp
+    lib/src/protocols/http/HybridModeHandler.cpp
 )
 
 target_include_directories(test_http_interceptor PRIVATE
@@ -382,6 +387,7 @@ add_executable(test_http_monitor_boot
     lib/src/protocols/http/HTTPParser.cpp
     lib/src/protocols/http/StaticModeHandler.cpp
     lib/src/protocols/http/ProxyModeHandler.cpp
+    lib/src/protocols/http/HybridModeHandler.cpp
 )
 
 target_include_directories(test_http_monitor_boot PRIVATE
@@ -428,6 +434,7 @@ add_executable(artist_images_tool_cli
     lib/src/protocols/http/HTTPParser.cpp
     lib/src/protocols/http/StaticModeHandler.cpp
     lib/src/protocols/http/ProxyModeHandler.cpp
+    lib/src/protocols/http/HybridModeHandler.cpp
 )
 
 target_include_directories(artist_images_tool_cli PRIVATE
@@ -480,6 +487,7 @@ add_executable(test_network_stack
     lib/src/protocols/http/HTTPParser.cpp
     lib/src/protocols/http/StaticModeHandler.cpp
     lib/src/protocols/http/ProxyModeHandler.cpp
+    lib/src/protocols/http/HybridModeHandler.cpp
 )
 
 target_include_directories(test_network_stack PRIVATE

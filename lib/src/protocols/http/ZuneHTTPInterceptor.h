@@ -21,6 +21,7 @@
 // Forward declarations
 class StaticModeHandler;
 class ProxyModeHandler;
+class HybridModeHandler;
 class PPPParser;
 
 // Need full HTTPParser definition for nested HTTPResponse type
@@ -30,7 +31,8 @@ class PPPParser;
 enum class InterceptionMode {
     Disabled = 0,
     Static = 1,
-    Proxy = 2
+    Proxy = 2,
+    Hybrid = 3
 };
 
 // Configuration structures
@@ -186,6 +188,12 @@ public:
     void SetLogCallback(LogCallback callback);
 
     /**
+     * Enable or disable verbose network logging
+     * @param enable true to enable verbose TCP/IP packet logging, false for errors only
+     */
+    void SetVerboseLogging(bool enable);
+
+    /**
      * Initialize HTTP subsystem on device
      * Sends the initialization command sequence to activate HTTP functionality
      * @return true if initialization succeeded
@@ -223,6 +231,68 @@ public:
      * This allows the monitoring thread to start polling with 0x922d
      */
     void EnableNetworkPolling();
+
+    // ========================================================================
+    // Hybrid Mode Callbacks (C# interop)
+    // ========================================================================
+
+    /**
+     * Path resolver callback type - resolves MusicBrainz UUID to local file path
+     *
+     * MEMORY CONTRACT:
+     * - Returns: File path as C string (owned by C# caller), or NULL if not found
+     * - The returned string must remain valid until the callback returns
+     * - C++ will copy the string immediately during the callback
+     * - C# is responsible for managing the string's lifetime and freeing it
+     * - C++ will NOT call free() on the returned pointer
+     *
+     * @param artist_uuid MusicBrainz UUID from HTTP request
+     * @param endpoint_type Endpoint type (biography, images, overview, artwork, etc.)
+     * @param resource_id Optional resource ID for specific images (may be NULL)
+     * @param user_data User-provided context pointer
+     * @return File path if found (C# manages memory), NULL if not found (will proxy)
+     */
+    using PathResolverCallback = const char* (*)(
+        const char* artist_uuid,
+        const char* endpoint_type,
+        const char* resource_id,
+        void* user_data
+    );
+
+    /**
+     * Cache storage callback type - stores proxy response to local filesystem
+     * @param artist_uuid MusicBrainz UUID from HTTP request
+     * @param endpoint_type Endpoint type (biography, images, overview, artwork, etc.)
+     * @param resource_id Optional resource ID for specific images
+     * @param data Response data (XML or binary)
+     * @param data_length Length of response data
+     * @param content_type Content type (text/xml, image/jpeg, etc.)
+     * @param user_data User-provided context pointer
+     * @return true if cached successfully, false if should not cache
+     */
+    using CacheStorageCallback = bool (*)(
+        const char* artist_uuid,
+        const char* endpoint_type,
+        const char* resource_id,
+        const void* data,
+        size_t data_length,
+        const char* content_type,
+        void* user_data
+    );
+
+    /**
+     * Set path resolver callback for hybrid mode
+     * @param callback Path resolver callback function
+     * @param user_data User-provided context pointer passed to callback
+     */
+    void SetPathResolverCallback(PathResolverCallback callback, void* user_data);
+
+    /**
+     * Set cache storage callback for hybrid mode
+     * @param callback Cache storage callback function
+     * @param user_data User-provided context pointer passed to callback
+     */
+    void SetCacheStorageCallback(CacheStorageCallback callback, void* user_data);
 
 private:
     /**
@@ -347,10 +417,16 @@ private:
      */
     void Log(const std::string& message);
 
+    /**
+     * Log a verbose message (only if verbose logging is enabled)
+     */
+    void VerboseLog(const std::string& message);
+
     // Member variables
     mtp::SessionPtr session_;
     InterceptorConfig config_;
     LogCallback log_callback_;
+    bool verbose_logging_ = true;  // Verbose network logging enabled by default
 
     // USB infrastructure from AFTL (extracted from session)
     mtp::usb::DevicePtr usb_device_;
@@ -373,6 +449,7 @@ private:
     // Mode handlers
     std::unique_ptr<StaticModeHandler> static_handler_;
     std::unique_ptr<ProxyModeHandler> proxy_handler_;
+    std::unique_ptr<HybridModeHandler> hybrid_handler_;
 
     // TCP connection tracking
     std::map<std::string, TCPConnectionState> connections_;
@@ -436,4 +513,11 @@ private:
     // Official software: median 1.278s gap between large image requests.
     std::chrono::steady_clock::time_point last_large_response_start_time_;
     std::mutex large_response_throttle_mutex_;
+
+    // Hybrid mode callbacks (C# interop)
+    PathResolverCallback path_resolver_callback_ = nullptr;
+    void* path_resolver_user_data_ = nullptr;
+    CacheStorageCallback cache_storage_callback_ = nullptr;
+    void* cache_storage_user_data_ = nullptr;
+    std::mutex callback_mutex_;  // Protects callback pointers and hybrid_handler_ access
 };
