@@ -155,7 +155,10 @@ ZUNE_WIRELESS_API void zune_device_free_music_library(ZuneMusicLibrary* library)
     for (uint32_t i = 0; i < library->track_count; ++i) {
         free((void*)library->tracks[i].title);
         free((void*)library->tracks[i].artist_name);
+        free((void*)library->tracks[i].artist_guid);
         free((void*)library->tracks[i].album_name);
+        free((void*)library->tracks[i].album_artist_name);
+        free((void*)library->tracks[i].album_artist_guid);
         free((void*)library->tracks[i].genre);
         free((void*)library->tracks[i].filename);
     }
@@ -165,6 +168,7 @@ ZUNE_WIRELESS_API void zune_device_free_music_library(ZuneMusicLibrary* library)
     for (uint32_t i = 0; i < library->album_count; ++i) {
         free((void*)library->albums[i].title);
         free((void*)library->albums[i].artist_name);
+        free((void*)library->albums[i].artist_guid);
         free((void*)library->albums[i].alb_reference);
     }
     delete[] library->albums;
@@ -215,7 +219,8 @@ ZUNE_WIRELESS_API ZuneUploadResult zune_device_upload_track(
     const char* genre,
     int track_number,
     const uint8_t* artwork_data,
-    uint32_t artwork_size
+    uint32_t artwork_size,
+    const char* artist_guid
 ) {
     ZuneUploadResult result = {0, 0, 0, -1};  // Initialize with failure status
 
@@ -230,7 +235,7 @@ ZUNE_WIRELESS_API ZuneUploadResult zune_device_upload_track(
             track_number,
             artwork_data,
             artwork_size,
-            "",  // artist_guid (empty string for default)
+            artist_guid ? artist_guid : "",  // Pass artist_guid from caller, default to empty if null
             &result.track_object_id,
             &result.album_object_id,
             &result.artist_object_id
@@ -301,6 +306,90 @@ ZUNE_WIRELESS_API uint32_t zune_device_get_audio_track_object_id(zune_device_han
     return 0;
 }
 
+ZUNE_WIRELESS_API int zune_device_retrofit_artist_guid(
+    zune_device_handle_t handle,
+    const char* artist_name,
+    const char* guid
+) {
+    if (!handle) {
+        return -1;
+    }
+
+    if (!artist_name || !guid) {
+        return -1;
+    }
+
+    try {
+        return static_cast<ZuneDevice*>(handle)->RetrofitArtistGuid(artist_name, guid);
+    } catch (const std::exception& e) {
+        // Log error if log callback is available
+        // For now, return error code
+        return -1;
+    }
+}
+
+ZUNE_WIRELESS_API int zune_device_retrofit_multiple_artist_guids(
+    zune_device_handle_t handle,
+    const ZuneArtistGuidMapping* mappings,
+    int mapping_count,
+    ZuneBatchRetrofitResult* result
+) {
+    // Initialize result
+    if (result) {
+        result->retrofitted_count = 0;
+        result->already_had_guid_count = 0;
+        result->not_found_count = 0;
+        result->error_count = 0;
+    }
+
+    if (!handle || !mappings || !result) {
+        if (result) {
+            result->error_count = mapping_count;
+        }
+        return -1;
+    }
+
+    if (mapping_count <= 0) {
+        return 0;  // No mappings, success
+    }
+
+    try {
+        // Convert C array to C++ vector
+        std::vector<ZuneDevice::ArtistGuidMapping> cpp_mappings;
+        cpp_mappings.reserve(mapping_count);
+
+        for (int i = 0; i < mapping_count; i++) {
+            if (mappings[i].artist_name && mappings[i].guid) {
+                cpp_mappings.push_back({
+                    std::string(mappings[i].artist_name),
+                    std::string(mappings[i].guid)
+                });
+            } else {
+                // Invalid mapping - count as error
+                result->error_count++;
+            }
+        }
+
+        // Call C++ batch retrofit method
+        auto cpp_result = static_cast<ZuneDevice*>(handle)->RetrofitMultipleArtistGuids(cpp_mappings);
+
+        // Copy results
+        result->retrofitted_count = cpp_result.retrofitted_count;
+        result->already_had_guid_count = cpp_result.already_had_guid_count;
+        result->not_found_count = cpp_result.not_found_count;
+        result->error_count += cpp_result.error_count;  // Add to existing errors from invalid mappings
+
+        return 0;
+
+    } catch (const std::exception& e) {
+        // Fatal error - mark all as errors
+        if (result) {
+            result->error_count = mapping_count;
+        }
+        return -1;
+    }
+}
+
 ZUNE_WIRELESS_API void zune_ssdp_start_discovery(device_discovered_callback_t callback) {
     if (!g_discovery) {
         g_discovery = std::make_unique<ssdp::SSDPDiscovery>();
@@ -324,27 +413,24 @@ ZUNE_WIRELESS_API bool zune_device_find_on_usb(const char** uuid, const char** d
         mtp::usb::ContextPtr ctx = std::make_shared<mtp::usb::Context>();
         mtp::DevicePtr device = mtp::Device::FindFirst(ctx, "Zune", true, false);
         if (device) {
-            auto session = device->OpenSession(1);
-            if (session) {
-                auto name_data = session->GetDeviceProperty(mtp::DeviceProperty(0xd402));
-                thread_local std::string name;
-                // The first byte is the length, the rest is a null-terminated UTF-16LE string
-                if (name_data.size() > 1) {
-                    std::string result;
-                    for (size_t i = 1; i < name_data.size() - 1; i += 2) {
-                        if (name_data[i+1] == 0 && name_data[i] != 0) {
-                            result += static_cast<char>(name_data[i]);
-                        }
-                    }
-                    name = result;
-                }
+            // Get device info from USB descriptor - NO MTP SESSION REQUIRED
+            // This matches Windows Zune behavior: enumerate USB devices first,
+            // then open session only once for all operations
+            auto info = device->GetInfo();
 
-                auto info = device->GetInfo();
-                thread_local std::string serial = info.SerialNumber;
-                *uuid = serial.c_str();
-                *device_name = name.c_str();
-                return true;
-            }
+            thread_local std::string serial;
+            thread_local std::string model;
+
+            serial = info.SerialNumber;
+            model = info.Model;  // e.g., "Zune HD", "Zune 120"
+
+            *uuid = serial.c_str();
+            *device_name = model.c_str();  // USB model name, not device friendly name
+
+            // Note: Device friendly name (property 0xd402, e.g., "Andy's Zune HD")
+            // should be retrieved AFTER opening the main session using zune_device_get_name()
+
+            return true;
         }
     } catch (const std::exception& e) {
         // Log the error?
@@ -374,6 +460,19 @@ int zune_device_start_artist_metadata_interceptor(
                 config->static_data_directory ? config->static_data_directory : "./artist_data";
         }
         else if (config->mode == ZUNE_ARTIST_METADATA_MODE_PROXY) {
+            cpp_config.proxy_config.catalog_server =
+                config->proxy_catalog_server ? config->proxy_catalog_server : "";
+            cpp_config.proxy_config.image_server =
+                config->proxy_image_server ? config->proxy_image_server : cpp_config.proxy_config.catalog_server;
+            cpp_config.proxy_config.art_server =
+                config->proxy_art_server ? config->proxy_art_server : cpp_config.proxy_config.catalog_server;
+            cpp_config.proxy_config.mix_server =
+                config->proxy_mix_server ? config->proxy_mix_server : cpp_config.proxy_config.catalog_server;
+            cpp_config.proxy_config.timeout_ms =
+                config->proxy_timeout_ms > 0 ? config->proxy_timeout_ms : 5000;
+        }
+        else if (config->mode == ZUNE_ARTIST_METADATA_MODE_HYBRID) {
+            // Hybrid mode requires proxy configuration (for fallback)
             cpp_config.proxy_config.catalog_server =
                 config->proxy_catalog_server ? config->proxy_catalog_server : "";
             cpp_config.proxy_config.image_server =
@@ -477,6 +576,88 @@ void zune_artist_metadata_config_free(ZuneArtistMetadataConfig* config) {
     if (config->proxy_mix_server) {
         free((void*)config->proxy_mix_server);
         config->proxy_mix_server = nullptr;
+    }
+}
+
+void zune_device_set_path_resolver_callback(
+    zune_device_handle_t handle,
+    zune_path_resolver_callback_t callback,
+    void* user_data)
+{
+    if (!handle) return;
+
+    try {
+        auto* device = static_cast<ZuneDevice*>(handle);
+        device->SetPathResolverCallback(callback, user_data);
+    } catch (const std::exception& e) {
+        // Log error if log callback is available
+        // For now, silently fail since this is a callback registration
+    }
+}
+
+void zune_device_set_cache_storage_callback(
+    zune_device_handle_t handle,
+    zune_cache_storage_callback_t callback,
+    void* user_data)
+{
+    if (!handle) return;
+
+    try {
+        auto* device = static_cast<ZuneDevice*>(handle);
+        device->SetCacheStorageCallback(callback, user_data);
+    } catch (const std::exception& e) {
+        // Log error if log callback is available
+        // For now, silently fail since this is a callback registration
+    }
+}
+
+bool zune_device_initialize_http_subsystem(zune_device_handle_t handle)
+{
+    if (!handle) return false;
+
+    try {
+        auto* device = static_cast<ZuneDevice*>(handle);
+        return device->InitializeHTTPSubsystem();
+    } catch (const std::exception& e) {
+        return false;
+    }
+}
+
+bool zune_device_trigger_network_mode(zune_device_handle_t handle)
+{
+    if (!handle) return false;
+
+    try {
+        auto* device = static_cast<ZuneDevice*>(handle);
+        device->TriggerNetworkMode();
+        return true;
+    } catch (const std::exception& e) {
+        // Return false so C# can retry
+        return false;
+    }
+}
+
+void zune_device_enable_network_polling(zune_device_handle_t handle)
+{
+    if (!handle) return;
+
+    try {
+        auto* device = static_cast<ZuneDevice*>(handle);
+        device->EnableNetworkPolling();
+    } catch (const std::exception& e) {
+        // Silently fail - errors are logged by ZuneDevice
+    }
+}
+
+void zune_device_set_verbose_network_logging(zune_device_handle_t handle, bool enable)
+{
+    if (!handle) return;
+
+    try {
+        auto* device = static_cast<ZuneDevice*>(handle);
+        device->SetVerboseNetworkLogging(enable);
+    } catch (const std::exception& e) {
+        // Silently fail - errors are logged by ZuneDevice
     }
 }
 

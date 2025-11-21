@@ -13,6 +13,7 @@
 #include <chrono>
 #include <cstring>
 #include <cctype>
+#include <regex>
 #include <mtp/metadata/Metadata.h>
 #include <mtp/metadata/Library.h>
 #include <mtp/ptp/ObjectPropertyListParser.h>
@@ -23,6 +24,15 @@
 using namespace mtp;
 
 // === Helper Functions ===
+
+// Validate MusicBrainz GUID format
+static bool IsValidGuid(const std::string& guid) {
+    // MusicBrainz GUID format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx (case-insensitive)
+    static const std::regex guid_pattern(
+        "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+    );
+    return std::regex_match(guid, guid_pattern);
+}
 
 // --- Embedded Phase 1 Property Data ---
 static const uint8_t prop_d230_data[] = { 0x7a, 0x24, 0xec, 0x12, 0x00, 0x00, 0x00, 0x00 };
@@ -177,6 +187,12 @@ void ZuneDevice::SetLogCallback(LogCallback callback) {
 
 void ZuneDevice::Log(const std::string& message) {
     if (log_callback_) {
+        log_callback_(message);
+    }
+}
+
+void ZuneDevice::VerboseLog(const std::string& message) {
+    if (verbose_logging_ && log_callback_) {
         log_callback_(message);
     }
 }
@@ -807,7 +823,10 @@ ZuneMusicLibrary* ZuneDevice::GetMusicLibrary() {
             const auto& t = library.tracks[i];
             result->tracks[i].title = strdup(t.title.c_str());
             result->tracks[i].artist_name = strdup(t.artist_name.c_str());
+            result->tracks[i].artist_guid = strdup(t.artist_guid.c_str());
             result->tracks[i].album_name = strdup(t.album_name.c_str());
+            result->tracks[i].album_artist_name = strdup(t.album_artist_name.c_str());
+            result->tracks[i].album_artist_guid = strdup(t.album_artist_guid.c_str());
             result->tracks[i].genre = strdup(t.genre.c_str());
             result->tracks[i].filename = strdup(t.filename.c_str());
             result->tracks[i].track_number = t.track_number;
@@ -823,6 +842,7 @@ ZuneMusicLibrary* ZuneDevice::GetMusicLibrary() {
         for (const auto& [atom_id, album] : library.album_metadata) {
             result->albums[album_idx].title = strdup(album.title.c_str());
             result->albums[album_idx].artist_name = strdup(album.artist_name.c_str());
+            result->albums[album_idx].artist_guid = strdup(album.artist_guid.c_str());
             result->albums[album_idx].alb_reference = strdup(album.alb_reference.c_str());
             result->albums[album_idx].release_year = album.release_year;
             result->albums[album_idx].atom_id = album.atom_id;
@@ -1086,6 +1106,12 @@ int ZuneDevice::RetrofitArtistGuid(
         return -1;
     }
 
+    if (!IsValidGuid(guid)) {
+        Log("Error: Invalid GUID format: " + guid);
+        Log("Expected format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx (hexadecimal)");
+        return -1;
+    }
+
     try {
         Log("=== Retrofit Artist GUID (Delete/Recreate Approach) ===");
         Log("Artist: " + artist_name);
@@ -1101,8 +1127,21 @@ int ZuneDevice::RetrofitArtistGuid(
             return -1;
         }
 
-        if (!artist->Guid.empty()) {
-            Log("Artist already has GUID - no retrofit needed");
+        // Check if artist has a valid GUID (not empty and not all null bytes)
+        bool hasValidGuid = !artist->Guid.empty();
+        if (hasValidGuid) {
+            // Check if GUID is not all zeros (null GUID = invalid)
+            hasValidGuid = false;
+            for (unsigned char byte : artist->Guid) {
+                if (byte != 0) {
+                    hasValidGuid = true;
+                    break;
+                }
+            }
+        }
+
+        if (hasValidGuid) {
+            Log("Artist already has valid GUID - no retrofit needed");
             return 0;
         }
 
@@ -1146,16 +1185,163 @@ int ZuneDevice::RetrofitArtistGuid(
         mtp_session_->DeleteObject(artist->Id);
         Log("✓ Old artist object deleted");
 
-        // Remove from library cache
-        library_->_artists.erase(artist_name);
-
         Log("✓ Artist retrofit complete!");
         Log("Artist recreated with GUID, all album/track references updated");
+
+        // Invalidate library cache to force reload of updated device state
+        Log("Invalidating library cache to force reload after retrofit");
+        library_.reset();
+        library_ = nullptr;
+
         return 0;
 
     } catch (const std::exception& e) {
         Log("Error during artist retrofit: " + std::string(e.what()));
         return -1;
+    }
+}
+
+ZuneDevice::BatchRetrofitResult ZuneDevice::RetrofitMultipleArtistGuids(
+    const std::vector<ArtistGuidMapping>& mappings)
+{
+    BatchRetrofitResult result = {0, 0, 0, 0};
+
+    if (mappings.empty()) {
+        Log("Batch retrofit: No artists provided");
+        return result;
+    }
+
+    if (!IsConnected()) {
+        Log("Error: Not connected to device");
+        result.error_count = mappings.size();
+        return result;
+    }
+
+    Log("=== Starting Batch Artist GUID Retrofit ===");
+    Log("Processing " + std::to_string(mappings.size()) + " artists");
+
+    try {
+        // Parse library ONCE for entire batch
+        EnsureLibraryInitialized();
+
+        // Process each artist
+        for (const auto& mapping : mappings) {
+            const std::string& artist_name = mapping.artist_name;
+            const std::string& guid = mapping.guid;
+
+            Log("Artist: " + artist_name);
+            Log("GUID: " + guid);
+
+            // Validate GUID format
+            if (!IsValidGuid(guid)) {
+                result.error_count++;
+                Log("  ✗ Invalid GUID format: " + guid);
+                Log("    Expected format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx (hexadecimal)");
+                continue;
+            }
+
+            try {
+                // Get existing artist
+                auto artist = library_->GetArtist(artist_name);
+
+                if (!artist) {
+                    // Artist doesn't exist yet - not an error, will be created during upload
+                    result.not_found_count++;
+                    Log("  Artist '" + artist_name + "' not found on device (will be created during upload)");
+                    continue;
+                }
+
+                // Check if artist has a valid GUID (not empty and not all null bytes)
+                bool hasValidGuid = !artist->Guid.empty();
+                if (hasValidGuid) {
+                    // Check if GUID is not all zeros (null GUID = invalid)
+                    hasValidGuid = false;
+                    for (unsigned char byte : artist->Guid) {
+                        if (byte != 0) {
+                            hasValidGuid = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (hasValidGuid) {
+                    // Artist already has valid GUID - fast path, no work needed
+                    result.already_had_guid_count++;
+                    Log("  Artist '" + artist_name + "' already has valid GUID - no retrofit needed");
+                    continue;
+                }
+
+                Log("  Original artist object ID: 0x" + std::to_string(artist->Id.Id));
+
+                // Find all albums by this artist
+                Log("  Finding albums by artist...");
+                auto albums = library_->GetAlbumsByArtist(artist);
+                Log("  Found " + std::to_string(albums.size()) + " albums");
+
+                // Load track references for each album
+                std::vector<std::vector<mtp::ObjectId>> album_tracks;
+                for (auto& album : albums) {
+                    Log("    Album: " + album->Name);
+                    auto tracks = library_->GetTracksForAlbum(album);
+                    Log("      Tracks: " + std::to_string(tracks.size()));
+                    album_tracks.push_back(tracks);
+                }
+
+                // Create new artist with GUID FIRST (before deleting old one)
+                Log("  Creating new artist object with GUID...");
+                auto new_artist = library_->CreateArtist(artist_name, guid);
+                Log("  ✓ New artist object created (ID: 0x" + std::to_string(new_artist->Id.Id) + ")");
+
+                // Update all albums to reference new artist (while old artist still exists)
+                Log("  Updating album references to new artist...");
+                for (size_t i = 0; i < albums.size(); ++i) {
+                    auto& album = albums[i];
+                    Log("    Updating album: " + album->Name);
+                    library_->UpdateAlbumArtist(album, new_artist);
+
+                    // Update all tracks in this album
+                    Log("    Updating " + std::to_string(album_tracks[i].size()) + " tracks");
+                    for (auto track_id : album_tracks[i]) {
+                        library_->UpdateTrackArtist(track_id, new_artist);
+                    }
+                }
+
+                // Now delete old artist object (after all references are updated)
+                Log("  Deleting old artist object...");
+                mtp_session_->DeleteObject(artist->Id);
+                Log("  ✓ Old artist object deleted");
+
+                result.retrofitted_count++;
+                Log("  ✓ Artist '" + artist_name + "' retrofitted successfully");
+
+            } catch (const std::exception& e) {
+                result.error_count++;
+                Log("  ✗ Error retrofitting artist '" + artist_name + "': " + std::string(e.what()));
+                // Continue with next artist
+            }
+        }
+
+        // Invalidate library cache ONCE if any changes were made
+        if (result.retrofitted_count > 0) {
+            Log("Invalidating library cache after " +
+                std::to_string(result.retrofitted_count) + " retrofits");
+            library_.reset();
+            library_ = nullptr;
+        }
+
+        Log("=== Batch Retrofit Complete ===");
+        Log("Results: " +
+            std::to_string(result.retrofitted_count) + " retrofitted, " +
+            std::to_string(result.already_had_guid_count) + " already had GUID, " +
+            std::to_string(result.not_found_count) + " not found, " +
+            std::to_string(result.error_count) + " errors");
+
+        return result;
+
+    } catch (const std::exception& e) {
+        Log("Fatal error during batch retrofit: " + std::string(e.what()));
+        result.error_count = mappings.size();
+        return result;
     }
 }
 

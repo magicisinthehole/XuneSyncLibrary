@@ -127,6 +127,27 @@ public:
         const std::string& guid
     );
 
+    // Batch retrofit result structure
+    struct BatchRetrofitResult {
+        int retrofitted_count;       // Artists actually modified (recreated with GUID)
+        int already_had_guid_count;  // Artists that already had GUIDs (no changes)
+        int not_found_count;         // Artists that don't exist on device yet
+        int error_count;             // Actual errors during retrofit
+    };
+
+    // Artist GUID mapping structure for batch operations
+    struct ArtistGuidMapping {
+        std::string artist_name;
+        std::string guid;
+    };
+
+    // Batch retrofit multiple artists efficiently (single library parse, single sync)
+    // Processes multiple artists in one call - optimal for batch uploads
+    // Returns detailed statistics about the retrofit operation
+    BatchRetrofitResult RetrofitMultipleArtistGuids(
+        const std::vector<ArtistGuidMapping>& mappings
+    );
+
     // --- Streaming/Partial Downloads ---
     mtp::ByteArray GetPartialObject(uint32_t object_id, uint64_t offset, uint32_t size);
     uint64_t GetObjectSize(uint32_t object_id);
@@ -156,6 +177,13 @@ public:
     InterceptorConfig GetHTTPInterceptorConfig() const;
     void TriggerNetworkMode();  // Send 0x922c(3,3) to initiate PPP/HTTP after track upload
     void EnableNetworkPolling();  // Start 0x922d polling - call AFTER TriggerNetworkMode()
+    void SetVerboseNetworkLogging(bool enable);  // Enable/disable verbose TCP/IP packet logging
+
+    // Callback registration for hybrid mode
+    using PathResolverCallback = const char* (*)(const char* artist_uuid, const char* endpoint_type, const char* resource_id, void* user_data);
+    using CacheStorageCallback = bool (*)(const char* artist_uuid, const char* endpoint_type, const char* resource_id, const void* data, size_t data_length, const char* content_type, void* user_data);
+    void SetPathResolverCallback(PathResolverCallback callback, void* user_data);
+    void SetCacheStorageCallback(CacheStorageCallback callback, void* user_data);
 
     // --- Raw USB Access (for monitoring without MTP session) ---
     // Extracts USB device/interface/endpoints from MTP session for raw monitoring
@@ -172,6 +200,7 @@ private:
     mtp::ByteArray LoadPropertyFromFile(const std::string& filename);
     std::string Utf16leToAscii(const mtp::ByteArray& data, bool is_guid = false);
     void Log(const std::string& message);
+    void VerboseLog(const std::string& message);  // Log only if verbose_logging_ is true
     void EnsureLibraryInitialized();
 
     // --- Member Variables ---
@@ -188,6 +217,7 @@ private:
     mtp::LibraryPtr library_;
 
     LogCallback log_callback_;
+    bool verbose_logging_ = true;  // Verbose network logging enabled by default
 
     // Cached device info strings (handle-scoped, thread-safe)
     mutable std::string cached_name_;

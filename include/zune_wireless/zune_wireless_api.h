@@ -23,6 +23,7 @@ typedef void (*log_callback_t)(const char* message);
 typedef void (*device_discovered_callback_t)(const char* ip_address, const char* uuid);
 
 #include <stdint.h>
+#include <stddef.h>
 
 // Struct to pass file info between C++ and C#
 struct ZuneObjectInfo {
@@ -36,7 +37,10 @@ struct ZuneObjectInfo {
 struct ZuneMusicTrack {
     const char* title;
     const char* artist_name;
+    const char* artist_guid;        // Artist GUID (MusicBrainz UUID, optional)
     const char* album_name;
+    const char* album_artist_name;  // Album artist name (may differ from track artist)
+    const char* album_artist_guid;  // Album artist GUID (optional)
     const char* genre;
     const char* filename;
     int track_number;
@@ -48,6 +52,7 @@ struct ZuneMusicTrack {
 struct ZuneMusicAlbum {
     const char* title;
     const char* artist_name;
+    const char* artist_guid;    // Album artist GUID (optional)
     const char* alb_reference;  // For artwork lookup (e.g., "Artist--Album.alb")
     int release_year;
     uint32_t atom_id;
@@ -128,7 +133,8 @@ ZUNE_WIRELESS_API ZuneUploadResult zune_device_upload_track(
     const char* genre,
     int track_number,
     const uint8_t* artwork_data,
-    uint32_t artwork_size
+    uint32_t artwork_size,
+    const char* artist_guid
 );
 
 // Streaming/Partial Downloads
@@ -164,6 +170,77 @@ ZUNE_WIRELESS_API uint32_t zune_device_get_audio_track_object_id(
     uint32_t album_object_id
 );
 
+// Retrofit existing artist with MusicBrainz GUID
+// Updates an existing artist on the device to include a MusicBrainz GUID.
+// This operation:
+//   1. Creates a new artist object with the GUID
+//   2. Updates all albums and tracks to reference the new artist
+//   3. Deletes the old artist object
+//   4. Triggers device to auto-fetch metadata
+//
+// Parameters:
+//   handle - Device handle from zune_device_create()
+//   artist_name - Exact name of the artist to retrofit (must match existing artist)
+//   guid - MusicBrainz GUID in UUID format (e.g., "7fb57fba-a6ef-44c2-abab-2fa3bdee607e")
+// Returns:
+//   0 on success, negative error code on failure
+// Note:
+//   - If artist already has a GUID, this is a no-op (returns 0)
+//   - If artist doesn't exist on device, returns error
+//   - All album and track references are automatically updated
+ZUNE_WIRELESS_API int zune_device_retrofit_artist_guid(
+    zune_device_handle_t handle,
+    const char* artist_name,
+    const char* guid
+);
+
+// Artist GUID mapping structure for batch retrofit operations
+typedef struct {
+    const char* artist_name;  // Artist name (must match existing artist on device)
+    const char* guid;         // MusicBrainz GUID in UUID format
+} ZuneArtistGuidMapping;
+
+// Batch retrofit result structure
+typedef struct {
+    int retrofitted_count;       // Number of artists successfully retrofitted (modified)
+    int already_had_guid_count;  // Number of artists that already had GUIDs (no changes)
+    int not_found_count;         // Number of artists not found on device (will be created during upload)
+    int error_count;             // Number of errors encountered
+} ZuneBatchRetrofitResult;
+
+// Batch Artist GUID Retrofit
+//
+// Retrofits multiple artists with MusicBrainz GUIDs in a single optimized operation.
+// This is significantly faster than calling zune_device_retrofit_artist_guid() multiple
+// times because it parses the device library only once and syncs only once.
+//
+// Parameters:
+//   handle - Device handle from zune_device_create()
+//   mappings - Array of artist name/GUID pairs
+//   mapping_count - Number of mappings in the array
+//   result - Output structure with detailed statistics (caller allocated)
+//
+// Returns:
+//   0 on success (even if some artists fail - check result for details)
+//   negative error code on fatal failure
+//
+// Performance: For N artists, this is approximately N times faster than individual retrofits
+// because it performs only 1 library parse and 1 library sync instead of N of each.
+//
+// Example:
+//   ZuneArtistGuidMapping mappings[] = {
+//       {"Radiohead", "a74b1b7f-71a5-4011-9441-d0b5e4122711"},
+//       {"The Beatles", "b10bbbfc-cf9e-42e0-be17-e2c3e1d2600d"}
+//   };
+//   ZuneBatchRetrofitResult result;
+//   zune_device_retrofit_multiple_artist_guids(handle, mappings, 2, &result);
+ZUNE_WIRELESS_API int zune_device_retrofit_multiple_artist_guids(
+    zune_device_handle_t handle,
+    const ZuneArtistGuidMapping* mappings,
+    int mapping_count,
+    ZuneBatchRetrofitResult* result
+);
+
 // USB Discovery functions
 ZUNE_WIRELESS_API bool zune_device_find_on_usb(const char** uuid, const char** device_name);
 
@@ -179,7 +256,8 @@ ZUNE_WIRELESS_API void zune_ssdp_stop_discovery();
 typedef enum {
     ZUNE_ARTIST_METADATA_MODE_DISABLED = 0,
     ZUNE_ARTIST_METADATA_MODE_STATIC = 1,    // Serve from local files
-    ZUNE_ARTIST_METADATA_MODE_PROXY = 2      // Forward to HTTP server
+    ZUNE_ARTIST_METADATA_MODE_PROXY = 2,     // Forward to HTTP server
+    ZUNE_ARTIST_METADATA_MODE_HYBRID = 3     // Try local files first, proxy if not found, cache responses
 } ZuneArtistMetadataMode;
 
 /// Configuration for artist metadata interception
@@ -247,6 +325,102 @@ ZUNE_WIRELESS_API ZuneArtistMetadataConfig zune_artist_metadata_config_proxy(
 
 /// Free strings allocated by config helpers
 ZUNE_WIRELESS_API void zune_artist_metadata_config_free(ZuneArtistMetadataConfig* config);
+
+// ============================================================================
+// Artist Metadata Hybrid Mode Callbacks (C# interop)
+// ============================================================================
+
+/// Path resolver callback - resolves MusicBrainz UUID to local file path
+///
+/// MEMORY CONTRACT:
+/// - Returns: File path as C string (owned by C# caller), or NULL if not found
+/// - The returned string must remain valid until the callback returns
+/// - C++ will copy the string immediately during the callback
+/// - C# is responsible for managing the string's lifetime and freeing it
+/// - C++ will NOT call free() on the returned pointer
+///
+/// @param artist_uuid MusicBrainz UUID from HTTP request
+/// @param endpoint_type Endpoint type (biography, images, overview, artwork, etc.)
+/// @param resource_id Optional resource ID for specific images (may be NULL)
+/// @param user_data User-provided context pointer
+/// @return File path if found (C# manages memory), NULL if not found (will proxy)
+typedef const char* (*zune_path_resolver_callback_t)(
+    const char* artist_uuid,
+    const char* endpoint_type,
+    const char* resource_id,
+    void* user_data
+);
+
+/// Cache storage callback - stores proxy response to local filesystem
+/// @param artist_uuid MusicBrainz UUID from HTTP request
+/// @param endpoint_type Endpoint type (biography, images, overview, artwork, etc.)
+/// @param resource_id Optional resource ID for specific images
+/// @param data Response data (XML or binary)
+/// @param data_length Length of response data
+/// @param content_type Content type (text/xml, image/jpeg, etc.)
+/// @param user_data User-provided context pointer
+/// @return true if cached successfully, false if should not cache
+typedef bool (*zune_cache_storage_callback_t)(
+    const char* artist_uuid,
+    const char* endpoint_type,
+    const char* resource_id,
+    const void* data,
+    size_t data_length,
+    const char* content_type,
+    void* user_data
+);
+
+/// Register path resolver callback for hybrid mode
+/// @param handle Device handle
+/// @param callback Path resolver callback function
+/// @param user_data User-provided context pointer passed to callback
+ZUNE_WIRELESS_API void zune_device_set_path_resolver_callback(
+    zune_device_handle_t handle,
+    zune_path_resolver_callback_t callback,
+    void* user_data
+);
+
+/// Register cache storage callback for hybrid mode
+/// @param handle Device handle
+/// @param callback Cache storage callback function
+/// @param user_data User-provided context pointer passed to callback
+ZUNE_WIRELESS_API void zune_device_set_cache_storage_callback(
+    zune_device_handle_t handle,
+    zune_cache_storage_callback_t callback,
+    void* user_data
+);
+
+// ============================================================================
+// HTTP Network Operations
+// ============================================================================
+
+/// Initialize HTTP subsystem on device (MTP operations)
+/// @param handle Device handle
+/// @return true on success, false on failure
+ZUNE_WIRELESS_API bool zune_device_initialize_http_subsystem(
+    zune_device_handle_t handle
+);
+
+/// Trigger network mode (PPP/IPCP negotiation)
+/// @param handle Device handle
+/// @return true on success, false on failure (allows C# to retry)
+ZUNE_WIRELESS_API bool zune_device_trigger_network_mode(
+    zune_device_handle_t handle
+);
+
+/// Enable network polling (continuous 0x922d at 15ms intervals)
+/// @param handle Device handle
+ZUNE_WIRELESS_API void zune_device_enable_network_polling(
+    zune_device_handle_t handle
+);
+
+/// Enable or disable verbose network logging
+/// @param handle Device handle
+/// @param enable true to enable verbose TCP/IP packet logging, false for errors only
+ZUNE_WIRELESS_API void zune_device_set_verbose_network_logging(
+    zune_device_handle_t handle,
+    bool enable
+);
 
 
 #ifdef __cplusplus
