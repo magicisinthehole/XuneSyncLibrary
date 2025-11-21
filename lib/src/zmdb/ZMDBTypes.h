@@ -35,8 +35,10 @@ namespace Schema {
 struct ZMDBTrack {
     std::string title;
     std::string artist_name;
+    std::string artist_guid;        // Artist GUID from field 0x14 (optional)
     std::string album_name;
     std::string album_artist_name;
+    std::string album_artist_guid;  // Album artist GUID (optional)
     std::string genre;
     int track_number = 0;
     int disc_number = 0;
@@ -55,16 +57,19 @@ struct ZMDBTrack {
 struct ZMDBAlbum {
     std::string title;
     std::string artist_name;
+    std::string artist_guid;    // Album artist GUID (optional)
     int release_year = 0;
     std::string alb_reference;  // .alb file reference
     uint32_t album_pid = 0;  // Property ID (0x0600xxxx format)
     uint32_t atom_id = 0;
+    uint32_t artist_ref = 0;    // Artist atom_id reference (offset 0-3 in record)
 };
 
 // Artist structure
 struct ZMDBArtist {
     std::string name;
     std::string filename;  // .art file reference
+    std::string guid;      // Artist GUID from field 0x14 (optional)
     uint32_t atom_id = 0;
 };
 

@@ -1,6 +1,8 @@
 #include "ZMDBUtils.h"
 #include <cstring>
 #include <algorithm>
+#include <sstream>
+#include <iomanip>
 
 namespace zmdb {
 
@@ -229,6 +231,32 @@ uint16_t read_uint16_le(const std::vector<uint8_t>& data, size_t offset) {
     uint16_t value;
     std::memcpy(&value, &data[offset], 2);
     return value;  // Assuming little-endian host
+}
+
+std::string parse_windows_guid(const std::vector<uint8_t>& data) {
+    if (data.size() < 16) {
+        return "";
+    }
+
+    // Parse Windows GUID structure (little-endian for first 3 fields)
+    uint32_t data1 = read_uint32_le(data, 0);
+    uint16_t data2 = read_uint16_le(data, 4);
+    uint16_t data3 = read_uint16_le(data, 6);
+
+    // Format as GUID string: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+    std::stringstream ss;
+    ss << std::hex << std::setfill('0')
+       << std::setw(8) << data1 << "-"
+       << std::setw(4) << data2 << "-"
+       << std::setw(4) << data3 << "-"
+       << std::setw(2) << static_cast<int>(data[8])
+       << std::setw(2) << static_cast<int>(data[9]) << "-";
+
+    for (int i = 10; i < 16; i++) {
+        ss << std::setw(2) << static_cast<int>(data[i]);
+    }
+
+    return ss.str();
 }
 
 } // namespace zmdb

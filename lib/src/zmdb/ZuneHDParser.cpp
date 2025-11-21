@@ -207,15 +207,38 @@ std::optional<ZMDBTrack> ZuneHDParser::parse_music_track(
         auto album_info = resolve_album_info(album_ref);
         if (album_info.has_value()) {
             track.album_name = album_info->second;
-            // Get album artist from album
+            // Get album artist name and GUID from album
             if (album_cache_.count(album_ref)) {
                 track.album_artist_name = album_cache_[album_ref].artist_name;
+                track.album_artist_guid = album_cache_[album_ref].artist_guid;
             }
         }
     }
 
     if (artist_ref != 0) {
-        track.artist_name = resolve_artist_name(artist_ref);
+        // Ensure artist is fully parsed and cached
+        if (!artist_cache_.count(artist_ref)) {
+            if (index_table_.count(artist_ref)) {
+                uint32_t record_offset = index_table_[artist_ref];
+                auto record_opt = read_record_at_offset(zmdb_data_, record_offset);
+                if (record_opt.has_value()) {
+                    const auto& rec_data = record_opt->second;
+                    uint32_t ref0 = read_uint32_le(rec_data, 0);
+                    if (ref0 != 0) {  // Skip GUID/root artists
+                        auto artist = parse_artist(rec_data, artist_ref);
+                        if (artist.has_value()) {
+                            artist_cache_[artist_ref] = artist.value();
+                        }
+                    }
+                }
+            }
+        }
+
+        // Get artist name and GUID from cache
+        if (artist_cache_.count(artist_ref)) {
+            track.artist_name = artist_cache_[artist_ref].name;
+            track.artist_guid = artist_cache_[artist_ref].guid;
+        }
     }
 
     if (genre_ref != 0) {
@@ -553,16 +576,21 @@ std::optional<ZMDBAlbum> ZuneHDParser::parse_album(
     album.atom_id = atom_id;
 
     // Album artist reference at offset 0
-    uint32_t artist_ref = read_uint32_le(record_data, 0);
+    album.artist_ref = read_uint32_le(record_data, 0);
 
     // Album title at offset 20 (UTF-8)
     if (record_data.size() > 20) {
         album.title = read_null_terminated_utf8(record_data, 20);
     }
 
-    // Resolve artist
-    if (artist_ref != 0) {
-        album.artist_name = resolve_artist_name(artist_ref);
+    // Resolve artist name and GUID
+    if (album.artist_ref != 0) {
+        album.artist_name = resolve_artist_name(album.artist_ref);
+
+        // Get artist GUID from cache if available
+        if (artist_cache_.count(album.artist_ref)) {
+            album.artist_guid = artist_cache_[album.artist_ref].guid;
+        }
     }
 
     // Parse filename from backwards varints (field 0x44)
@@ -601,6 +629,27 @@ std::optional<ZMDBArtist> ZuneHDParser::parse_artist(
     // Artist name at offset 4 (UTF-8)
     if (record_data.size() > 4) {
         artist.name = read_null_terminated_utf8(record_data, 4);
+    }
+
+    // Parse backwards varints for field 0x44 (filename) and 0x14 (GUID)
+    size_t entry_size = get_entry_size_for_schema(Schema::Artist);
+    if (entry_size > 0) {
+        auto fields = parse_backwards_varints(record_data, entry_size);
+        for (const auto& field : fields) {
+            // Field 0x44: UTF-16LE filename (.art reference)
+            if (field.field_id == 0x44 && field.field_size > 2) {
+                std::vector<uint8_t> utf16_data = field.field_data;
+                if (!utf16_data.empty() && utf16_data[0] == 0x00 && utf16_data.back() == 0x00) {
+                    utf16_data.erase(utf16_data.begin());
+                    utf16_data.pop_back();
+                }
+                artist.filename = utf16le_to_utf8(utf16_data);
+            }
+            // Field 0x14: Artist GUID (16 bytes, optional)
+            else if (field.field_id == 0x14 && field.field_size == 16) {
+                artist.guid = parse_windows_guid(field.field_data);
+            }
+        }
     }
 
     return artist;

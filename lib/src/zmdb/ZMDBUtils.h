@@ -107,4 +107,20 @@ int32_t read_int32_le(const std::vector<uint8_t>& data, size_t offset);
  */
 uint16_t read_uint16_le(const std::vector<uint8_t>& data, size_t offset);
 
+/**
+ * Parse Windows GUID from 16 bytes to string format.
+ *
+ * Windows GUID format (little-endian first 3 fields):
+ * - Data1: 4 bytes (uint32, LE)
+ * - Data2: 2 bytes (uint16, LE)
+ * - Data3: 2 bytes (uint16, LE)
+ * - Data4: 8 bytes (2+6 bytes, big-endian)
+ *
+ * Output format: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+ *
+ * @param data 16-byte GUID data
+ * @return GUID string or empty string if invalid
+ */
+std::string parse_windows_guid(const std::vector<uint8_t>& data);
+
 } // namespace zmdb
