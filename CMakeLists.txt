@@ -120,7 +120,9 @@ target_compile_options(aft-cli-static PRIVATE
 # Main library
 add_library(zune_wireless SHARED
     lib/src/ZuneDevice.cpp
-    lib/src/ZuneDeviceHTTP.cpp
+    lib/src/NetworkManager.cpp
+    lib/src/LibraryManager.cpp
+
     lib/src/ZMDBLibraryExtractor.cpp
     lib/src/zmdb/ZMDBParserBase.cpp
     lib/src/zmdb/ZMDBUtils.cpp
@@ -187,7 +189,9 @@ endif()
 add_executable(test_library_json
     tests/test_library_json.cpp
     lib/src/ZuneDevice.cpp
-    lib/src/ZuneDeviceHTTP.cpp
+    lib/src/NetworkManager.cpp
+    lib/src/LibraryManager.cpp
+
     lib/src/ZMDBLibraryExtractor.cpp
     lib/src/zmdb/ZMDBParserBase.cpp
     lib/src/zmdb/ZMDBUtils.cpp
@@ -233,7 +237,9 @@ target_compile_options(test_library_json PRIVATE
 add_executable(test_zmdb_fast
     tests/test_zmdb_fast.cpp
     lib/src/ZuneDevice.cpp
-    lib/src/ZuneDeviceHTTP.cpp
+    lib/src/NetworkManager.cpp
+    lib/src/LibraryManager.cpp
+
     lib/src/ZMDBLibraryExtractor.cpp
     lib/src/zmdb/ZMDBParserBase.cpp
     lib/src/zmdb/ZMDBUtils.cpp
@@ -279,7 +285,9 @@ target_compile_options(test_zmdb_fast PRIVATE
 add_executable(test_zmdb_extractor
     tests/test_zmdb_extractor.cpp
     lib/src/ZuneDevice.cpp
-    lib/src/ZuneDeviceHTTP.cpp
+    lib/src/NetworkManager.cpp
+    lib/src/LibraryManager.cpp
+
     lib/src/ZMDBLibraryExtractor.cpp
     lib/src/zmdb/ZMDBParserBase.cpp
     lib/src/zmdb/ZMDBUtils.cpp
@@ -325,7 +333,9 @@ target_compile_options(test_zmdb_extractor PRIVATE
 add_executable(test_http_interceptor
     tests/test_http_interceptor.cpp
     lib/src/ZuneDevice.cpp
-    lib/src/ZuneDeviceHTTP.cpp
+    lib/src/NetworkManager.cpp
+    lib/src/LibraryManager.cpp
+
     lib/src/ZMDBLibraryExtractor.cpp
     lib/src/zmdb/ZMDBParserBase.cpp
     lib/src/zmdb/ZMDBUtils.cpp
@@ -372,7 +382,9 @@ target_compile_options(test_http_interceptor PRIVATE
 add_executable(test_http_monitor_boot
     tests/test_http_monitor_boot.cpp
     lib/src/ZuneDevice.cpp
-    lib/src/ZuneDeviceHTTP.cpp
+    lib/src/NetworkManager.cpp
+    lib/src/LibraryManager.cpp
+
     lib/src/ZMDBLibraryExtractor.cpp
     lib/src/zmdb/ZMDBParserBase.cpp
     lib/src/zmdb/ZMDBUtils.cpp
@@ -419,7 +431,9 @@ target_compile_options(test_http_monitor_boot PRIVATE
 add_executable(artist_images_tool_cli
     tools/artist_images_tool_cli.cpp
     lib/src/ZuneDevice.cpp
-    lib/src/ZuneDeviceHTTP.cpp
+    lib/src/NetworkManager.cpp
+    lib/src/LibraryManager.cpp
+
     lib/src/ZMDBLibraryExtractor.cpp
     lib/src/zmdb/ZMDBParserBase.cpp
     lib/src/zmdb/ZMDBUtils.cpp

@@ -1,4 +1,4 @@
-#include "ZuneDevice.h"
+#include "NetworkManager.h"
 #include "protocols/http/ZuneHTTPInterceptor.h"
 #include "protocols/ppp/PPPParser.h"
 #include <iostream>
@@ -9,13 +9,29 @@
 
 using namespace mtp;
 
-// ============================================================================
-// HTTP Interceptor Methods
-// ============================================================================
+NetworkManager::NetworkManager(std::shared_ptr<mtp::Session> mtp_session, LogCallback log_callback)
+    : mtp_session_(mtp_session), log_callback_(log_callback) {
+}
 
-bool ZuneDevice::InitializeHTTPSubsystem() {
-    if (!device_ || !mtp_session_) {
-        Log("Error: Device not connected, cannot initialize HTTP subsystem");
+NetworkManager::~NetworkManager() {
+    StopHTTPInterceptor();
+}
+
+void NetworkManager::Log(const std::string& message) {
+    if (log_callback_) {
+        log_callback_(message);
+    }
+}
+
+void NetworkManager::VerboseLog(const std::string& message) {
+    if (verbose_logging_ && log_callback_) {
+        log_callback_(message);
+    }
+}
+
+bool NetworkManager::InitializeHTTPSubsystem() {
+    if (!mtp_session_) {
+        Log("Error: MTP session not initialized, cannot initialize HTTP subsystem");
         return false;
     }
 
@@ -82,9 +98,9 @@ bool ZuneDevice::InitializeHTTPSubsystem() {
     }
 }
 
-void ZuneDevice::StartHTTPInterceptor(const InterceptorConfig& config) {
-    if (!device_) {
-        throw std::runtime_error("Device not connected");
+void NetworkManager::StartHTTPInterceptor(const InterceptorConfig& config) {
+    if (!mtp_session_) {
+        throw std::runtime_error("MTP session not initialized");
     }
 
     if (http_interceptor_ && http_interceptor_->IsRunning()) {
@@ -101,7 +117,7 @@ void ZuneDevice::StartHTTPInterceptor(const InterceptorConfig& config) {
     // AFTER TriggerNetworkMode() completes to avoid race condition during IPCP handshake
 }
 
-void ZuneDevice::StopHTTPInterceptor() {
+void NetworkManager::StopHTTPInterceptor() {
     if (http_interceptor_) {
         Log("Stopping HTTP interceptor...");
         http_interceptor_->Stop();
@@ -109,7 +125,7 @@ void ZuneDevice::StopHTTPInterceptor() {
     }
 }
 
-void ZuneDevice::EnableNetworkPolling() {
+void NetworkManager::EnableNetworkPolling() {
     if (!http_interceptor_) {
         throw std::runtime_error("HTTP interceptor not running - call StartHTTPInterceptor() first");
     }
@@ -119,18 +135,18 @@ void ZuneDevice::EnableNetworkPolling() {
     Log("  ✓ Network polling enabled");
 }
 
-bool ZuneDevice::IsHTTPInterceptorRunning() const {
+bool NetworkManager::IsHTTPInterceptorRunning() const {
     return http_interceptor_ && http_interceptor_->IsRunning();
 }
 
-InterceptorConfig ZuneDevice::GetHTTPInterceptorConfig() const {
+InterceptorConfig NetworkManager::GetHTTPInterceptorConfig() const {
     if (http_interceptor_) {
         return http_interceptor_->GetConfig();
     }
     return InterceptorConfig{};
 }
 
-void ZuneDevice::TriggerNetworkMode() {
+void NetworkManager::TriggerNetworkMode() {
     if (!mtp_session_) {
         throw std::runtime_error("No active MTP session");
     }
@@ -610,9 +626,9 @@ void ZuneDevice::TriggerNetworkMode() {
     Log("✓ Network mode fully established - Bidirectional LCP and IPCP handshakes complete!");
 }
 
-USBHandlesWithEndpoints ZuneDevice::ExtractUSBHandles() {
+USBHandlesWithEndpoints NetworkManager::ExtractUSBHandles() {
     if (!mtp_session_) {
-        throw std::runtime_error("MTP session not initialized - call ConnectUSB() first");
+        throw std::runtime_error("MTP session not initialized");
     }
 
     Log("Extracting USB handles from MTP session...");
@@ -675,21 +691,21 @@ USBHandlesWithEndpoints ZuneDevice::ExtractUSBHandles() {
     return handles;
 }
 
-void ZuneDevice::SetPathResolverCallback(PathResolverCallback callback, void* user_data) {
+void NetworkManager::SetPathResolverCallback(PathResolverCallback callback, void* user_data) {
     if (!http_interceptor_) {
         throw std::runtime_error("HTTP interceptor not initialized - call StartHTTPInterceptor() first");
     }
     http_interceptor_->SetPathResolverCallback(callback, user_data);
 }
 
-void ZuneDevice::SetCacheStorageCallback(CacheStorageCallback callback, void* user_data) {
+void NetworkManager::SetCacheStorageCallback(CacheStorageCallback callback, void* user_data) {
     if (!http_interceptor_) {
         throw std::runtime_error("HTTP interceptor not initialized - call StartHTTPInterceptor() first");
     }
     http_interceptor_->SetCacheStorageCallback(callback, user_data);
 }
 
-void ZuneDevice::SetVerboseNetworkLogging(bool enable) {
+void NetworkManager::SetVerboseNetworkLogging(bool enable) {
     verbose_logging_ = enable;  // Set local verbose logging flag
     if (http_interceptor_) {
         http_interceptor_->SetVerboseLogging(enable);

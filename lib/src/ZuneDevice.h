@@ -12,6 +12,8 @@
 #include <usb/Context.h>
 #include <cli/Session.h>
 #include "zune_wireless/zune_wireless_api.h"
+#include "ZuneTypes.h"
+
 
 // Forward declare Library for optional usage
 namespace mtp {
@@ -26,22 +28,16 @@ namespace zmdb {
 
 class ZuneHTTPInterceptor;
 struct InterceptorConfig;
+class NetworkManager;
+class LibraryManager;
+
+
 
 // USB handles structure for raw monitoring (includes pre-discovered endpoints)
-struct USBHandlesWithEndpoints {
-    mtp::usb::DevicePtr device;
-    mtp::usb::InterfacePtr interface;
-    mtp::usb::EndpointPtr endpoint_in;
-    mtp::usb::EndpointPtr endpoint_out;
-};
+
 
 // Internal C++ struct for file info
-struct ZuneObjectInfoInternal {
-    uint32_t handle;
-    std::string filename;
-    uint64_t size;
-    bool is_folder;
-};
+
 
 using namespace mtp;
 
@@ -201,7 +197,8 @@ private:
     std::string Utf16leToAscii(const mtp::ByteArray& data, bool is_guid = false);
     void Log(const std::string& message);
     void VerboseLog(const std::string& message);  // Log only if verbose_logging_ is true
-    void EnsureLibraryInitialized();
+
+
 
     // --- Member Variables ---
     std::string guid_file_;
@@ -214,7 +211,7 @@ private:
     mtp::DevicePtr device_;
     mtp::SessionPtr mtp_session_;
     cli::SessionPtr cli_session_;
-    mtp::LibraryPtr library_;
+
 
     LogCallback log_callback_;
     bool verbose_logging_ = true;  // Verbose network logging enabled by default
@@ -226,10 +223,11 @@ private:
     mutable std::string cached_session_guid_;
     mutable std::mutex cache_mutex_;
 
-    // Track ObjectId cache: key = "album_id:track_title", value = track_object_id
-    std::unordered_map<std::string, uint32_t> track_objectid_cache_;
-    mutable std::mutex track_cache_mutex_;
+    // Network Manager
+    std::unique_ptr<NetworkManager> network_manager_;
 
-    // HTTP Interceptor for artist metadata
-    std::unique_ptr<ZuneHTTPInterceptor> http_interceptor_;
+    // Library Manager
+    std::unique_ptr<LibraryManager> library_manager_;
+
+
 };
