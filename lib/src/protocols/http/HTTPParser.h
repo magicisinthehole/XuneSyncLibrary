@@ -56,6 +56,33 @@ public:
     static HTTPRequest ParseRequest(const mtp::ByteArray& data);
 
     /**
+     * Result of trying to extract an HTTP request from a stream buffer
+     */
+    enum class ExtractResult {
+        SUCCESS,        // Complete request found and parsed
+        INCOMPLETE,     // No complete request yet (need more data)
+        INVALID_DATA    // Buffer contains invalid/stale data (should be cleared)
+    };
+
+    /**
+     * Try to extract an HTTP request from a stream buffer
+     *
+     * Used for extracting HTTP requests from a TCP stream buffer that may contain:
+     * - Incomplete request (need more data)
+     * - Complete request (possibly with more pipelined requests after)
+     * - Stale/invalid data (should be cleared)
+     *
+     * @param buffer Stream buffer containing accumulated TCP data
+     * @param[out] request Parsed request if successful
+     * @param[out] bytes_consumed Number of bytes that comprise this request
+     * @return ExtractResult indicating success, incomplete, or invalid data
+     */
+    static ExtractResult TryExtractRequest(
+        const mtp::ByteArray& buffer,
+        HTTPRequest& request,
+        size_t& bytes_consumed);
+
+    /**
      * Build HTTP response bytes
      * @param response Response structure
      * @return HTTP response ready for TCP transmission

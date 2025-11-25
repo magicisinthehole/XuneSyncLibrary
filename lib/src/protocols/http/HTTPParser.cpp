@@ -113,6 +113,55 @@ HTTPParser::HTTPRequest HTTPParser::ParseRequest(const mtp::ByteArray& data) {
     return request;
 }
 
+HTTPParser::ExtractResult HTTPParser::TryExtractRequest(
+    const mtp::ByteArray& buffer,
+    HTTPRequest& request,
+    size_t& bytes_consumed) {
+
+    bytes_consumed = 0;
+
+    if (buffer.empty()) {
+        return ExtractResult::INCOMPLETE;
+    }
+
+    // Convert buffer to string for searching
+    std::string buffer_str(buffer.begin(), buffer.end());
+
+    // Look for end of headers (\r\n\r\n)
+    size_t header_end = buffer_str.find("\r\n\r\n");
+    if (header_end == std::string::npos) {
+        return ExtractResult::INCOMPLETE;
+    }
+
+    // Verify buffer starts with valid HTTP method
+    bool valid_http_start = (
+        buffer_str.substr(0, 4) == "GET " ||
+        buffer_str.substr(0, 5) == "POST " ||
+        buffer_str.substr(0, 4) == "PUT " ||
+        buffer_str.substr(0, 7) == "DELETE " ||
+        buffer_str.substr(0, 5) == "HEAD " ||
+        buffer_str.substr(0, 8) == "OPTIONS " ||
+        buffer_str.substr(0, 6) == "PATCH "
+    );
+
+    if (!valid_http_start) {
+        return ExtractResult::INVALID_DATA;
+    }
+
+    // Calculate request size (headers + \r\n\r\n terminator)
+    bytes_consumed = header_end + 4;
+
+    // Extract just this request from the buffer
+    mtp::ByteArray request_data(buffer.begin(), buffer.begin() + bytes_consumed);
+
+    try {
+        request = ParseRequest(request_data);
+        return ExtractResult::SUCCESS;
+    } catch (const std::exception&) {
+        return ExtractResult::INVALID_DATA;
+    }
+}
+
 mtp::ByteArray HTTPParser::BuildResponse(const HTTPResponse& response) {
     std::ostringstream oss;
 

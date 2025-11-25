@@ -186,16 +186,13 @@ void NetworkManager::TriggerNetworkMode() {
         mtp::ByteArray response = mtp_session_->Operation922d(3, 3);
         poll_count++;
 
-        if (!response.empty()) {
-            // Valid PPP frames start with 0x7E
-            if (response[0] == 0x7E) {
-                Log("  ✓ Received PPP frame: " + std::to_string(response.size()) + " bytes (poll " +
-                    std::to_string(poll_count) + ")");
-                device_lcp = response;
-                found_valid_lcp = true;
-            } else {
-                Log("  → Ignoring non-PPP response: " + std::to_string(response.size()) + " bytes (echo)");
-            }
+        if (!response.empty() && PPPParser::IsValidFrame(response)) {
+            Log("  ✓ Received PPP frame: " + std::to_string(response.size()) + " bytes (poll " +
+                std::to_string(poll_count) + ")");
+            device_lcp = response;
+            found_valid_lcp = true;
+        } else if (!response.empty()) {
+            Log("  → Ignoring non-PPP response: " + std::to_string(response.size()) + " bytes (echo)");
         }
 
         if (!found_valid_lcp) {
@@ -233,27 +230,18 @@ void NetworkManager::TriggerNetworkMode() {
     Log("    Data: " + format_hex(device_lcp_reply, 50));
 
     // Step 5: Check if device LCP reply already contains IPCP Config-Request
-    // (This matches Windows capture where frame 2366 has multiple PPP frames)
+    // Use PPPParser helper to check for IPCP Config-Request (code 0x01)
     Log("Checking for device IPCP Config-Request in LCP reply...");
     mtp::ByteArray device_ipcp_request;
     poll_count = 0;
     bool found_device_ipcp_request = false;
 
     // First, check if the LCP reply already contains IPCP Config-Request
-    if (!device_lcp_reply.empty()) {
-        size_t i = 0;
-        while (i < device_lcp_reply.size()) {
-            if (device_lcp_reply[i] == 0x7E && i + 4 < device_lcp_reply.size()) {
-                // Check for IPCP protocol (0x8021) and Config-Request (0x01)
-                if (device_lcp_reply[i+1] == 0x80 && device_lcp_reply[i+2] == 0x21 && device_lcp_reply[i+3] == 0x01) {
-                    Log("  ✓ Found IPCP Config-Request in LCP reply message!");
-                    device_ipcp_request = device_lcp_reply;
-                    found_device_ipcp_request = true;
-                    break;
-                }
-            }
-            i++;
-        }
+    if (!device_lcp_reply.empty() &&
+        PPPParser_ContainsIPCPCode(device_lcp_reply, IPCPParser::IPCP_CODE_CONFIG_REQUEST)) {
+        Log("  ✓ Found IPCP Config-Request in LCP reply message!");
+        device_ipcp_request = device_lcp_reply;
+        found_device_ipcp_request = true;
     }
 
     // If not found in LCP reply, poll for it separately
@@ -265,29 +253,13 @@ void NetworkManager::TriggerNetworkMode() {
         mtp::ByteArray response = mtp_session_->Operation922d(3, 3);
         poll_count++;
 
-        if (!response.empty() && response[0] == 0x7E) {
-            // Check if this contains IPCP Config-Request (protocol 0x8021, code 0x01)
-            // The response may contain multiple PPP frames, we need to find the IPCP Config-Request
-            bool has_ipcp_request = false;
-            size_t i = 0;
-            while (i < response.size()) {
-                if (response[i] == 0x7E && i + 4 < response.size()) {
-                    // Check for IPCP protocol (0x8021) and Config-Request (0x01)
-                    if (response[i+1] == 0x80 && response[i+2] == 0x21 && response[i+3] == 0x01) {
-                        has_ipcp_request = true;
-                        break;
-                    }
-                }
-                i++;
-            }
-
-            if (has_ipcp_request) {
-                Log("  ✓ Received device IPCP Config-Request: " + std::to_string(response.size()) + " bytes (poll " +
-                    std::to_string(poll_count) + ")");
-                Log("    Data: " + format_hex(response, 50));
-                device_ipcp_request = response;
-                found_device_ipcp_request = true;
-            }
+        if (!response.empty() && PPPParser::IsValidFrame(response) &&
+            PPPParser_ContainsIPCPCode(response, IPCPParser::IPCP_CODE_CONFIG_REQUEST)) {
+            Log("  ✓ Received device IPCP Config-Request: " + std::to_string(response.size()) + " bytes (poll " +
+                std::to_string(poll_count) + ")");
+            Log("    Data: " + format_hex(response, 50));
+            device_ipcp_request = response;
+            found_device_ipcp_request = true;
         }
 
         if (!found_device_ipcp_request) {
@@ -300,39 +272,14 @@ void NetworkManager::TriggerNetworkMode() {
         throw std::runtime_error("Device IPCP negotiation failed");
     }
 
-    // Step 6: Parse device's IPCP Config-Request to extract the identifier
-    // We need to extract all PPP frames from the device's response
-    std::vector<mtp::ByteArray> device_ppp_frames;
-    size_t i = 0;
-    while (i < device_ipcp_request.size()) {
-        if (device_ipcp_request[i] == 0x7E) {
-            size_t j = i + 1;
-            while (j < device_ipcp_request.size() && device_ipcp_request[j] != 0x7E) {
-                j++;
-            }
-            if (j < device_ipcp_request.size()) {
-                mtp::ByteArray frame(device_ipcp_request.begin() + i, device_ipcp_request.begin() + j + 1);
-                device_ppp_frames.push_back(frame);
-                i = j;
-            }
-        }
-        i++;
+    // Step 6: Parse device's IPCP Config-Request using PPPParser helpers
+    IPCPParser::IPCPPacket device_request;
+    if (!PPPParser_FindIPCPFrame(device_ipcp_request, IPCPParser::IPCP_CODE_CONFIG_REQUEST, device_request)) {
+        throw std::runtime_error("Failed to parse device IPCP Config-Request");
     }
 
-    // Find the IPCP Config-Request frame and extract its identifier
-    uint8_t device_ipcp_request_id = 0;
-    for (const auto& frame : device_ppp_frames) {
-        if (frame.size() >= 5 && frame[1] == 0x80 && frame[2] == 0x21 && frame[3] == 0x01) {
-            // This is IPCP Config-Request
-            device_ipcp_request_id = frame[4];
-            Log("  → Device IPCP Config-Request ID: " + std::to_string(device_ipcp_request_id));
-            break;
-        }
-    }
-
-    if (device_ipcp_request_id == 0) {
-        throw std::runtime_error("Failed to parse device IPCP Config-Request identifier");
-    }
+    uint8_t device_ipcp_request_id = device_request.identifier;
+    Log("  → Device IPCP Config-Request ID: " + std::to_string(device_ipcp_request_id));
 
     // Step 7: Parse device's Config-Request to check requested IP
     // If device requests 0.0.0.0, we need to send Config-Nak (not Config-Ack!)
@@ -343,31 +290,17 @@ void NetworkManager::TriggerNetworkMode() {
     const uint32_t device_ip = 0xC0A83765;    // 192.168.55.101
     const uint32_t dns_ip = host_ip;          // DNS server = host IP (device queries host for DNS)
 
-    IPCPParser::IPCPPacket device_request;
     uint32_t device_requested_ip = 0;
 
-    try {
-        // Extract IPCP payload from the device's Config-Request frame
-        for (const auto& frame : device_ppp_frames) {
-            if (frame.size() >= 5 && frame[1] == 0x80 && frame[2] == 0x21 && frame[3] == 0x01) {
-                mtp::ByteArray ipcp_payload(frame.begin() + 3, frame.end() - 3);  // Skip 0x7E, protocol, FCS, 0x7E
-                device_request = IPCPParser::ParsePacket(ipcp_payload);
-
-                // Extract requested IP from options
-                std::vector<IPCPParser::IPCPOption> options = IPCPParser::ParseOptions(device_request.options);
-                for (const auto& opt : options) {
-                    if (opt.type == 3 && opt.data.size() == 4) {  // IP-Address option
-                        device_requested_ip = (opt.data[0] << 24) | (opt.data[1] << 16) |
-                                            (opt.data[2] << 8) | opt.data[3];
-                        Log("  → Device requested IP: " + IPParser::IPToString(device_requested_ip));
-                        break;
-                    }
-                }
-                break;
-            }
+    // Extract requested IP from options
+    std::vector<IPCPParser::IPCPOption> options = IPCPParser::ParseOptions(device_request.options);
+    for (const auto& opt : options) {
+        if (opt.type == IPCPParser::IPCP_OPT_IP_ADDRESS && opt.data.size() == 4) {
+            device_requested_ip = (opt.data[0] << 24) | (opt.data[1] << 16) |
+                                (opt.data[2] << 8) | opt.data[3];
+            Log("  → Device requested IP: " + IPParser::IPToString(device_requested_ip));
+            break;
         }
-    } catch (const std::exception& e) {
-        throw std::runtime_error("Failed to parse device IPCP Config-Request: " + std::string(e.what()));
     }
 
     // Build our Config-Request (WITH compression option, ID=1)
@@ -447,33 +380,25 @@ void NetworkManager::TriggerNetworkMode() {
             mtp::ByteArray response = mtp_session_->Operation922d(3, 3);
             poll_count++;
 
-            if (!response.empty() && response[0] == 0x7E) {
-                // Look for BOTH Config-Reject and new Config-Request in same response
-                size_t i = 0;
-                while (i < response.size()) {
-                    if (response[i] == 0x7E && i + 5 < response.size()) {
-                        // Check for IPCP protocol (0x8021)
-                        if (response[i+1] == 0x80 && response[i+2] == 0x21) {
-                            uint8_t code = response[i+3];
-                            uint8_t id = response[i+4];
+            if (!response.empty() && PPPParser::IsValidFrame(response)) {
+                // Check for Config-Reject (device rejecting our compression option)
+                IPCPParser::IPCPPacket reject_packet;
+                if (PPPParser_FindIPCPFrame(response, IPCPParser::IPCP_CODE_CONFIG_REJECT, reject_packet)) {
+                    found_config_reject = true;
+                    Log("  ✓ Received Config-Reject (ID=" + std::to_string(reject_packet.identifier) +
+                        ") - device rejecting compression option");
+                }
 
-                            if (code == 0x04) {
-                                // Config-Reject - device rejecting our compression option
-                                found_config_reject = true;
-                                Log("  ✓ Received Config-Reject (ID=" + std::to_string(id) +
-                                    ") - device rejecting compression option");
-                            } else if (code == 0x01 && id != device_ipcp_request_id) {
-                                // This is a NEW Config-Request with different ID!
-                                new_request_id = id;
-                                device_new_request = response;
-                                found_new_request = true;
-                                Log("  ✓ Received device's new Config-Request (ID=" + std::to_string(new_request_id) +
-                                    "): " + std::to_string(response.size()) + " bytes (poll " + std::to_string(poll_count) + ")");
-                                Log("    Data: " + format_hex(response, 50));
-                            }
-                        }
-                    }
-                    i++;
+                // Check for new Config-Request with different ID
+                IPCPParser::IPCPPacket new_config_request;
+                if (PPPParser_FindIPCPFrame(response, IPCPParser::IPCP_CODE_CONFIG_REQUEST, new_config_request) &&
+                    new_config_request.identifier != device_ipcp_request_id) {
+                    new_request_id = new_config_request.identifier;
+                    device_new_request = response;
+                    found_new_request = true;
+                    Log("  ✓ Received device's new Config-Request (ID=" + std::to_string(new_request_id) +
+                        "): " + std::to_string(response.size()) + " bytes (poll " + std::to_string(poll_count) + ")");
+                    Log("    Data: " + format_hex(response, 50));
                 }
             }
 
@@ -487,31 +412,9 @@ void NetworkManager::TriggerNetworkMode() {
             throw std::runtime_error("Device IPCP negotiation failed after Config-Nak");
         }
 
-        // Parse the new Config-Request
-        std::vector<mtp::ByteArray> new_ppp_frames;
-        i = 0;
-        while (i < device_new_request.size()) {
-            if (device_new_request[i] == 0x7E) {
-                size_t j = i + 1;
-                while (j < device_new_request.size() && device_new_request[j] != 0x7E) {
-                    j++;
-                }
-                if (j < device_new_request.size()) {
-                    mtp::ByteArray frame(device_new_request.begin() + i, device_new_request.begin() + j + 1);
-                    new_ppp_frames.push_back(frame);
-                    i = j;
-                }
-            }
-            i++;
-        }
-
-        // Parse new Config-Request
-        for (const auto& frame : new_ppp_frames) {
-            if (frame.size() >= 5 && frame[1] == 0x80 && frame[2] == 0x21 && frame[3] == 0x01) {
-                mtp::ByteArray ipcp_payload(frame.begin() + 3, frame.end() - 3);
-                device_request = IPCPParser::ParsePacket(ipcp_payload);
-                break;
-            }
+        // Parse the new Config-Request using PPPParser helper
+        if (!PPPParser_FindIPCPFrame(device_new_request, IPCPParser::IPCP_CODE_CONFIG_REQUEST, device_request)) {
+            throw std::runtime_error("Failed to parse device's new IPCP Config-Request");
         }
 
         // Step 9: Send SECOND Config-Request (ID=2, WITHOUT compression) + Config-Ack
@@ -585,28 +488,14 @@ void NetworkManager::TriggerNetworkMode() {
         mtp::ByteArray response = mtp_session_->Operation922d(3, 3);
         poll_count++;
 
-        if (!response.empty() && response[0] == 0x7E) {
-            // Check if this contains IPCP Config-Ack (protocol 0x8021, code 0x02, identifier 0x02)
-            // Note: After Config-Reject path, we're looking for ack to our SECOND request (ID=2)
-            bool has_config_ack = false;
-            size_t i = 0;
-            while (i < response.size()) {
-                if (response[i] == 0x7E && i + 5 < response.size()) {
-                    // Check for IPCP protocol (0x8021), Config-Ack (0x02), and our identifier (0x02 or 0x01)
-                    if (response[i+1] == 0x80 && response[i+2] == 0x21 && response[i+3] == 0x02) {
-                        // Accept Config-Ack with either ID=1 or ID=2 depending on path taken
-                        if (response[i+4] == 0x01 || response[i+4] == 0x02) {
-                            has_config_ack = true;
-                            break;
-                        }
-                    }
-                }
-                i++;
-            }
-
-            if (has_config_ack) {
-                Log("  ✓ Received device IPCP Config-Ack: " + std::to_string(response.size()) + " bytes (poll " +
-                    std::to_string(poll_count) + ")");
+        if (!response.empty() && PPPParser::IsValidFrame(response)) {
+            // Check for IPCP Config-Ack using PPPParser helper
+            // Accept Config-Ack with either ID=1 or ID=2 depending on path taken
+            IPCPParser::IPCPPacket ack_packet;
+            if (PPPParser_FindIPCPFrame(response, IPCPParser::IPCP_CODE_CONFIG_ACK, ack_packet) &&
+                (ack_packet.identifier == 0x01 || ack_packet.identifier == 0x02)) {
+                Log("  ✓ Received device IPCP Config-Ack (ID=" + std::to_string(ack_packet.identifier) +
+                    "): " + std::to_string(response.size()) + " bytes (poll " + std::to_string(poll_count) + ")");
                 Log("    Data: " + format_hex(response, 50));
                 device_config_ack = response;
                 found_config_ack = true;

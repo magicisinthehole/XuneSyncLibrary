@@ -172,8 +172,14 @@ mtp::ByteArray PPPParser::WrapPayload(const mtp::ByteArray& payload, uint16_t pr
     // Calculate FCS over unstuffed protocol + payload
     uint16_t fcs = CalculatePPPFCS(frame_data.data(), frame_data.size());
 
-    // Now stuff the frame_data for transmission
+    // Add FCS to frame_data (little-endian) BEFORE byte stuffing
+    // RFC 1662: The FCS is transmitted with the LSB first
+    frame_data.push_back(fcs & 0xFF);        // FCS low byte
+    frame_data.push_back((fcs >> 8) & 0xFF); // FCS high byte
+
+    // Now stuff the ENTIRE frame_data (including FCS) for transmission
     // PPP byte stuffing: escape 0x7D and 0x7E as 0x7D 0xXX (XX = original ^ 0x20)
+    // This is CRITICAL: FCS bytes containing 0x7D or 0x7E would corrupt the frame!
     mtp::ByteArray stuffed_frame_data;
     for (uint8_t byte : frame_data) {
         if (byte == 0x7D || byte == 0x7E) {
@@ -184,12 +190,10 @@ mtp::ByteArray PPPParser::WrapPayload(const mtp::ByteArray& payload, uint16_t pr
         }
     }
 
-    // Build final frame: 0x7E + stuffed(protocol + payload) + FCS + 0x7E
+    // Build final frame: 0x7E + stuffed(protocol + payload + FCS) + 0x7E
     mtp::ByteArray frame;
     frame.push_back(PPP_FLAG);
     frame.insert(frame.end(), stuffed_frame_data.begin(), stuffed_frame_data.end());
-    frame.push_back(fcs & 0xFF);        // FCS low byte
-    frame.push_back((fcs >> 8) & 0xFF); // FCS high byte
     frame.push_back(PPP_FLAG);
 
     return frame;
@@ -204,6 +208,153 @@ std::string PPPParser::GetProtocolName(uint16_t protocol) {
         default: return "Unknown";
     }
 }
+
+std::vector<mtp::ByteArray> PPPParser::ExtractFrames(const mtp::ByteArray& data) {
+    std::vector<mtp::ByteArray> frames;
+
+    if (data.empty()) {
+        return frames;
+    }
+
+    size_t i = 0;
+    while (i < data.size()) {
+        // Find start of frame (0x7E)
+        if (data[i] != PPP_FLAG) {
+            i++;
+            continue;
+        }
+
+        // Found start, now find end
+        size_t start = i;
+        i++;  // Skip start flag
+
+        // Find end of frame (next 0x7E)
+        while (i < data.size() && data[i] != PPP_FLAG) {
+            i++;
+        }
+
+        if (i < data.size()) {
+            // Include the end flag
+            mtp::ByteArray frame(data.begin() + start, data.begin() + i + 1);
+            if (frame.size() > 2) {  // More than just two flags
+                frames.push_back(frame);
+            }
+            i++;  // Move past end flag (which might be start of next frame)
+        }
+    }
+
+    return frames;
+}
+
+std::vector<mtp::ByteArray> PPPParser::ExtractFramesWithBuffer(
+    const mtp::ByteArray& data,
+    mtp::ByteArray& incomplete_buffer) {
+
+    std::vector<mtp::ByteArray> frames;
+
+    // Step 1: Combine incomplete buffer with new data
+    mtp::ByteArray combined_data;
+    if (!incomplete_buffer.empty()) {
+        combined_data.insert(combined_data.end(),
+                           incomplete_buffer.begin(),
+                           incomplete_buffer.end());
+        combined_data.insert(combined_data.end(), data.begin(), data.end());
+        incomplete_buffer.clear();
+    } else {
+        combined_data = data;
+    }
+
+    if (combined_data.empty()) {
+        return frames;
+    }
+
+    // Step 2: Extract complete frames, buffer incomplete ones
+    size_t i = 0;
+    while (i < combined_data.size()) {
+        // Find frame start (0x7E)
+        if (combined_data[i] != PPP_FLAG) {
+            i++;
+            continue;
+        }
+
+        size_t frame_start = i;
+        i++;  // Skip start flag
+
+        // Find frame end (next 0x7E)
+        while (i < combined_data.size() && combined_data[i] != PPP_FLAG) {
+            i++;
+        }
+
+        if (i < combined_data.size()) {
+            // Found complete frame (includes both 0x7E delimiters)
+            mtp::ByteArray frame(combined_data.begin() + frame_start,
+                                combined_data.begin() + i + 1);
+            if (frame.size() > 2) {  // More than just two flags
+                frames.push_back(frame);
+            }
+            i++;  // Move past end flag
+        } else {
+            // Incomplete frame - save for next call
+            incomplete_buffer.assign(combined_data.begin() + frame_start,
+                                    combined_data.end());
+            break;
+        }
+    }
+
+    return frames;
+}
+
+bool PPPParser::TryParseFrame(const mtp::ByteArray& data, ParsedFrame& frame) {
+    try {
+        if (!IsValidFrame(data)) {
+            return false;
+        }
+
+        frame.raw_frame = data;
+        frame.payload = ExtractPayload(data, &frame.protocol);
+        return true;
+
+    } catch (const std::exception&) {
+        return false;
+    }
+}
+
+// PPPParserHelpers namespace functions (require IPCPParser to be defined)
+namespace PPPParserHelpers {
+
+bool FindIPCPFrame(const mtp::ByteArray& data, uint8_t ipcp_code,
+                   IPCPParser::IPCPPacket& packet) {
+    auto frames = PPPParser::ExtractFrames(data);
+
+    for (const auto& frame : frames) {
+        PPPParser::ParsedFrame parsed;
+        if (!PPPParser::TryParseFrame(frame, parsed)) {
+            continue;
+        }
+
+        // Check if this is an IPCP frame (protocol 0x8021)
+        if (parsed.protocol == 0x8021 && !parsed.payload.empty()) {
+            try {
+                IPCPParser::IPCPPacket ipcp = IPCPParser::ParsePacket(parsed.payload);
+                if (ipcp.code == ipcp_code) {
+                    packet = ipcp;
+                    return true;
+                }
+            } catch (const std::exception&) {
+                // Invalid IPCP packet, continue searching
+            }
+        }
+    }
+
+    return false;
+}
+
+bool ContainsIPCPCode(const mtp::ByteArray& data, uint8_t ipcp_code) {
+    IPCPParser::IPCPPacket dummy;
+    return FindIPCPFrame(data, ipcp_code, dummy);
+}
+
+} // namespace PPPParserHelpers
 
 // ============================================================================
 // IPParser Implementation
@@ -706,7 +857,12 @@ std::string DNSServer::ParseHostname(const mtp::ByteArray& query) {
             hostname += '.';
         }
 
-        hostname.append(query.begin() + idx, query.begin() + idx + label_len);
+        // RFC 1035 Section 2.3.3: DNS names are case-insensitive
+        // Convert to lowercase for consistent matching
+        for (size_t i = 0; i < label_len; i++) {
+            char c = query[idx + i];
+            hostname += std::tolower(c);
+        }
         idx += label_len;
     }
 
@@ -721,15 +877,40 @@ mtp::ByteArray DNSServer::BuildResponse(const mtp::ByteArray& query,
 
     std::string hostname = ParseHostname(query);
 
+    // Find where the question section ends to extract query type
+    size_t question_start = 12;
+    size_t question_end = question_start;
+    while (question_end < query.size()) {
+        if (query[question_end] == 0) {
+            // Found end of name, type and class follow (4 bytes)
+            question_end += 1;  // Skip null terminator
+            break;
+        }
+        uint8_t len = query[question_end];
+        if (len >= 64 || question_end + len + 1 > query.size()) {
+            return mtp::ByteArray();  // Malformed query
+        }
+        question_end += len + 1;
+    }
+
+    // Check if we have enough bytes for type (2) + class (2)
+    if (question_end + 4 > query.size()) {
+        return mtp::ByteArray();  // Malformed query
+    }
+
+    // Extract query type (2 bytes after hostname null terminator)
+    uint16_t query_type = (query[question_end] << 8) | query[question_end + 1];
+
+    // We only support Type A (0x0001) queries
+    if (query_type != 0x0001) {
+        return mtp::ByteArray();  // Unsupported query type
+    }
+
     // Check if we have a mapping for this hostname
     auto it = hostname_map.find(hostname);
     if (it == hostname_map.end()) {
-        // No mapping, return NXDOMAIN
-        mtp::ByteArray response = query;
-        // Set QR=1 (response), AA=1 (authoritative), RCODE=3 (NXDOMAIN)
-        response[2] = 0x81;  // QR=1, Opcode=0, AA=0, TC=0, RD=1
-        response[3] = 0x83;  // RA=1, Z=0, RCODE=3 (NXDOMAIN)
-        return response;
+        // No mapping found - return empty (no answer)
+        return mtp::ByteArray();
     }
 
     uint32_t ip_addr = it->second;
@@ -759,24 +940,15 @@ mtp::ByteArray DNSServer::BuildResponse(const mtp::ByteArray& query,
     response.push_back(0x00);
     response.push_back(0x00);
 
-    // Copy question section from query (everything after header until double null)
-    size_t question_start = 12;
-    size_t question_end = question_start;
-    while (question_end < query.size()) {
-        if (query[question_end] == 0) {
-            question_end += 5;  // null + type (2 bytes) + class (2 bytes)
-            break;
-        }
-        uint8_t len = query[question_end];
-        if (len >= 64 || question_end + len + 1 > query.size()) break;
-        question_end += len + 1;
+    // Copy question section from query (hostname + type + class)
+    // question_end is already positioned at the start of type field
+    size_t question_section_end = question_end + 4;  // type (2) + class (2)
+
+    if (question_section_end > query.size()) {
+        return mtp::ByteArray();  // Malformed
     }
 
-    if (question_end > query.size()) {
-        question_end = query.size();
-    }
-
-    response.insert(response.end(), query.begin() + question_start, query.begin() + question_end);
+    response.insert(response.end(), query.begin() + question_start, query.begin() + question_section_end);
 
     // Answer section
     // Name (pointer to question): 0xC00C (pointer to offset 12)

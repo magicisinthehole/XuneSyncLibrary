@@ -134,10 +134,18 @@ add_library(zune_wireless SHARED
     lib/src/zune_wireless_api.cpp
     lib/src/protocols/http/ZuneHTTPInterceptor.cpp
     lib/src/protocols/ppp/PPPParser.cpp
+    lib/src/protocols/ppp/PPPFrameBuilder.cpp
     lib/src/protocols/http/HTTPParser.cpp
     lib/src/protocols/http/StaticModeHandler.cpp
     lib/src/protocols/http/ProxyModeHandler.cpp
+    lib/src/protocols/http/HttpClient.cpp
     lib/src/protocols/http/HybridModeHandler.cpp
+    lib/src/protocols/handlers/CCPHandler.cpp
+    lib/src/protocols/handlers/DNSHandler.cpp
+    lib/src/protocols/tcp/TCPConnectionManager.cpp
+    lib/src/protocols/tcp/TCPFlowController.cpp
+    lib/src/protocols/tcp/TCPStreamReassembler.cpp
+    lib/src/protocols/tcp/RTOManager.cpp
 )
 
 target_include_directories(zune_wireless PUBLIC
@@ -203,10 +211,18 @@ add_executable(test_library_json
     lib/src/zune_wireless_api.cpp
     lib/src/protocols/http/ZuneHTTPInterceptor.cpp
     lib/src/protocols/ppp/PPPParser.cpp
+    lib/src/protocols/ppp/PPPFrameBuilder.cpp
     lib/src/protocols/http/HTTPParser.cpp
     lib/src/protocols/http/StaticModeHandler.cpp
     lib/src/protocols/http/ProxyModeHandler.cpp
+    lib/src/protocols/http/HttpClient.cpp
     lib/src/protocols/http/HybridModeHandler.cpp
+    lib/src/protocols/handlers/CCPHandler.cpp
+    lib/src/protocols/handlers/DNSHandler.cpp
+    lib/src/protocols/tcp/TCPConnectionManager.cpp
+    lib/src/protocols/tcp/TCPFlowController.cpp
+    lib/src/protocols/tcp/TCPStreamReassembler.cpp
+    lib/src/protocols/tcp/RTOManager.cpp
 )
 
 target_include_directories(test_library_json PRIVATE
@@ -251,10 +267,18 @@ add_executable(test_zmdb_fast
     lib/src/zune_wireless_api.cpp
     lib/src/protocols/http/ZuneHTTPInterceptor.cpp
     lib/src/protocols/ppp/PPPParser.cpp
+    lib/src/protocols/ppp/PPPFrameBuilder.cpp
     lib/src/protocols/http/HTTPParser.cpp
     lib/src/protocols/http/StaticModeHandler.cpp
     lib/src/protocols/http/ProxyModeHandler.cpp
+    lib/src/protocols/http/HttpClient.cpp
     lib/src/protocols/http/HybridModeHandler.cpp
+    lib/src/protocols/handlers/CCPHandler.cpp
+    lib/src/protocols/handlers/DNSHandler.cpp
+    lib/src/protocols/tcp/TCPConnectionManager.cpp
+    lib/src/protocols/tcp/TCPFlowController.cpp
+    lib/src/protocols/tcp/TCPStreamReassembler.cpp
+    lib/src/protocols/tcp/RTOManager.cpp
 )
 
 target_include_directories(test_zmdb_fast PRIVATE
@@ -299,10 +323,18 @@ add_executable(test_zmdb_extractor
     lib/src/zune_wireless_api.cpp
     lib/src/protocols/http/ZuneHTTPInterceptor.cpp
     lib/src/protocols/ppp/PPPParser.cpp
+    lib/src/protocols/ppp/PPPFrameBuilder.cpp
     lib/src/protocols/http/HTTPParser.cpp
     lib/src/protocols/http/StaticModeHandler.cpp
     lib/src/protocols/http/ProxyModeHandler.cpp
+    lib/src/protocols/http/HttpClient.cpp
     lib/src/protocols/http/HybridModeHandler.cpp
+    lib/src/protocols/handlers/CCPHandler.cpp
+    lib/src/protocols/handlers/DNSHandler.cpp
+    lib/src/protocols/tcp/TCPConnectionManager.cpp
+    lib/src/protocols/tcp/TCPFlowController.cpp
+    lib/src/protocols/tcp/TCPStreamReassembler.cpp
+    lib/src/protocols/tcp/RTOManager.cpp
 )
 
 target_include_directories(test_zmdb_extractor PRIVATE
@@ -347,10 +379,18 @@ add_executable(test_http_interceptor
     lib/src/zune_wireless_api.cpp
     lib/src/protocols/http/ZuneHTTPInterceptor.cpp
     lib/src/protocols/ppp/PPPParser.cpp
+    lib/src/protocols/ppp/PPPFrameBuilder.cpp
     lib/src/protocols/http/HTTPParser.cpp
     lib/src/protocols/http/StaticModeHandler.cpp
     lib/src/protocols/http/ProxyModeHandler.cpp
+    lib/src/protocols/http/HttpClient.cpp
     lib/src/protocols/http/HybridModeHandler.cpp
+    lib/src/protocols/handlers/CCPHandler.cpp
+    lib/src/protocols/handlers/DNSHandler.cpp
+    lib/src/protocols/tcp/TCPConnectionManager.cpp
+    lib/src/protocols/tcp/TCPFlowController.cpp
+    lib/src/protocols/tcp/TCPStreamReassembler.cpp
+    lib/src/protocols/tcp/RTOManager.cpp
 )
 
 target_include_directories(test_http_interceptor PRIVATE
@@ -378,6 +418,116 @@ target_compile_options(test_http_interceptor PRIVATE
     -Wno-unused-parameter
 )
 
+# Test executable for TCPFlowController (Phase 5.3)
+add_executable(test_tcp_flow_controller
+    tests/test_tcp_flow_controller.cpp
+    lib/src/protocols/tcp/TCPFlowController.cpp
+    lib/src/protocols/tcp/TCPConnectionManager.cpp
+    lib/src/protocols/tcp/TCPStreamReassembler.cpp
+    lib/src/protocols/tcp/RTOManager.cpp  # Phase 2: RTO integration
+    lib/src/protocols/ppp/PPPParser.cpp  # For ByteArray type
+)
+
+target_include_directories(test_tcp_flow_controller PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${AFTL_INCLUDE_DIRS}
+)
+
+target_link_libraries(test_tcp_flow_controller
+    aft-cli-static
+    ${AFTL_LIBRARY}
+    ${CMAKE_THREAD_LIBS_INIT}
+    ${PLATFORM_LIBRARIES}
+)
+
+target_compile_options(test_tcp_flow_controller PRIVATE
+    -Wall
+    -Wextra
+    -Wno-unused-parameter
+)
+
+# Test executable for TCPConnectionManager (Phase 5.2)
+add_executable(test_tcp_connection_manager
+    tests/test_tcp_connection_manager.cpp
+    lib/src/protocols/tcp/TCPConnectionManager.cpp
+    lib/src/protocols/tcp/TCPFlowController.cpp
+    lib/src/protocols/tcp/TCPStreamReassembler.cpp
+    lib/src/protocols/tcp/RTOManager.cpp  # Phase 2: RTO integration
+    lib/src/protocols/ppp/PPPParser.cpp
+)
+
+target_include_directories(test_tcp_connection_manager PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${AFTL_INCLUDE_DIRS}
+)
+
+target_link_libraries(test_tcp_connection_manager
+    aft-cli-static
+    ${AFTL_LIBRARY}
+    ${CMAKE_THREAD_LIBS_INIT}
+    ${PLATFORM_LIBRARIES}
+)
+
+target_compile_options(test_tcp_connection_manager PRIVATE
+    -Wall
+    -Wextra
+    -Wno-unused-parameter
+)
+
+# Test executable for DNSHandler (Phase 5.2)
+add_executable(test_dns_handler
+    tests/test_dns_handler.cpp
+    lib/src/protocols/handlers/DNSHandler.cpp
+    lib/src/protocols/ppp/PPPParser.cpp
+)
+
+target_include_directories(test_dns_handler PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${AFTL_INCLUDE_DIRS}
+)
+
+target_link_libraries(test_dns_handler
+    aft-cli-static
+    ${AFTL_LIBRARY}
+    ${CMAKE_THREAD_LIBS_INIT}
+    ${PLATFORM_LIBRARIES}
+)
+
+target_compile_options(test_dns_handler PRIVATE
+    -Wall
+    -Wextra
+    -Wno-unused-parameter
+)
+
+# Test executable for CCPHandler (Phase 5.2)
+add_executable(test_ccp_handler
+    tests/test_ccp_handler.cpp
+    lib/src/protocols/handlers/CCPHandler.cpp
+    lib/src/protocols/ppp/PPPParser.cpp
+)
+
+target_include_directories(test_ccp_handler PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${AFTL_INCLUDE_DIRS}
+)
+
+target_link_libraries(test_ccp_handler
+    aft-cli-static
+    ${AFTL_LIBRARY}
+    ${CMAKE_THREAD_LIBS_INIT}
+    ${PLATFORM_LIBRARIES}
+)
+
+target_compile_options(test_ccp_handler PRIVATE
+    -Wall
+    -Wextra
+    -Wno-unused-parameter
+)
+
 # Test executable for HTTP monitor (boot-time traffic capture)
 add_executable(test_http_monitor_boot
     tests/test_http_monitor_boot.cpp
@@ -396,10 +546,18 @@ add_executable(test_http_monitor_boot
     lib/src/zune_wireless_api.cpp
     lib/src/protocols/http/ZuneHTTPInterceptor.cpp
     lib/src/protocols/ppp/PPPParser.cpp
+    lib/src/protocols/ppp/PPPFrameBuilder.cpp
     lib/src/protocols/http/HTTPParser.cpp
     lib/src/protocols/http/StaticModeHandler.cpp
     lib/src/protocols/http/ProxyModeHandler.cpp
+    lib/src/protocols/http/HttpClient.cpp
     lib/src/protocols/http/HybridModeHandler.cpp
+    lib/src/protocols/handlers/CCPHandler.cpp
+    lib/src/protocols/handlers/DNSHandler.cpp
+    lib/src/protocols/tcp/TCPConnectionManager.cpp
+    lib/src/protocols/tcp/TCPFlowController.cpp
+    lib/src/protocols/tcp/TCPStreamReassembler.cpp
+    lib/src/protocols/tcp/RTOManager.cpp
 )
 
 target_include_directories(test_http_monitor_boot PRIVATE
@@ -445,10 +603,18 @@ add_executable(artist_images_tool_cli
     lib/src/zune_wireless_api.cpp
     lib/src/protocols/http/ZuneHTTPInterceptor.cpp
     lib/src/protocols/ppp/PPPParser.cpp
+    lib/src/protocols/ppp/PPPFrameBuilder.cpp
     lib/src/protocols/http/HTTPParser.cpp
     lib/src/protocols/http/StaticModeHandler.cpp
     lib/src/protocols/http/ProxyModeHandler.cpp
+    lib/src/protocols/http/HttpClient.cpp
     lib/src/protocols/http/HybridModeHandler.cpp
+    lib/src/protocols/handlers/CCPHandler.cpp
+    lib/src/protocols/handlers/DNSHandler.cpp
+    lib/src/protocols/tcp/TCPConnectionManager.cpp
+    lib/src/protocols/tcp/TCPFlowController.cpp
+    lib/src/protocols/tcp/TCPStreamReassembler.cpp
+    lib/src/protocols/tcp/RTOManager.cpp
 )
 
 target_include_directories(artist_images_tool_cli PRIVATE
@@ -498,10 +664,18 @@ add_executable(test_network_stack
     tests/test_network_stack.cpp
     lib/src/protocols/http/ZuneHTTPInterceptor.cpp
     lib/src/protocols/ppp/PPPParser.cpp
+    lib/src/protocols/ppp/PPPFrameBuilder.cpp
     lib/src/protocols/http/HTTPParser.cpp
     lib/src/protocols/http/StaticModeHandler.cpp
     lib/src/protocols/http/ProxyModeHandler.cpp
+    lib/src/protocols/http/HttpClient.cpp
     lib/src/protocols/http/HybridModeHandler.cpp
+    lib/src/protocols/handlers/CCPHandler.cpp
+    lib/src/protocols/handlers/DNSHandler.cpp
+    lib/src/protocols/tcp/TCPConnectionManager.cpp
+    lib/src/protocols/tcp/TCPFlowController.cpp
+    lib/src/protocols/tcp/TCPStreamReassembler.cpp
+    lib/src/protocols/tcp/RTOManager.cpp
 )
 
 target_include_directories(test_network_stack PRIVATE
@@ -520,6 +694,46 @@ target_link_libraries(test_network_stack
 )
 
 target_compile_options(test_network_stack PRIVATE
+    -Wall
+    -Wextra
+    -Wno-unused-parameter
+)
+
+# Test executable for HTTP interceptor integration (Phase 5.4)
+add_executable(test_http_interceptor_integration
+    tests/test_http_interceptor_integration.cpp
+    lib/src/protocols/http/ZuneHTTPInterceptor.cpp
+    lib/src/protocols/handlers/CCPHandler.cpp
+    lib/src/protocols/handlers/DNSHandler.cpp
+    lib/src/protocols/tcp/TCPConnectionManager.cpp
+    lib/src/protocols/tcp/TCPFlowController.cpp
+    lib/src/protocols/tcp/TCPStreamReassembler.cpp
+    lib/src/protocols/tcp/RTOManager.cpp
+    lib/src/protocols/ppp/PPPParser.cpp
+    lib/src/protocols/ppp/PPPFrameBuilder.cpp
+    lib/src/protocols/http/HTTPParser.cpp
+    lib/src/protocols/http/StaticModeHandler.cpp
+    lib/src/protocols/http/ProxyModeHandler.cpp
+    lib/src/protocols/http/HttpClient.cpp
+    lib/src/protocols/http/HybridModeHandler.cpp
+)
+
+target_include_directories(test_http_interceptor_integration PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${AFTL_INCLUDE_DIRS}
+    ${CURL_INCLUDE_DIRS}
+)
+
+target_link_libraries(test_http_interceptor_integration
+    aft-cli-static
+    ${AFTL_LIBRARY}
+    ${CURL_LIBRARIES}
+    ${CMAKE_THREAD_LIBS_INIT}
+    ${PLATFORM_LIBRARIES}
+)
+
+target_compile_options(test_http_interceptor_integration PRIVATE
     -Wall
     -Wextra
     -Wno-unused-parameter

@@ -56,6 +56,50 @@ public:
      */
     static std::string GetProtocolName(uint16_t protocol);
 
+    /**
+     * Extract individual PPP frames from a concatenated buffer
+     * USB responses often contain multiple PPP frames packed together.
+     * This function splits them into individual frames.
+     *
+     * @param data Buffer containing one or more PPP frames
+     * @return Vector of individual PPP frames (each with 0x7E delimiters)
+     */
+    static std::vector<mtp::ByteArray> ExtractFrames(const mtp::ByteArray& data);
+
+    /**
+     * Extract PPP frames with support for incomplete frames spanning USB packets
+     *
+     * USB packets can contain multiple PPP frames, and a single PPP frame can
+     * span multiple USB packets. This function handles both cases by:
+     * 1. Prepending any incomplete frame data from the previous call
+     * 2. Extracting all complete frames
+     * 3. Storing any incomplete frame data for the next call
+     *
+     * @param data New USB packet data
+     * @param incomplete_buffer In/out buffer for incomplete frame data
+     * @return Vector of complete PPP frames extracted
+     */
+    static std::vector<mtp::ByteArray> ExtractFramesWithBuffer(
+        const mtp::ByteArray& data,
+        mtp::ByteArray& incomplete_buffer);
+
+    /**
+     * Parsed PPP frame with protocol information
+     */
+    struct ParsedFrame {
+        uint16_t protocol;          // PPP protocol (0x0021 = IPv4, 0x8021 = IPCP, etc.)
+        mtp::ByteArray payload;     // Payload after protocol field (without FCS)
+        mtp::ByteArray raw_frame;   // Original frame with delimiters
+    };
+
+    /**
+     * Try to extract payload from PPP frame (non-throwing version)
+     * @param data PPP-framed data
+     * @param frame Output: parsed frame if successful
+     * @return true if frame was valid and parsed
+     */
+    static bool TryParseFrame(const mtp::ByteArray& data, ParsedFrame& frame);
+
 private:
     // PPP frame delimiters and protocols
     static constexpr uint8_t PPP_FLAG = 0x7E;
@@ -284,6 +328,37 @@ public:
      */
     static mtp::ByteArray BuildConfigAck(const IPCPPacket& request);
 };
+
+// PPPParser IPCP helper functions (declared after IPCPParser is defined)
+namespace PPPParserHelpers {
+    /**
+     * Find IPCP frame with specific code in a buffer of concatenated frames
+     * @param data Buffer containing PPP frames
+     * @param ipcp_code IPCP code to find (1=Config-Request, 2=Ack, 3=Nak, 4=Reject)
+     * @param packet Output: parsed IPCP packet if found
+     * @return true if found
+     */
+    bool FindIPCPFrame(const mtp::ByteArray& data, uint8_t ipcp_code,
+                       IPCPParser::IPCPPacket& packet);
+
+    /**
+     * Check if buffer contains IPCP frame with specific code
+     * @param data Buffer containing PPP frames
+     * @param ipcp_code IPCP code to look for
+     * @return true if found
+     */
+    bool ContainsIPCPCode(const mtp::ByteArray& data, uint8_t ipcp_code);
+}
+
+// Convenience aliases
+inline bool PPPParser_FindIPCPFrame(const mtp::ByteArray& data, uint8_t ipcp_code,
+                                    IPCPParser::IPCPPacket& packet) {
+    return PPPParserHelpers::FindIPCPFrame(data, ipcp_code, packet);
+}
+
+inline bool PPPParser_ContainsIPCPCode(const mtp::ByteArray& data, uint8_t ipcp_code) {
+    return PPPParserHelpers::ContainsIPCPCode(data, ipcp_code);
+}
 
 /**
  * DNSServer
