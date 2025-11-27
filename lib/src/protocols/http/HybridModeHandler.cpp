@@ -64,7 +64,8 @@ HTTPParser::HTTPResponse HybridModeHandler::HandleRequest(const HTTPParser::HTTP
     std::string resource_id = HTTPParser::ExtractImageUUID(request.path);
 
     // Step 1: Try to serve from local cache (if callback is set)
-    if (path_resolver_callback_ && !artist_uuid.empty()) {
+    // Call PathResolver if we have artist UUID OR if we have resource ID (for image-by-ID lookups)
+    if (path_resolver_callback_ && (!artist_uuid.empty() || !resource_id.empty())) {
         auto local_response = TryServeFromLocal(artist_uuid, endpoint_type, resource_id);
         if (local_response.status_code != 0) {
             Log("Served from local cache");
