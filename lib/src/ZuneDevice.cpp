@@ -599,6 +599,7 @@ int ZuneDevice::UploadWithArtwork(const std::string& media_path, const std::stri
 }
 
 int ZuneDevice::UploadTrackWithMetadata(
+    MediaType media_type,
     const std::string& audio_file_path,
     const std::string& artist_name,
     const std::string& album_name,
@@ -609,15 +610,16 @@ int ZuneDevice::UploadTrackWithMetadata(
     const uint8_t* artwork_data,
     size_t artwork_size,
     const std::string& artist_guid,
+    uint32_t duration_ms,
     uint32_t* out_track_id,
     uint32_t* out_album_id,
     uint32_t* out_artist_id
 ) {
     if (library_manager_) {
         return library_manager_->UploadTrackWithMetadata(
-            audio_file_path, artist_name, album_name, album_year,
+            media_type, audio_file_path, artist_name, album_name, album_year,
             track_title, genre, track_number, artwork_data, artwork_size,
-            artist_guid, out_track_id, out_album_id, out_artist_id
+            artist_guid, duration_ms, out_track_id, out_album_id, out_artist_id
         );
     }
     return -1;

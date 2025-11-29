@@ -306,6 +306,8 @@ ZuneMusicLibrary* LibraryManager::GetMusicLibrary(const std::string& device_mode
             result->tracks[i].duration_ms = t.duration_ms;
             result->tracks[i].album_ref = t.album_ref;
             result->tracks[i].atom_id = t.atom_id;
+            result->tracks[i].playcount = t.playcount;
+            result->tracks[i].rating = t.rating;
         }
 
         // Copy albums
@@ -488,7 +490,172 @@ std::vector<ZunePlaylistInfo> LibraryManager::GetPlaylists() {
     return results;
 }
 
+// --- Upload Helper Methods ---
+
+LibraryManager::UploadContext LibraryManager::PrepareAudiobookUpload(
+    const std::string& audiobook_name,
+    const std::string& author_name,
+    int year,
+    const std::string& track_title,
+    int track_number,
+    const std::string& filename,
+    size_t file_size,
+    uint32_t duration_ms,
+    mtp::ObjectFormat format
+) {
+    UploadContext ctx;
+    ctx.is_audiobook = true;
+
+    Log("  Getting/creating audiobook: " + audiobook_name);
+    ctx.audiobook_ptr = library_->GetAudiobook(audiobook_name);
+    if (!ctx.audiobook_ptr) {
+        ctx.audiobook_ptr = library_->CreateAudiobook(audiobook_name, author_name, year);
+        if (!ctx.audiobook_ptr) {
+            throw std::runtime_error("Failed to create audiobook");
+        }
+    }
+    Log("  ✓ Audiobook: " + audiobook_name + " by " + author_name);
+
+    Log("  Creating audiobook track entry...");
+    if (duration_ms > 0) {
+        Log("  Duration: " + std::to_string(duration_ms) + " ms");
+    }
+    ctx.track_info = library_->CreateAudiobookTrack(
+        ctx.audiobook_ptr, format, track_title, track_number,
+        filename, file_size, duration_ms
+    );
+    Log("  ✓ Audiobook track entry created");
+
+    return ctx;
+}
+
+LibraryManager::UploadContext LibraryManager::PrepareMusicUpload(
+    const std::string& artist_name,
+    const std::string& album_name,
+    int album_year,
+    const std::string& track_title,
+    const std::string& genre,
+    int track_number,
+    const std::string& filename,
+    size_t file_size,
+    uint32_t duration_ms,
+    mtp::ObjectFormat format,
+    const std::string& artist_guid
+) {
+    UploadContext ctx;
+    ctx.is_audiobook = false;
+
+    // Get or create artist
+    ctx.artist_ptr = library_->GetArtist(artist_name);
+    if (!ctx.artist_ptr) {
+        Log("  Creating artist: " + artist_name);
+        if (!artist_guid.empty()) {
+            Log("  → Registering with Zune GUID for metadata fetching");
+        }
+        ctx.artist_ptr = library_->CreateArtist(artist_name, artist_guid);
+        if (!ctx.artist_ptr) {
+            throw std::runtime_error("Failed to create artist");
+        }
+    } else if (!artist_guid.empty() && ctx.artist_ptr->Guid.empty()) {
+        Log("  Artist exists but has no GUID - updating with Zune GUID for metadata fetching");
+        library_->UpdateArtistGuid(ctx.artist_ptr, artist_guid);
+        Log("  ✓ Artist GUID updated");
+    }
+    Log("  ✓ Artist: " + artist_name);
+
+    // Get or create album
+    ctx.album_ptr = library_->GetAlbum(ctx.artist_ptr, album_name);
+    if (!ctx.album_ptr) {
+        Log("  Creating album: " + album_name);
+        ctx.album_ptr = library_->CreateAlbum(ctx.artist_ptr, album_name, album_year);
+        if (!ctx.album_ptr) {
+            throw std::runtime_error("Failed to create album");
+        }
+    }
+    Log("  ✓ Album: " + album_name + " (" + std::to_string(album_year) + ")");
+
+    // Register artist GUID with device
+    if (!artist_guid.empty()) {
+        Log("  Registering artist GUID with device...");
+        try {
+            library_->ValidateArtistGuid(artist_name, track_title, artist_guid);
+            Log("  ✓ Artist GUID registered - device should now recognize artist metadata");
+        } catch (const std::exception& e) {
+            Log("  Warning: GUID registration failed: " + std::string(e.what()));
+            Log("  (Device may not request artist metadata)");
+        }
+    }
+
+    // Create track entry
+    Log("  Creating track entry...");
+    ctx.track_info = library_->CreateTrack(
+        ctx.artist_ptr, ctx.album_ptr, format, track_title, genre,
+        track_number, filename, file_size, duration_ms
+    );
+    Log("  ✓ Track entry created");
+
+    return ctx;
+}
+
+void LibraryManager::UploadAudioData(std::shared_ptr<cli::ObjectInputStream> stream) {
+    Log("  Uploading audio data...");
+    mtp_session_->SendObject(stream);
+    Log("  ✓ Audio data uploaded");
+}
+
+void LibraryManager::AddArtwork(const UploadContext& ctx, const uint8_t* artwork_data, size_t artwork_size) {
+    if (!artwork_data || artwork_size == 0) return;
+
+    mtp::ByteArray artwork(artwork_data, artwork_data + artwork_size);
+    if (ctx.is_audiobook) {
+        Log("  Adding audiobook track cover...");
+        library_->AddAudiobookTrackCover(ctx.track_info.Id, artwork);
+        Log("  ✓ Audiobook track cover added");
+    } else {
+        Log("  Adding album artwork...");
+        library_->AddCover(ctx.album_ptr, artwork);
+        Log("  ✓ Album artwork added");
+    }
+}
+
+void LibraryManager::LinkTrackToContainer(const UploadContext& ctx) {
+    if (ctx.is_audiobook) {
+        Log("  Linking track to audiobook...");
+        library_->AddAudiobookTrack(ctx.audiobook_ptr, ctx.track_info);
+        Log("  ✓ Track linked to audiobook");
+    } else {
+        Log("  Linking track to album...");
+        library_->AddTrack(ctx.album_ptr, ctx.track_info);
+        Log("  ✓ Track linked to album");
+    }
+}
+
+void LibraryManager::FinalizeUpload(const mtp::Library::NewTrackInfo& track_info) {
+    Log("  Synchronizing device database (Operation 0x9217)...");
+    try {
+        mtp_session_->Operation9217(1);
+        Log("  ✓ Database synchronized - device should now recognize new artist");
+    } catch (const std::exception& e) {
+        Log("  Warning: Database sync failed: " + std::string(e.what()));
+        Log("  (Device may not request artist metadata)");
+    }
+
+    Log("  Executing post-upload metadata trigger sequence...");
+    try {
+        Log("    Using track handle: 0x" + std::to_string(track_info.Id.Id));
+        Log("    Querying track properties...");
+        mtp_session_->Operation9802(0xDC44, track_info.Id.Id);  // Name
+        Log("    ✓ Track properties queried");
+        Log("    ✓ Post-upload metadata trigger sequence complete");
+    } catch (const std::exception& e) {
+        Log("    Warning: Post-upload sequence failed: " + std::string(e.what()));
+    }
+}
+
+// --- Main Upload Method ---
+
 int LibraryManager::UploadTrackWithMetadata(
+    MediaType media_type,
     const std::string& audio_file_path,
     const std::string& artist_name,
     const std::string& album_name,
@@ -499,6 +666,7 @@ int LibraryManager::UploadTrackWithMetadata(
     const uint8_t* artwork_data,
     size_t artwork_size,
     const std::string& artist_guid,
+    uint32_t duration_ms,
     uint32_t* out_track_id,
     uint32_t* out_album_id,
     uint32_t* out_artist_id
@@ -508,126 +676,53 @@ int LibraryManager::UploadTrackWithMetadata(
         return -1;
     }
 
+    bool is_audiobook = (media_type == MediaType::Audiobook);
+
     try {
-        Log("Uploading track: " + track_title + " by " + artist_name);
+        Log(is_audiobook
+            ? "Uploading audiobook track: " + track_title + " by " + artist_name
+            : "Uploading track: " + track_title + " by " + artist_name);
         if (!artist_guid.empty()) {
             Log("  Artist GUID: " + artist_guid);
         }
 
         EnsureLibraryInitialized();
 
+        // Open audio file
         auto stream = std::make_shared<cli::ObjectInputStream>(audio_file_path);
         stream->SetTotal(stream->GetSize());
         Log("  ✓ Audio file opened: " + std::to_string(stream->GetSize()) + " bytes");
 
-        auto artist = library_->GetArtist(artist_name);
-        if (!artist) {
-            Log("  Creating artist: " + artist_name);
-            if (!artist_guid.empty()) {
-                Log("  → Registering with Zune GUID for metadata fetching");
-            }
-            artist = library_->CreateArtist(artist_name, artist_guid);
-            if (!artist) {
-                Log("Error: Failed to create artist");
-                return -1;
-            }
-        } else {
-            if (!artist_guid.empty() && artist->Guid.empty()) {
-                Log("  Artist exists but has no GUID - updating with Zune GUID for metadata fetching");
-                library_->UpdateArtistGuid(artist, artist_guid);
-                Log("  ✓ Artist GUID updated");
-            }
-        }
-        Log("  ✓ Artist: " + artist_name);
-
-        auto album = library_->GetAlbum(artist, album_name);
-        if (!album) {
-            Log("  Creating album: " + album_name);
-            album = library_->CreateAlbum(artist, album_name, album_year);
-            if (!album) {
-                Log("Error: Failed to create album");
-                return -1;
-            }
-        }
-        Log("  ✓ Album: " + album_name + " (" + std::to_string(album_year) + ")");
-
-        if (!artist_guid.empty()) {
-            Log("  Registering artist GUID with device...");
-            try {
-                library_->ValidateArtistGuid(artist_name, track_title, artist_guid);
-                Log("  ✓ Artist GUID registered - device should now recognize artist metadata");
-            } catch (const std::exception& e) {
-                Log("  Warning: GUID registration failed: " + std::string(e.what()));
-                Log("  (Device may not request artist metadata)");
-            }
-        }
-
         auto slashpos = audio_file_path.rfind('/');
-        auto filename = slashpos != audio_file_path.npos ?
-            audio_file_path.substr(slashpos + 1) : audio_file_path;
+        auto filename = slashpos != audio_file_path.npos
+            ? audio_file_path.substr(slashpos + 1) : audio_file_path;
         mtp::ObjectFormat format = mtp::ObjectFormatFromFilename(audio_file_path);
 
-        Log("  Creating track entry...");
-        auto track_info = library_->CreateTrack(
-            artist,
-            album,
-            format,
-            track_title,
-            genre,
-            track_number,
-            filename,
-            stream->GetSize()
-        );
-        Log("  ✓ Track entry created");
+        // Prepare upload (create entities)
+        UploadContext ctx = is_audiobook
+            ? PrepareAudiobookUpload(album_name, artist_name, album_year, track_title,
+                                     track_number, filename, stream->GetSize(), duration_ms, format)
+            : PrepareMusicUpload(artist_name, album_name, album_year, track_title, genre,
+                                 track_number, filename, stream->GetSize(), duration_ms, format, artist_guid);
 
-        Log("  Uploading audio data...");
-        mtp_session_->SendObject(stream);
-        Log("  ✓ Audio data uploaded");
+        // Upload, add artwork, link, and finalize
+        UploadAudioData(stream);
+        AddArtwork(ctx, artwork_data, artwork_size);
+        LinkTrackToContainer(ctx);
+        Log(is_audiobook ? "✓ Audiobook track uploaded successfully" : "✓ Track uploaded successfully");
+        FinalizeUpload(ctx.track_info);
 
-        if (artwork_data && artwork_size > 0) {
-            Log("  Adding album artwork...");
-            mtp::ByteArray artwork(artwork_data, artwork_data + artwork_size);
-            library_->AddCover(album, artwork);
-            Log("  ✓ Album artwork added");
-        }
-
-        Log("  Linking track to album...");
-        library_->AddTrack(album, track_info);
-        Log("  ✓ Track linked to album");
-
-        Log("✓ Track uploaded successfully");
-
-        Log("  Synchronizing device database (Operation 0x9217)...");
-        try {
-            mtp_session_->Operation9217(1);
-            Log("  ✓ Database synchronized - device should now recognize new artist");
-        } catch (const std::exception& e) {
-            Log("  Warning: Database sync failed: " + std::string(e.what()));
-            Log("  (Device may not request artist metadata)");
-        }
-
-        Log("  Executing post-upload metadata trigger sequence...");
-        try {
-            mtp::ObjectId newTrackHandle = track_info.Id;
-            Log("    Using track handle: 0x" + std::to_string(newTrackHandle.Id));
-
-            Log("    Querying track properties...");
-            mtp_session_->Operation9802(0xDC44, newTrackHandle.Id);  // Name
-            Log("    ✓ Track properties queried");
-            Log("    ✓ Post-upload metadata trigger sequence complete");
-
-        } catch (const std::exception& e) {
-            Log("    Warning: Post-upload sequence failed: " + std::string(e.what()));
-        }
-
+        // Set output parameters
         if (out_track_id) {
-            *out_track_id = track_info.Id.Id;
+            *out_track_id = ctx.track_info.Id.Id;
         }
         if (out_album_id) {
-            *out_album_id = album->Id.Id;
+            *out_album_id = ctx.is_audiobook && ctx.audiobook_ptr
+                ? ctx.audiobook_ptr->Id.Id
+                : (ctx.album_ptr ? ctx.album_ptr->Id.Id : 0);
         }
         if (out_artist_id) {
-            *out_artist_id = artist->Id.Id;
+            *out_artist_id = ctx.artist_ptr ? ctx.artist_ptr->Id.Id : 0;
         }
 
         return 0;

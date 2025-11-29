@@ -220,12 +220,14 @@ ZUNE_WIRELESS_API ZuneUploadResult zune_device_upload_track(
     int track_number,
     const uint8_t* artwork_data,
     uint32_t artwork_size,
-    const char* artist_guid
+    const char* artist_guid,
+    uint32_t duration_ms
 ) {
     ZuneUploadResult result = {0, 0, 0, -1};  // Initialize with failure status
 
     if (handle) {
         result.status = static_cast<ZuneDevice*>(handle)->UploadTrackWithMetadata(
+            MediaType::Music,
             audio_file_path ? audio_file_path : "",
             artist_name ? artist_name : "",
             album_name ? album_name : "",
@@ -235,7 +237,45 @@ ZUNE_WIRELESS_API ZuneUploadResult zune_device_upload_track(
             track_number,
             artwork_data,
             artwork_size,
-            artist_guid ? artist_guid : "",  // Pass artist_guid from caller, default to empty if null
+            artist_guid ? artist_guid : "",
+            duration_ms,
+            &result.track_object_id,
+            &result.album_object_id,
+            &result.artist_object_id
+        );
+    }
+
+    return result;
+}
+
+ZUNE_WIRELESS_API ZuneUploadResult zune_device_upload_audiobook_track(
+    zune_device_handle_t handle,
+    const char* audio_file_path,
+    const char* author_name,
+    const char* audiobook_name,
+    int release_year,
+    const char* track_title,
+    int track_number,
+    const uint8_t* artwork_data,
+    uint32_t artwork_size,
+    uint32_t duration_ms
+) {
+    ZuneUploadResult result = {0, 0, 0, -1};  // Initialize with failure status
+
+    if (handle) {
+        result.status = static_cast<ZuneDevice*>(handle)->UploadTrackWithMetadata(
+            MediaType::Audiobook,
+            audio_file_path ? audio_file_path : "",
+            author_name ? author_name : "",
+            audiobook_name ? audiobook_name : "",
+            release_year,
+            track_title ? track_title : "",
+            "",  // genre (not used for audiobooks)
+            track_number,
+            artwork_data,
+            artwork_size,
+            "",  // artist_guid (not used for audiobooks)
+            duration_ms,
             &result.track_object_id,
             &result.album_object_id,
             &result.artist_object_id

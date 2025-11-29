@@ -5,6 +5,12 @@
 #include <usb/Device.h>
 #include <usb/Interface.h>
 
+// Media type for upload differentiation
+enum class MediaType {
+    Music,
+    Audiobook
+};
+
 // USB handles structure for raw monitoring (includes pre-discovered endpoints)
 struct USBHandlesWithEndpoints {
     mtp::usb::DevicePtr device;

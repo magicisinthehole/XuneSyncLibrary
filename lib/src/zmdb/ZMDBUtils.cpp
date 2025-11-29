@@ -99,6 +99,9 @@ size_t get_entry_size_for_schema(uint8_t schema_type) {
         case Schema::Collection:    return 12;  // 0x0c
         case Schema::PodcastShow:   return 8;   // 0x0f
         case Schema::PodcastEpisode: return 32; // 0x10
+        case Schema::AudiobookTitle: return 8;  // 0x11 (ref0, ref1 + title string)
+        case Schema::AudiobookTrack: return 36; // 0x12 (fixed fields before strings)
+        case Schema::AudiobookRef:  return 12;  // 0x19 (type/counter, title_ref, reserved)
         default:
             return 0;  // Unknown schema
     }

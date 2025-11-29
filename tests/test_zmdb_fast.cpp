@@ -189,6 +189,8 @@ bool ExportLibraryToJson(ZuneMusicLibrary* library, const std::string& output_fi
                 json_file << "              \"albumArtistGuid\": \"" << JsonEscape(track->album_artist_guid) << "\",\n";
                 json_file << "              \"trackNumber\": " << track->track_number << ",\n";
                 json_file << "              \"duration_ms\": " << track->duration_ms << ",\n";
+                json_file << "              \"playcount\": " << track->playcount << ",\n";
+                json_file << "              \"rating\": " << static_cast<int>(track->rating) << ",\n";
                 json_file << "              \"filename\": \"" << JsonEscape(track->filename) << "\"\n";
                 json_file << "            }" << (track_idx < tracks.size() - 1 ? "," : "") << "\n";
             }

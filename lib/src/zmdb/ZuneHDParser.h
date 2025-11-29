@@ -60,6 +60,11 @@ private:
         uint32_t atom_id
     );
 
+    std::optional<ZMDBAudiobook> parse_audiobook_track(
+        const std::vector<uint8_t>& record_data,
+        uint32_t atom_id
+    );
+
     std::optional<ZMDBAlbum> parse_album(
         const std::vector<uint8_t>& record_data,
         uint32_t atom_id

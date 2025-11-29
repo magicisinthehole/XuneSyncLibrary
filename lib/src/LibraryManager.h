@@ -20,8 +20,9 @@ namespace zmdb {
     struct ZMDBAlbum;
 }
 
-// Internal C++ struct for file info
-
+namespace cli {
+    class ObjectInputStream;
+}
 
 class LibraryManager {
 public:
@@ -43,7 +44,10 @@ public:
     int UploadWithArtwork(const std::string& media_path, const std::string& artwork_path);
 
     // --- Upload with Metadata ---
+    // For Music: artist_name = artist, album_name = album
+    // For Audiobook: artist_name = author, album_name = audiobook title
     int UploadTrackWithMetadata(
+        MediaType media_type,
         const std::string& audio_file_path,
         const std::string& artist_name,
         const std::string& album_name,
@@ -54,6 +58,7 @@ public:
         const uint8_t* artwork_data,
         size_t artwork_size,
         const std::string& artist_guid = "",
+        uint32_t duration_ms = 0,
         uint32_t* out_track_id = nullptr,
         uint32_t* out_album_id = nullptr,
         uint32_t* out_artist_id = nullptr
@@ -109,4 +114,44 @@ private:
     void EnsureLibraryInitialized();
     std::string Utf16leToAscii(const mtp::ByteArray& data, bool is_guid = false);
     mtp::ByteArray HexToBytes(const std::string& hex_str);
+
+    // --- Upload Helper Types and Methods ---
+    struct UploadContext {
+        mtp::Library::NewTrackInfo track_info;
+        mtp::Library::AudiobookPtr audiobook_ptr;
+        mtp::Library::AlbumPtr album_ptr;
+        mtp::Library::ArtistPtr artist_ptr;
+        bool is_audiobook;
+    };
+
+    UploadContext PrepareAudiobookUpload(
+        const std::string& audiobook_name,
+        const std::string& author_name,
+        int year,
+        const std::string& track_title,
+        int track_number,
+        const std::string& filename,
+        size_t file_size,
+        uint32_t duration_ms,
+        mtp::ObjectFormat format
+    );
+
+    UploadContext PrepareMusicUpload(
+        const std::string& artist_name,
+        const std::string& album_name,
+        int album_year,
+        const std::string& track_title,
+        const std::string& genre,
+        int track_number,
+        const std::string& filename,
+        size_t file_size,
+        uint32_t duration_ms,
+        mtp::ObjectFormat format,
+        const std::string& artist_guid
+    );
+
+    void UploadAudioData(std::shared_ptr<cli::ObjectInputStream> stream);
+    void AddArtwork(const UploadContext& ctx, const uint8_t* artwork_data, size_t artwork_size);
+    void LinkTrackToContainer(const UploadContext& ctx);
+    void FinalizeUpload(const mtp::Library::NewTrackInfo& track_info);
 };

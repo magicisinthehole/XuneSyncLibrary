@@ -459,6 +459,7 @@ void operation_upload_track(ZuneDevice& device) {
     g_show_logs = true;  // Enable logging for upload operation
     try {
         int result = device.UploadTrackWithMetadata(
+            MediaType::Music,
             track_path,
             metadata.artist,
             metadata.album,

@@ -95,6 +95,10 @@ ZMDBLibrary ZuneHDParser::ExtractLibrary(const std::vector<uint8_t>& zmdb_data) 
         library.podcasts_capacity = descriptors_[19].entry_count;
         library.podcasts = static_cast<ZMDBPodcast*>(::operator new[](library.podcasts_capacity * sizeof(ZMDBPodcast)));
     }
+    if (descriptors_.size() > 26 && descriptors_[26].entry_count > 0) {
+        library.audiobooks_capacity = descriptors_[26].entry_count;
+        library.audiobooks = static_cast<ZMDBAudiobook*>(::operator new[](library.audiobooks_capacity * sizeof(ZMDBAudiobook)));
+    }
 
     // Parse directly into arrays (no intermediate vectors, no reallocation)
     try {
@@ -125,6 +129,12 @@ ZMDBLibrary ZuneHDParser::ExtractLibrary(const std::vector<uint8_t>& zmdb_data) 
         extract_media_from_descriptor(19, Schema::PodcastEpisode, library); // Podcast episodes
     } catch (const std::exception& e) {
         throw std::runtime_error(std::string("Podcast parsing failed: ") + e.what());
+    }
+
+    try {
+        extract_media_from_descriptor(26, Schema::AudiobookTrack, library); // Audiobook tracks (descriptor 26, not 25)
+    } catch (const std::exception& e) {
+        throw std::runtime_error(std::string("Audiobook parsing failed: ") + e.what());
     }
 
     // Move album metadata from cache (no tracks - consumer groups by album_ref)
@@ -189,10 +199,9 @@ std::optional<ZMDBTrack> ZuneHDParser::parse_music_track(
     track.duration_ms = read_int32_le(record_data, 16);
     track.file_size_bytes = read_int32_le(record_data, 20);
     track.track_number = read_uint16_le(record_data, 24);
-    track.unknown_field_26 = read_uint16_le(record_data, 26);  // Purpose unknown
-    track.codec_id = read_uint16_le(record_data, 28);
-    track.field_30 = record_data[30];
-    track.reserved_31 = record_data[31];
+    track.playcount = read_uint16_le(record_data, 26);         // Play count
+    track.codec_id = read_uint16_le(record_data, 28);          // Format code (e.g., 0xb901 = WMA)
+    track.rating = record_data[30];                             // Rating: 0=neutral, 8=liked, 3=disliked
 
     // Store album_ref for grouping tracks into albums
     track.album_ref = album_ref;
@@ -564,6 +573,77 @@ std::optional<ZMDBPodcast> ZuneHDParser::parse_podcast_episode(
     return podcast;
 }
 
+std::optional<ZMDBAudiobook> ZuneHDParser::parse_audiobook_track(
+    const std::vector<uint8_t>& record_data,
+    uint32_t atom_id
+) {
+    // Schema 0x12 - Audiobook Track
+    // Based on AUDIOBOOK_SCHEMA_ANALYSIS.md
+    if (record_data.size() < 36) {
+        return std::nullopt;
+    }
+
+    ZMDBAudiobook audiobook;
+    audiobook.atom_id = atom_id;
+
+    // Read reference fields (offsets 0x00-0x07)
+    audiobook.filename_ref = read_uint32_le(record_data, 0);   // Folder ref (Schema 0x05)
+    audiobook.title_ref = read_uint32_le(record_data, 4);      // Audiobook title ref (Schema 0x11)
+
+    // Read fixed fields
+    audiobook.duration_ms = read_uint32_le(record_data, 8);           // Offset 0x08
+    audiobook.playback_position_ms = read_uint32_le(record_data, 12); // Offset 0x0C
+    // Offset 0x10-0x17: uint64 timestamp (usually 0, actual timestamp in varint 0x70)
+    audiobook.file_size_bytes = read_uint32_le(record_data, 24);      // Offset 0x18
+    audiobook.track_number = read_uint16_le(record_data, 28);         // Offset 0x1C
+    audiobook.playcount = read_uint16_le(record_data, 30);            // Offset 0x1E
+    audiobook.format_code = read_uint16_le(record_data, 32);          // Offset 0x20
+    // Offset 0x22: uint16 field (playback state related)
+
+    // Read track title at offset 0x24 (UTF-8, null-terminated)
+    if (record_data.size() > 36) {
+        audiobook.title = read_null_terminated_utf8(record_data, 36);
+    }
+
+    // Resolve audiobook title from reference
+    if (audiobook.title_ref != 0) {
+        audiobook.audiobook_name = resolve_string_reference(audiobook.title_ref);
+    }
+
+    // Parse backwards varints for additional fields
+    size_t entry_size = get_entry_size_for_schema(Schema::AudiobookTrack);
+    if (entry_size > 0) {
+        auto fields = parse_backwards_varints(record_data, entry_size);
+        for (const auto& field : fields) {
+            // Field 0x44: Filename (UTF-16LE)
+            if (field.field_id == 0x44 && field.field_size > 2) {
+                std::vector<uint8_t> utf16_data = field.field_data;
+                // Handle padding bytes
+                if (!utf16_data.empty() && utf16_data[0] == 0x00 && utf16_data.back() == 0x00) {
+                    utf16_data.erase(utf16_data.begin());
+                    utf16_data.pop_back();
+                }
+                audiobook.filename = utf16le_to_utf8(utf16_data);
+            }
+            // Field 0x46: Author name (UTF-16LE)
+            else if (field.field_id == 0x46 && field.field_size > 2) {
+                std::vector<uint8_t> utf16_data = field.field_data;
+                if (!utf16_data.empty() && utf16_data[0] == 0x00 && utf16_data.back() == 0x00) {
+                    utf16_data.erase(utf16_data.begin());
+                    utf16_data.pop_back();
+                }
+                audiobook.author = utf16le_to_utf8(utf16_data);
+            }
+            // Field 0x70: Windows FILETIME timestamp
+            else if (field.field_id == 0x70 && field.field_size == 8) {
+                audiobook.timestamp = read_uint64_le(field.field_data, 0);
+            }
+        }
+    }
+
+    return audiobook;
+}
+
 std::optional<ZMDBAlbum> ZuneHDParser::parse_album(
     const std::vector<uint8_t>& record_data,
     uint32_t atom_id
@@ -705,6 +785,12 @@ std::string ZuneHDParser::resolve_string_reference(uint32_t atom_id) {
             break;
 
         case Schema::PodcastShow:  // 0x0f
+            if (record_data.size() > 8) {
+                result = read_null_terminated_utf8(record_data, 8);
+            }
+            break;
+
+        case Schema::AudiobookTitle:  // 0x11
             if (record_data.size() > 8) {
                 result = read_null_terminated_utf8(record_data, 8);
             }
@@ -921,6 +1007,18 @@ void ZuneHDParser::extract_media_from_descriptor(
                     if (podcast.has_value()) {
                         new (&library.podcasts[library.podcast_count]) ZMDBPodcast(std::move(podcast.value()));
                         library.podcast_count++;
+                    }
+                }
+                break;
+            }
+
+            case Schema::AudiobookTrack:
+            {
+                if (library.audiobook_count < library.audiobooks_capacity) {
+                    auto audiobook = parse_audiobook_track(record_data, atom_id);
+                    if (audiobook.has_value()) {
+                        new (&library.audiobooks[library.audiobook_count]) ZMDBAudiobook(std::move(audiobook.value()));
+                        library.audiobook_count++;
                     }
                 }
                 break;

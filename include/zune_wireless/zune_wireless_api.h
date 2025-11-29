@@ -47,6 +47,8 @@ struct ZuneMusicTrack {
     int duration_ms;
     uint32_t album_ref;  // References album atom_id for grouping
     uint32_t atom_id;
+    uint16_t playcount;  // Play count from device
+    uint8_t rating;      // Rating: 0=neutral, 8=liked, 3=disliked
 };
 
 struct ZuneMusicAlbum {
@@ -122,7 +124,7 @@ ZUNE_WIRELESS_API int zune_device_delete_file(zune_device_handle_t handle, uint3
 // This function currently ignores artwork_path and only uploads the media file.
 ZUNE_WIRELESS_API int zune_device_upload_with_artwork(zune_device_handle_t handle, const char* media_path, const char* artwork_path);
 
-// Upload with metadata (uses Library for proper MTP structure)
+// Upload music track with metadata (uses Library for proper MTP structure)
 ZUNE_WIRELESS_API ZuneUploadResult zune_device_upload_track(
     zune_device_handle_t handle,
     const char* audio_file_path,
@@ -134,7 +136,23 @@ ZUNE_WIRELESS_API ZuneUploadResult zune_device_upload_track(
     int track_number,
     const uint8_t* artwork_data,
     uint32_t artwork_size,
-    const char* artist_guid
+    const char* artist_guid,
+    uint32_t duration_ms
+);
+
+// Upload audiobook track with metadata
+// author_name maps to artist_name, audiobook_name maps to album_name
+ZUNE_WIRELESS_API ZuneUploadResult zune_device_upload_audiobook_track(
+    zune_device_handle_t handle,
+    const char* audio_file_path,
+    const char* author_name,
+    const char* audiobook_name,
+    int release_year,
+    const char* track_title,
+    int track_number,
+    const uint8_t* artwork_data,
+    uint32_t artwork_size,
+    uint32_t duration_ms
 );
 
 // Streaming/Partial Downloads

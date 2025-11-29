@@ -399,6 +399,7 @@ int main(int argc, char** argv) {
                 std::cout << "Uploading track with metadata..." << std::endl;
 
                 int result = device.UploadTrackWithMetadata(
+                    MediaType::Music,
                     track_path,
                     artist,
                     album,

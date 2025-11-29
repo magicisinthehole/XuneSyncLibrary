@@ -98,7 +98,10 @@ public:
     int UploadWithArtwork(const std::string& media_path, const std::string& artwork_path);
 
     // --- Upload with Metadata (uses Library for proper MTP structure) ---
+    // For Music: artist_name = artist, album_name = album
+    // For Audiobook: artist_name = author, album_name = audiobook title
     int UploadTrackWithMetadata(
+        MediaType media_type,
         const std::string& audio_file_path,
         const std::string& artist_name,
         const std::string& album_name,
@@ -109,6 +112,7 @@ public:
         const uint8_t* artwork_data,
         size_t artwork_size,
         const std::string& artist_guid = "",
+        uint32_t duration_ms = 0,
         uint32_t* out_track_id = nullptr,
         uint32_t* out_album_id = nullptr,
         uint32_t* out_artist_id = nullptr
