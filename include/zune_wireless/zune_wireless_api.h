@@ -44,11 +44,16 @@ struct ZuneMusicTrack {
     const char* genre;
     const char* filename;
     int track_number;
+    int disc_number;        // Disc number for multi-disc albums (field 0x6c, default=1)
     int duration_ms;
-    uint32_t album_ref;  // References album atom_id for grouping
+    int file_size_bytes;    // File size in bytes
+    uint32_t album_ref;     // References album atom_id for grouping
     uint32_t atom_id;
-    uint16_t playcount;  // Play count from device
-    uint8_t rating;      // Rating: 0=neutral, 8=liked, 3=disliked
+    uint16_t playcount;     // Play count (offset 26-27)
+    uint16_t skip_count;    // Skip count (field 0x63)
+    uint16_t codec_id;      // Format code: 0xb901=WMA, 0x3009=MP3
+    uint8_t rating;         // Rating: 0=neutral, 8=liked, 3=disliked (offset 30)
+    uint64_t last_played_timestamp; // Windows FILETIME of last play/skip event (field 0x70)
 };
 
 struct ZuneMusicAlbum {
@@ -58,11 +63,23 @@ struct ZuneMusicAlbum {
     const char* alb_reference;  // For artwork lookup (e.g., "Artist--Album.alb")
     int release_year;
     uint32_t atom_id;
+    uint32_t album_pid;         // Property ID (0x0600xxxx format)
+    uint32_t artist_ref;        // Artist atom_id reference
 };
 
 struct ZuneAlbumArtwork {
     const char* alb_reference;  // e.g., "Artist--Album.alb"
     uint32_t mtp_object_id;     // MTP ObjectId for .alb file
+};
+
+struct ZuneMusicPlaylist {
+    const char* name;           // Playlist name (UTF-8)
+    const char* filename;       // .zpl filename on device
+    const char* guid;           // Playlist GUID (hex string)
+    const char* folder;         // Folder reference (e.g., "Playlists")
+    uint32_t* track_atom_ids;   // Array of track atom_ids (references into tracks array)
+    uint32_t track_count;       // Number of tracks in this playlist
+    uint32_t atom_id;           // Playlist's own atom_id
 };
 
 struct ZuneMusicLibrary {
@@ -72,6 +89,8 @@ struct ZuneMusicLibrary {
     uint32_t album_count;
     ZuneAlbumArtwork* artworks;
     uint32_t artwork_count;
+    ZuneMusicPlaylist* playlists;
+    uint32_t playlist_count;
 };
 
 struct ZunePlaylistInfo {

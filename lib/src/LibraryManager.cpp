@@ -303,11 +303,16 @@ ZuneMusicLibrary* LibraryManager::GetMusicLibrary(const std::string& device_mode
             result->tracks[i].genre = strdup(t.genre.c_str());
             result->tracks[i].filename = strdup(t.filename.c_str());
             result->tracks[i].track_number = t.track_number;
+            result->tracks[i].disc_number = t.disc_number;
             result->tracks[i].duration_ms = t.duration_ms;
+            result->tracks[i].file_size_bytes = t.file_size_bytes;
             result->tracks[i].album_ref = t.album_ref;
             result->tracks[i].atom_id = t.atom_id;
             result->tracks[i].playcount = t.playcount;
+            result->tracks[i].skip_count = t.skip_count;
+            result->tracks[i].codec_id = t.codec_id;
             result->tracks[i].rating = t.rating;
+            result->tracks[i].last_played_timestamp = t.last_played_timestamp;
         }
 
         // Copy albums
@@ -321,6 +326,8 @@ ZuneMusicLibrary* LibraryManager::GetMusicLibrary(const std::string& device_mode
             result->albums[album_idx].alb_reference = strdup(album.alb_reference.c_str());
             result->albums[album_idx].release_year = album.release_year;
             result->albums[album_idx].atom_id = album.atom_id;
+            result->albums[album_idx].album_pid = album.album_pid;
+            result->albums[album_idx].artist_ref = album.artist_ref;
             album_idx++;
         }
 
@@ -334,9 +341,33 @@ ZuneMusicLibrary* LibraryManager::GetMusicLibrary(const std::string& device_mode
             artwork_idx++;
         }
 
+        // Copy playlists
+        result->playlist_count = library.playlist_count;
+        result->playlists = new ZuneMusicPlaylist[result->playlist_count];
+        for (uint32_t i = 0; i < library.playlist_count; i++) {
+            const auto& p = library.playlists[i];
+            result->playlists[i].name = strdup(p.name.c_str());
+            result->playlists[i].filename = strdup(p.filename.c_str());
+            result->playlists[i].guid = strdup(p.guid.c_str());
+            result->playlists[i].folder = strdup(p.folder.c_str());
+            result->playlists[i].track_count = p.track_atom_ids.size();
+            result->playlists[i].atom_id = p.atom_id;
+
+            // Copy track atom_ids
+            if (p.track_atom_ids.size() > 0) {
+                result->playlists[i].track_atom_ids = new uint32_t[p.track_atom_ids.size()];
+                for (size_t j = 0; j < p.track_atom_ids.size(); j++) {
+                    result->playlists[i].track_atom_ids[j] = p.track_atom_ids[j];
+                }
+            } else {
+                result->playlists[i].track_atom_ids = nullptr;
+            }
+        }
+
         Log("Library retrieval complete: " + std::to_string(result->track_count) + " tracks, " +
             std::to_string(result->album_count) + " albums, " +
-            std::to_string(result->artwork_count) + " artworks");
+            std::to_string(result->artwork_count) + " artworks, " +
+            std::to_string(result->playlist_count) + " playlists");
 
         return result;
 

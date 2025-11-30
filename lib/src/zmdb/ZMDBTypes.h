@@ -44,12 +44,14 @@ struct ZMDBTrack {
     std::string album_artist_guid;  // Album artist GUID (optional)
     std::string genre;
     int track_number = 0;           // Track number (offset 24-25)
-    int disc_number = 0;
+    int disc_number = 0;            // Disc number (varint field 0x6c, default=1 if absent)
     int duration_ms = 0;            // Duration in milliseconds (offset 16-19)
     int file_size_bytes = 0;        // File size in bytes (offset 20-23)
     uint16_t playcount = 0;         // Play count (offset 26-27)
+    uint16_t skip_count = 0;        // Skip count (varint field 0x63)
     uint16_t codec_id = 0;          // Format code e.g. 0xb901=WMA (offset 28-29)
     uint8_t rating = 0;             // Rating: 0=neutral, 8=liked, 3=disliked (offset 30)
+    uint64_t last_played_timestamp = 0; // Windows FILETIME of last play/skip event (varint field 0x70)
     uint32_t atom_id = 0;
     uint32_t album_ref = 0;         // Album atom_id reference for grouping tracks
     std::string filename;
@@ -104,7 +106,7 @@ struct ZMDBPlaylist {
     std::string guid;
     std::string folder;             // Folder reference (usually "Playlists")
     int track_count = 0;
-    std::vector<ZMDBTrack> tracks;  // Resolved track references
+    std::vector<uint32_t> track_atom_ids;  // Track atom_ids (no need to resolve full tracks)
     uint32_t atom_id = 0;
 };
 
@@ -136,7 +138,7 @@ struct ZMDBAudiobook {
     uint16_t track_number = 0;      // Part/chapter number (offset 0x1C)
     uint16_t playcount = 0;         // Number of times played (offset 0x1E)
     uint16_t format_code = 0;       // 0x3009 (MP3) or 0xB901 (WMA) (offset 0x20)
-    uint64_t timestamp = 0;         // Windows FILETIME when added (varint field 0x70)
+    uint64_t last_played_timestamp = 0; // Windows FILETIME of last play/skip event (varint field 0x70)
     uint32_t atom_id = 0;           // This record's atom_id
     uint32_t title_ref = 0;         // Reference to AudiobookTitle (Schema 0x11)
     uint32_t filename_ref = 0;      // Reference to folder (Schema 0x05)

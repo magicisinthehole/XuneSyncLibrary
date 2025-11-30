@@ -72,6 +72,7 @@ void PrintLibrarySummary(ZuneMusicLibrary* library, const std::string& label) {
     std::cout << "  Albums: " << library->album_count << "\n";
     std::cout << "  Tracks: " << library->track_count << "\n";
     std::cout << "  Artworks: " << library->artwork_count << "\n";
+    std::cout << "  Playlists: " << library->playlist_count << "\n";
 }
 
 void PrintFirstArtists(ZuneMusicLibrary* library, int count = 5) {
@@ -143,8 +144,15 @@ bool ExportLibraryToJson(ZuneMusicLibrary* library, const std::string& output_fi
 
     size_t artist_idx = 0;
     for (const auto& [artist_name, albums] : grouped) {
+        // Get artist GUID from first track of first album
+        std::string artist_guid = "";
+        if (!albums.empty() && !albums.begin()->second.empty()) {
+            artist_guid = albums.begin()->second[0]->artist_guid;
+        }
+
         json_file << "    {\n";
         json_file << "      \"name\": \"" << JsonEscape(artist_name) << "\",\n";
+        json_file << "      \"artistGuid\": \"" << JsonEscape(artist_guid) << "\",\n";
         json_file << "      \"albumCount\": " << albums.size() << ",\n";
         json_file << "      \"albums\": [\n";
 
@@ -158,6 +166,11 @@ bool ExportLibraryToJson(ZuneMusicLibrary* library, const std::string& output_fi
             if (!tracks.empty() && album_map.count(tracks[0]->album_ref)) {
                 const auto* album = album_map[tracks[0]->album_ref];
                 json_file << "          \"year\": " << album->release_year << ",\n";
+                json_file << "          \"albumAtomId\": " << album->atom_id << ",\n";
+                json_file << "          \"albumPid\": " << album->album_pid << ",\n";
+                json_file << "          \"artistRef\": " << album->artist_ref << ",\n";
+                json_file << "          \"albReference\": \"" << JsonEscape(album->alb_reference) << "\",\n";
+                json_file << "          \"albumArtistGuid\": \"" << JsonEscape(album->artist_guid) << "\",\n";
 
                 // Get artwork ObjectId
                 auto artwork_it = artwork_map.find(album->alb_reference);
@@ -187,11 +200,19 @@ bool ExportLibraryToJson(ZuneMusicLibrary* library, const std::string& output_fi
                 json_file << "              \"album\": \"" << JsonEscape(track->album_name) << "\",\n";
                 json_file << "              \"albumArtist\": \"" << JsonEscape(track->album_artist_name) << "\",\n";
                 json_file << "              \"albumArtistGuid\": \"" << JsonEscape(track->album_artist_guid) << "\",\n";
+                json_file << "              \"genre\": \"" << JsonEscape(track->genre) << "\",\n";
                 json_file << "              \"trackNumber\": " << track->track_number << ",\n";
+                json_file << "              \"discNumber\": " << track->disc_number << ",\n";
                 json_file << "              \"duration_ms\": " << track->duration_ms << ",\n";
+                json_file << "              \"fileSizeBytes\": " << track->file_size_bytes << ",\n";
+                json_file << "              \"codecId\": " << track->codec_id << ",\n";
                 json_file << "              \"playcount\": " << track->playcount << ",\n";
+                json_file << "              \"skipCount\": " << track->skip_count << ",\n";
                 json_file << "              \"rating\": " << static_cast<int>(track->rating) << ",\n";
-                json_file << "              \"filename\": \"" << JsonEscape(track->filename) << "\"\n";
+                json_file << "              \"lastPlayedTimestamp\": " << track->last_played_timestamp << ",\n";
+                json_file << "              \"filename\": \"" << JsonEscape(track->filename) << "\",\n";
+                json_file << "              \"atomId\": " << track->atom_id << ",\n";
+                json_file << "              \"albumRef\": " << track->album_ref << "\n";
                 json_file << "            }" << (track_idx < tracks.size() - 1 ? "," : "") << "\n";
             }
 
@@ -205,7 +226,34 @@ bool ExportLibraryToJson(ZuneMusicLibrary* library, const std::string& output_fi
         artist_idx++;
     }
 
+    json_file << "  ],\n";
+
+    // Export playlists
+    json_file << "  \"playlists\": [\n";
+    for (uint32_t i = 0; i < library->playlist_count; ++i) {
+        const auto& playlist = library->playlists[i];
+
+        json_file << "    {\n";
+        json_file << "      \"name\": \"" << JsonEscape(playlist.name) << "\",\n";
+        json_file << "      \"filename\": \"" << JsonEscape(playlist.filename) << "\",\n";
+        json_file << "      \"guid\": \"" << JsonEscape(playlist.guid) << "\",\n";
+        json_file << "      \"folder\": \"" << JsonEscape(playlist.folder) << "\",\n";
+        json_file << "      \"atomId\": " << playlist.atom_id << ",\n";
+        json_file << "      \"trackCount\": " << playlist.track_count << ",\n";
+        json_file << "      \"trackAtomIds\": [";
+
+        for (uint32_t j = 0; j < playlist.track_count; ++j) {
+            json_file << playlist.track_atom_ids[j];
+            if (j < playlist.track_count - 1) {
+                json_file << ", ";
+            }
+        }
+
+        json_file << "]\n";
+        json_file << "    }" << (i < library->playlist_count - 1 ? "," : "") << "\n";
+    }
     json_file << "  ]\n";
+
     json_file << "}\n";
 
     json_file.close();
@@ -220,6 +268,7 @@ bool ExportLibraryToJson(ZuneMusicLibrary* library, const std::string& output_fi
     std::cout << "  Artists: " << unique_artists.size() << "\n";
     std::cout << "  Albums: " << library->album_count << "\n";
     std::cout << "  Tracks: " << library->track_count << "\n";
+    std::cout << "  Playlists: " << library->playlist_count << "\n";
 
     return true;
 }

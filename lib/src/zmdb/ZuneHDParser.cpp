@@ -211,6 +211,34 @@ std::optional<ZMDBTrack> ZuneHDParser::parse_music_track(
         track.title = read_null_terminated_utf8(record_data, 32);
     }
 
+    // Parse backwards varints for optional fields (0x62, 0x63, 0x6c, 0x70)
+    size_t entry_size = get_entry_size_for_schema(Schema::Music);
+    if (entry_size > 0) {
+        auto fields = parse_backwards_varints(record_data, entry_size);
+        for (const auto& field : fields) {
+            switch (field.field_id) {
+                case 0x63:  // Skip count
+                    if (field.field_size >= 1 && field.field_size <= 4) {
+                        track.skip_count = static_cast<uint16_t>(read_uint32_le(field.field_data, 0));
+                    }
+                    break;
+                case 0x6c:  // Disc number
+                    if (field.field_size >= 1 && field.field_size <= 4) {
+                        track.disc_number = static_cast<int>(read_uint32_le(field.field_data, 0));
+                    }
+                    break;
+                case 0x70:  // Last played/skipped timestamp (Windows FILETIME)
+                    if (field.field_size == 8) {
+                        track.last_played_timestamp = read_uint64_le(field.field_data, 0);
+                    }
+                    break;
+                // 0x62 (redundant play count) intentionally skipped - we use offset 26-27
+                default:
+                    break;
+            }
+        }
+    }
+
     // Resolve references
     if (album_ref != 0) {
         auto album_info = resolve_album_info(album_ref);
@@ -382,77 +410,82 @@ std::optional<ZMDBPlaylist> ZuneHDParser::parse_playlist(
         playlist.folder = resolve_string_reference(folder_ref);
     }
 
-    // Playlist name at offset 12 (UTF-8)
-    if (record_data.size() > 12) {
-        size_t null_pos = 12;
-        while (null_pos < record_data.size() && record_data[null_pos] != 0) {
-            null_pos++;
+    // Playlist name at offset 12 (UTF-8, null-terminated)
+    if (record_data.size() <= 12) {
+        return playlist;
+    }
+
+    size_t null_pos = 12;
+    while (null_pos < record_data.size() && record_data[null_pos] != 0) {
+        null_pos++;
+    }
+
+    // Need at least 3 bytes after null_pos for format detection (pos, pos+1, and data)
+    if (null_pos <= 12 || null_pos + 3 >= record_data.size()) {
+        return playlist;
+    }
+
+    playlist.name = std::string(
+        reinterpret_cast<const char*>(&record_data[12]),
+        null_pos - 12
+    );
+
+    // Detect format: after name null, check if byte[1] == 0x00 (UTF-16LE) or not (GUID)
+    // Device-created playlists: UTF-16LE filename starts immediately after name
+    // Software-created playlists: 16-byte GUID + 2-byte field, then UTF-16LE filename
+    size_t pos = null_pos + 1;
+    bool has_guid = (record_data[pos + 1] != 0x00);
+
+    if (has_guid) {
+        // Software format: parse 16-byte GUID
+        if (pos + 16 > record_data.size()) {
+            return playlist;
+        }
+        std::stringstream guid_ss;
+        for (size_t i = 0; i < 16; i++) {
+            guid_ss << std::hex << std::setw(2) << std::setfill('0')
+                    << static_cast<int>(record_data[pos + i]);
+        }
+        playlist.guid = guid_ss.str();
+        pos += 16;
+
+        // Skip 2-byte field after GUID
+        pos += 2;
+    }
+
+    // Parse UTF-16LE filename (double-null terminated)
+    size_t utf16_start = pos;
+    while (pos + 1 < record_data.size()) {
+        if (record_data[pos] == 0 && record_data[pos + 1] == 0) {
+            break;
+        }
+        pos += 2;
+    }
+
+    if (pos > utf16_start) {
+        std::vector<uint8_t> utf16_data(
+            record_data.begin() + utf16_start,
+            record_data.begin() + pos
+        );
+        playlist.filename = utf16le_to_utf8(utf16_data);
+    }
+
+    // Skip double-null terminator + 2-byte pre-track field
+    pos += 4;
+
+    // Parse track atom_ids
+    while (pos + 4 <= record_data.size()) {
+        uint32_t track_id = read_uint32_le(record_data, pos);
+        if (track_id == 0) {
+            break;
         }
 
-        if (null_pos > 12) {
-            playlist.name = std::string(
-                reinterpret_cast<const char*>(&record_data[12]),
-                null_pos - 12
-            );
-
-            // Parse GUID (16 bytes after null terminator)
-            size_t guid_start = null_pos + 1;
-            if (guid_start + 16 <= record_data.size()) {
-                // Extract GUID as hex string
-                std::stringstream guid_ss;
-                for (size_t i = 0; i < 16; i++) {
-                    guid_ss << std::hex << std::setw(2) << std::setfill('0')
-                            << static_cast<int>(record_data[guid_start + i]);
-                }
-                playlist.guid = guid_ss.str();
-
-                // Skip GUID and 2-byte field to get to UTF-16LE filename
-                size_t utf16_start = guid_start + 16 + 2;
-
-                // Find double-null terminator for filename
-                size_t filename_end = utf16_start;
-                while (filename_end + 1 < record_data.size()) {
-                    if (record_data[filename_end] == 0 && record_data[filename_end + 1] == 0) {
-                        break;
-                    }
-                    filename_end += 2;
-                }
-
-                if (filename_end > utf16_start) {
-                    std::vector<uint8_t> utf16_data(
-                        record_data.begin() + utf16_start,
-                        record_data.begin() + filename_end
-                    );
-
-                    // Handle padding bytes
-                    if (!utf16_data.empty() && utf16_data[0] == 0x00 && utf16_data.back() == 0x00) {
-                        utf16_data.erase(utf16_data.begin());
-                        utf16_data.pop_back();
-                    }
-
-                    playlist.filename = utf16le_to_utf8(utf16_data);
-                }
-
-                // Parse track list after double-null + 2-byte field
-                size_t track_list_start = filename_end + 4;
-                while (track_list_start + 4 <= record_data.size()) {
-                    uint32_t track_id = read_uint32_le(record_data, track_list_start);
-                    if (track_id == 0) {
-                        break;
-                    }
-
-                    uint8_t track_schema = (track_id >> 24) & 0xFF;
-                    if (track_schema == Schema::Music) {
-                        auto track = resolve_track(track_id);
-                        if (track.has_value()) {
-                            playlist.tracks.push_back(track.value());
-                        }
-                    }
-
-                    track_list_start += 4;
-                }
-            }
+        uint8_t track_schema = (track_id >> 24) & 0xFF;
+        if (track_schema == Schema::Music) {
+            playlist.track_atom_ids.push_back(track_id);
         }
+
+        pos += 4;
     }
 
     return playlist;
@@ -634,9 +667,9 @@ std::optional<ZMDBAudiobook> ZuneHDParser::parse_audiobook_track(
                 }
                 audiobook.author = utf16le_to_utf8(utf16_data);
             }
-            // Field 0x70: Windows FILETIME timestamp
+            // Field 0x70: Last played/skipped timestamp (Windows FILETIME)
             else if (field.field_id == 0x70 && field.field_size == 8) {
-                audiobook.timestamp = read_uint64_le(field.field_data, 0);
+                audiobook.last_played_timestamp = read_uint64_le(field.field_data, 0);
             }
         }
     }
