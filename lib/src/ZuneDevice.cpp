@@ -711,75 +711,31 @@ int ZuneDevice::SetTrackUserState(uint32_t zmdb_atom_id, int play_count, int ski
         Log("  [DISABLED] skip_count update - property not supported");
     }
 
-    // Rating: Must use SetTrackRatingsByAlbum for batch updates with album grouping
-    // Single-track rating updates are not supported - use the batch API instead
+    // Rating: Use standard MTP SetObjectProperty with UserRating (0xDC8A)
+    // atom_id and MTP object_id are synonymous on Zune
+    // Rating values: 0=unrated, 2=dislike, 8=like
+    // IMPORTANT: UserRating is Uint16, must send exactly 2 bytes (not 4)
     if (rating >= 0) {
-        Log("  [DEPRECATED] Single-track rating not supported. Use SetTrackRatingsByAlbum with album MTP IDs.");
-        return -1;
+        try {
+            // Build Uint16 value as 2-byte ByteArray (little-endian)
+            mtp::ByteArray ratingData(2);
+            ratingData[0] = static_cast<uint8_t>(rating & 0xFF);
+            ratingData[1] = static_cast<uint8_t>((rating >> 8) & 0xFF);
+
+            mtp_session_->SetObjectProperty(
+                mtp::ObjectId(zmdb_atom_id),
+                mtp::ObjectProperty::UserRating,
+                ratingData
+            );
+            Log("  Rating set to " + std::to_string(rating) + " via SetObjectProperty(UserRating) as Uint16 - SUCCESS");
+            return 0;
+        } catch (const std::exception& e) {
+            Log("  Rating update FAILED: " + std::string(e.what()));
+            return -1;
+        }
     }
 
     return 0;
-}
-
-int ZuneDevice::SetTrackRatingsByAlbum(
-    const std::vector<uint32_t>& album_mtp_ids,
-    const std::vector<std::vector<uint32_t>>& tracks_per_album,
-    uint8_t rating)
-{
-    if (!mtp_session_) {
-        Log("SetTrackRatingsByAlbum: Device not connected");
-        return -2;
-    }
-
-    if (album_mtp_ids.empty() || album_mtp_ids.size() != tracks_per_album.size()) {
-        Log("SetTrackRatingsByAlbum: Invalid parameters");
-        return -1;
-    }
-
-    // Log the operation
-    size_t total_tracks = 0;
-    for (const auto& tracks : tracks_per_album) {
-        total_tracks += tracks.size();
-    }
-    Log("SetTrackRatingsByAlbum: " + std::to_string(album_mtp_ids.size()) + " albums, " +
-        std::to_string(total_tracks) + " tracks, rating=" + std::to_string(rating));
-
-    try {
-        mtp_session_->SetTrackRatingsByAlbum(album_mtp_ids, tracks_per_album, rating);
-        Log("SetTrackRatingsByAlbum: SUCCESS");
-        return 0;
-    } catch (const std::exception& e) {
-        Log("SetTrackRatingsByAlbum: FAILED - " + std::string(e.what()));
-        return -1;
-    }
-}
-
-int ZuneDevice::SetTrackRatingDirect(uint32_t track_mtp_id, uint8_t rating) {
-    if (!mtp_session_) {
-        Log("SetTrackRatingDirect: Device not connected");
-        return -2;
-    }
-
-    Log("SetTrackRatingDirect: track_id=0x" + std::to_string(track_mtp_id) +
-        " rating=" + std::to_string(rating));
-
-    try {
-        // DC8A (UserRating) uses UINT16 per MTP spec
-        mtp::ByteArray value(2);
-        value[0] = rating;
-        value[1] = 0;
-
-        mtp_session_->SetObjectProperty(
-            mtp::ObjectId(track_mtp_id),
-            mtp::ObjectProperty::UserRating,
-            value);
-
-        Log("SetTrackRatingDirect: SUCCESS");
-        return 0;
-    } catch (const std::exception& e) {
-        Log("SetTrackRatingDirect: FAILED - " + std::string(e.what()));
-        return -1;
-    }
 }
 
 mtp::ByteArray ZuneDevice::GetZuneMetadata(const std::vector<uint8_t>& object_id) {

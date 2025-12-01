@@ -377,37 +377,6 @@ ZUNE_WIRELESS_API int zune_device_set_track_user_state(
     }
 }
 
-ZUNE_WIRELESS_API int zune_device_set_track_ratings_by_album(
-    zune_device_handle_t handle,
-    const uint32_t* album_mtp_ids,
-    uint32_t album_count,
-    const uint32_t* track_mtp_ids,
-    const uint32_t* track_counts,
-    uint8_t rating
-) {
-    if (!handle || !album_mtp_ids || !track_mtp_ids || !track_counts || album_count == 0) {
-        return -1;
-    }
-
-    try {
-        // Convert flat arrays to vector of vectors
-        std::vector<uint32_t> albums(album_mtp_ids, album_mtp_ids + album_count);
-        std::vector<std::vector<uint32_t>> tracks_per_album;
-        tracks_per_album.reserve(album_count);
-
-        size_t track_offset = 0;
-        for (uint32_t i = 0; i < album_count; i++) {
-            uint32_t count = track_counts[i];
-            tracks_per_album.emplace_back(track_mtp_ids + track_offset, track_mtp_ids + track_offset + count);
-            track_offset += count;
-        }
-
-        return static_cast<ZuneDevice*>(handle)->SetTrackRatingsByAlbum(albums, tracks_per_album, rating);
-    } catch (const std::exception& e) {
-        return -1;
-    }
-}
-
 ZUNE_WIRELESS_API int zune_device_retrofit_artist_guid(
     zune_device_handle_t handle,
     const char* artist_name,

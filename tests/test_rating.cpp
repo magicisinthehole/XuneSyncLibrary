@@ -259,27 +259,11 @@ int main(int argc, char** argv) {
             std::cout << "Track MTP ID: 0x" << std::hex << mtp_track_id << std::dec << std::endl;
             std::cout << "Album MTP ID: 0x" << std::hex << mtp_album_id << std::dec << std::endl;
             std::cout << "Rating: " << rating << " (0=unrated, 2=dislike, 8=like)" << std::endl;
-            std::cout << "Method: " << (use_direct ? "Direct (SetObjectProperty)" : "Batch (SetTrackRatingsByAlbum)") << std::endl;
             std::cout << std::endl;
 
-            int result;
-            if (use_direct) {
-                // Simple approach: SetObjectProperty with DC8A (UserRating)
-                std::cout << "Calling SetTrackRatingDirect..." << std::endl;
-                result = device.SetTrackRatingDirect(mtp_track_id, (uint8_t)rating);
-            } else {
-                // Complex approach: SetObjectReferences + 0x922f
-                if (mtp_album_id == 0) {
-                    std::cerr << "ERROR: Batch method requires album MTP ID. Use --direct instead." << std::endl;
-                    device.Disconnect();
-                    return 1;
-                }
-                std::vector<uint32_t> album_ids = { mtp_album_id };
-                std::vector<std::vector<uint32_t>> tracks_per_album = { { mtp_track_id } };
-
-                std::cout << "Calling SetTrackRatingsByAlbum..." << std::endl;
-                result = device.SetTrackRatingsByAlbum(album_ids, tracks_per_album, (uint8_t)rating);
-            }
+            // Use SetTrackUserState which internally uses SetObjectProperty with UserRating (0xDC8A)
+            std::cout << "Calling SetTrackUserState..." << std::endl;
+            int result = device.SetTrackUserState(mtp_track_id, -1, -1, rating);
 
             if (result == 0) {
                 std::cout << "Rating set successfully!" << std::endl;
