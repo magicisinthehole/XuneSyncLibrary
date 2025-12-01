@@ -611,6 +611,7 @@ int ZuneDevice::UploadTrackWithMetadata(
     size_t artwork_size,
     const std::string& artist_guid,
     uint32_t duration_ms,
+    int rating,
     uint32_t* out_track_id,
     uint32_t* out_album_id,
     uint32_t* out_artist_id
@@ -619,7 +620,7 @@ int ZuneDevice::UploadTrackWithMetadata(
         return library_manager_->UploadTrackWithMetadata(
             media_type, audio_file_path, artist_name, album_name, album_year,
             track_title, genre, track_number, artwork_data, artwork_size,
-            artist_guid, duration_ms, out_track_id, out_album_id, out_artist_id
+            artist_guid, duration_ms, rating, out_track_id, out_album_id, out_artist_id
         );
     }
     return -1;
@@ -680,6 +681,104 @@ uint32_t ZuneDevice::GetAudioTrackObjectId(const std::string& track_title, uint3
 void ZuneDevice::ClearTrackObjectIdCache() {
     if (library_manager_) {
         library_manager_->ClearTrackObjectIdCache();
+    }
+}
+
+int ZuneDevice::SetTrackUserState(uint32_t zmdb_atom_id, int play_count, int skip_count, int rating) {
+    if (!mtp_session_) {
+        Log("SetTrackUserState: Device not connected");
+        return -2;
+    }
+
+    if (zmdb_atom_id == 0) {
+        Log("SetTrackUserState: Invalid ZMDB atom_id (0)");
+        return -3;
+    }
+
+    Log("SetTrackUserState: atom_id=" + std::to_string(zmdb_atom_id) +
+        " (play_count=" + std::to_string(play_count) +
+        ", skip_count=" + std::to_string(skip_count) +
+        ", rating=" + std::to_string(rating) + ")");
+
+    // DISABLED: Play count via SetObjectProperty - needs pcap investigation
+    // DC91 (UseCount) works but we don't know if it's the correct protocol
+    if (play_count >= 0) {
+        Log("  [DISABLED] play_count update - pending protocol analysis");
+    }
+
+    // DISABLED: Skip count - property not supported on Zune HD (InvalidObjectPropCode 0xa801)
+    if (skip_count >= 0) {
+        Log("  [DISABLED] skip_count update - property not supported");
+    }
+
+    // Rating: Must use SetTrackRatingsByAlbum for batch updates with album grouping
+    // Single-track rating updates are not supported - use the batch API instead
+    if (rating >= 0) {
+        Log("  [DEPRECATED] Single-track rating not supported. Use SetTrackRatingsByAlbum with album MTP IDs.");
+        return -1;
+    }
+
+    return 0;
+}
+
+int ZuneDevice::SetTrackRatingsByAlbum(
+    const std::vector<uint32_t>& album_mtp_ids,
+    const std::vector<std::vector<uint32_t>>& tracks_per_album,
+    uint8_t rating)
+{
+    if (!mtp_session_) {
+        Log("SetTrackRatingsByAlbum: Device not connected");
+        return -2;
+    }
+
+    if (album_mtp_ids.empty() || album_mtp_ids.size() != tracks_per_album.size()) {
+        Log("SetTrackRatingsByAlbum: Invalid parameters");
+        return -1;
+    }
+
+    // Log the operation
+    size_t total_tracks = 0;
+    for (const auto& tracks : tracks_per_album) {
+        total_tracks += tracks.size();
+    }
+    Log("SetTrackRatingsByAlbum: " + std::to_string(album_mtp_ids.size()) + " albums, " +
+        std::to_string(total_tracks) + " tracks, rating=" + std::to_string(rating));
+
+    try {
+        mtp_session_->SetTrackRatingsByAlbum(album_mtp_ids, tracks_per_album, rating);
+        Log("SetTrackRatingsByAlbum: SUCCESS");
+        return 0;
+    } catch (const std::exception& e) {
+        Log("SetTrackRatingsByAlbum: FAILED - " + std::string(e.what()));
+        return -1;
+    }
+}
+
+int ZuneDevice::SetTrackRatingDirect(uint32_t track_mtp_id, uint8_t rating) {
+    if (!mtp_session_) {
+        Log("SetTrackRatingDirect: Device not connected");
+        return -2;
+    }
+
+    Log("SetTrackRatingDirect: track_id=0x" + std::to_string(track_mtp_id) +
+        " rating=" + std::to_string(rating));
+
+    try {
+        // DC8A (UserRating) uses UINT16 per MTP spec
+        mtp::ByteArray value(2);
+        value[0] = rating;
+        value[1] = 0;
+
+        mtp_session_->SetObjectProperty(
+            mtp::ObjectId(track_mtp_id),
+            mtp::ObjectProperty::UserRating,
+            value);
+
+        Log("SetTrackRatingDirect: SUCCESS");
+        return 0;
+    } catch (const std::exception& e) {
+        Log("SetTrackRatingDirect: FAILED - " + std::string(e.what()));
+        return -1;
     }
 }
 

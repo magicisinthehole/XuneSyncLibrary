@@ -231,7 +231,8 @@ ZUNE_WIRELESS_API ZuneUploadResult zune_device_upload_track(
     const uint8_t* artwork_data,
     uint32_t artwork_size,
     const char* artist_guid,
-    uint32_t duration_ms
+    uint32_t duration_ms,
+    int rating
 ) {
     ZuneUploadResult result = {0, 0, 0, -1};  // Initialize with failure status
 
@@ -249,6 +250,7 @@ ZUNE_WIRELESS_API ZuneUploadResult zune_device_upload_track(
             artwork_size,
             artist_guid ? artist_guid : "",
             duration_ms,
+            rating,
             &result.track_object_id,
             &result.album_object_id,
             &result.artist_object_id
@@ -286,6 +288,7 @@ ZUNE_WIRELESS_API ZuneUploadResult zune_device_upload_audiobook_track(
             artwork_size,
             "",  // artist_guid (not used for audiobooks)
             duration_ms,
+            -1,  // rating (not used for audiobooks)
             &result.track_object_id,
             &result.album_object_id,
             &result.artist_object_id
@@ -354,6 +357,55 @@ ZUNE_WIRELESS_API uint32_t zune_device_get_audio_track_object_id(zune_device_han
         return static_cast<ZuneDevice*>(handle)->GetAudioTrackObjectId(track_title, album_object_id);
     }
     return 0;
+}
+
+ZUNE_WIRELESS_API int zune_device_set_track_user_state(
+    zune_device_handle_t handle,
+    uint32_t zmdb_atom_id,
+    int play_count,
+    int skip_count,
+    int rating
+) {
+    if (!handle) {
+        return -2;  // Device not connected
+    }
+
+    try {
+        return static_cast<ZuneDevice*>(handle)->SetTrackUserState(zmdb_atom_id, play_count, skip_count, rating);
+    } catch (const std::exception& e) {
+        return -1;  // General MTP error
+    }
+}
+
+ZUNE_WIRELESS_API int zune_device_set_track_ratings_by_album(
+    zune_device_handle_t handle,
+    const uint32_t* album_mtp_ids,
+    uint32_t album_count,
+    const uint32_t* track_mtp_ids,
+    const uint32_t* track_counts,
+    uint8_t rating
+) {
+    if (!handle || !album_mtp_ids || !track_mtp_ids || !track_counts || album_count == 0) {
+        return -1;
+    }
+
+    try {
+        // Convert flat arrays to vector of vectors
+        std::vector<uint32_t> albums(album_mtp_ids, album_mtp_ids + album_count);
+        std::vector<std::vector<uint32_t>> tracks_per_album;
+        tracks_per_album.reserve(album_count);
+
+        size_t track_offset = 0;
+        for (uint32_t i = 0; i < album_count; i++) {
+            uint32_t count = track_counts[i];
+            tracks_per_album.emplace_back(track_mtp_ids + track_offset, track_mtp_ids + track_offset + count);
+            track_offset += count;
+        }
+
+        return static_cast<ZuneDevice*>(handle)->SetTrackRatingsByAlbum(albums, tracks_per_album, rating);
+    } catch (const std::exception& e) {
+        return -1;
+    }
 }
 
 ZUNE_WIRELESS_API int zune_device_retrofit_artist_guid(

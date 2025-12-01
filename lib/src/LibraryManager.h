@@ -46,6 +46,7 @@ public:
     // --- Upload with Metadata ---
     // For Music: artist_name = artist, album_name = album
     // For Audiobook: artist_name = author, album_name = audiobook title
+    // rating: -1 = unrated, 8 = liked, 3 = disliked (Zune format)
     int UploadTrackWithMetadata(
         MediaType media_type,
         const std::string& audio_file_path,
@@ -59,6 +60,7 @@ public:
         size_t artwork_size,
         const std::string& artist_guid = "",
         uint32_t duration_ms = 0,
+        int rating = -1,
         uint32_t* out_track_id = nullptr,
         uint32_t* out_album_id = nullptr,
         uint32_t* out_artist_id = nullptr
@@ -147,7 +149,8 @@ private:
         size_t file_size,
         uint32_t duration_ms,
         mtp::ObjectFormat format,
-        const std::string& artist_guid
+        const std::string& artist_guid,
+        int rating = -1
     );
 
     void UploadAudioData(std::shared_ptr<cli::ObjectInputStream> stream);

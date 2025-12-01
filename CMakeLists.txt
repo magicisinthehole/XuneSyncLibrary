@@ -418,6 +418,62 @@ target_compile_options(test_http_interceptor PRIVATE
     -Wno-unused-parameter
 )
 
+# Test executable for rating iteration
+add_executable(test_rating
+    tests/test_rating.cpp
+    lib/src/ZuneDevice.cpp
+    lib/src/NetworkManager.cpp
+    lib/src/LibraryManager.cpp
+    lib/src/ZMDBLibraryExtractor.cpp
+    lib/src/zmdb/ZMDBParserBase.cpp
+    lib/src/zmdb/ZMDBUtils.cpp
+    lib/src/zmdb/ZuneHDParser.cpp
+    lib/src/zmdb/ZuneClassicParser.cpp
+    lib/src/zmdb/ZMDBParserFactory.cpp
+    lib/src/ptpip_client.cpp
+    lib/src/ssdp_discovery.cpp
+    lib/src/zune_wireless_api.cpp
+    lib/src/protocols/http/ZuneHTTPInterceptor.cpp
+    lib/src/protocols/ppp/PPPParser.cpp
+    lib/src/protocols/ppp/PPPFrameBuilder.cpp
+    lib/src/protocols/http/HTTPParser.cpp
+    lib/src/protocols/http/StaticModeHandler.cpp
+    lib/src/protocols/http/ProxyModeHandler.cpp
+    lib/src/protocols/http/HttpClient.cpp
+    lib/src/protocols/http/HybridModeHandler.cpp
+    lib/src/protocols/handlers/CCPHandler.cpp
+    lib/src/protocols/handlers/DNSHandler.cpp
+    lib/src/protocols/tcp/TCPConnectionManager.cpp
+    lib/src/protocols/tcp/TCPFlowController.cpp
+    lib/src/protocols/tcp/TCPStreamReassembler.cpp
+    lib/src/protocols/tcp/RTOManager.cpp
+)
+
+target_include_directories(test_rating PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${AFTL_INCLUDE_DIRS}
+    ${OPENSSL_INCLUDE_DIR}
+    ${CURL_INCLUDE_DIRS}
+    ${TAGLIB_INCLUDE_DIR}
+)
+
+target_link_libraries(test_rating
+    aft-cli-static
+    ${AFTL_LIBRARY}
+    ${TAGLIB_LIBRARY}
+    ${OPENSSL_CRYPTO_LIBRARY}
+    ${CURL_LIBRARIES}
+    ${CMAKE_THREAD_LIBS_INIT}
+    ${PLATFORM_LIBRARIES}
+)
+
+target_compile_options(test_rating PRIVATE
+    -Wall
+    -Wextra
+    -Wno-unused-parameter
+)
+
 # Test executable for TCPFlowController (Phase 5.3)
 add_executable(test_tcp_flow_controller
     tests/test_tcp_flow_controller.cpp

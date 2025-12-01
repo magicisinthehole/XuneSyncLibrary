@@ -144,6 +144,7 @@ ZUNE_WIRELESS_API int zune_device_delete_file(zune_device_handle_t handle, uint3
 ZUNE_WIRELESS_API int zune_device_upload_with_artwork(zune_device_handle_t handle, const char* media_path, const char* artwork_path);
 
 // Upload music track with metadata (uses Library for proper MTP structure)
+// rating: -1 = unrated, 8 = liked, 3 = disliked (Zune format, set during upload)
 ZUNE_WIRELESS_API ZuneUploadResult zune_device_upload_track(
     zune_device_handle_t handle,
     const char* audio_file_path,
@@ -156,7 +157,8 @@ ZUNE_WIRELESS_API ZuneUploadResult zune_device_upload_track(
     const uint8_t* artwork_data,
     uint32_t artwork_size,
     const char* artist_guid,
-    uint32_t duration_ms
+    uint32_t duration_ms,
+    int rating
 );
 
 // Upload audiobook track with metadata
@@ -276,6 +278,57 @@ ZUNE_WIRELESS_API int zune_device_retrofit_multiple_artist_guids(
     const ZuneArtistGuidMapping* mappings,
     int mapping_count,
     ZuneBatchRetrofitResult* result
+);
+
+// Track User State (Play Count, Skip Count, Rating)
+// Sets track user state metadata via MTP SetObjectPropValue operations.
+// This updates the device's internal database (will be reflected in zmdb on next sync).
+//
+// Parameters:
+//   handle        - Device handle from zune_device_create()
+//   zmdb_atom_id  - The ZMDB atom_id of the track (from device library)
+//   play_count    - DISABLED: Not supported via MTP, needs pcap investigation (-1 to skip)
+//   skip_count    - DISABLED: Property not supported on Zune HD (-1 to skip)
+//   rating        - Rating value: 0=unrated, 8=liked, 3=disliked (-1 to skip)
+//
+// Returns: 0 on success, negative error code on failure
+//   -1: General MTP error
+//   -2: Device not connected
+//   -3: Invalid atom ID
+//
+// Note: Only rating is currently implemented using Zune vendor operations.
+// Play count and skip count are ignored pending protocol analysis.
+ZUNE_WIRELESS_API int zune_device_set_track_user_state(
+    zune_device_handle_t handle,
+    uint32_t zmdb_atom_id,
+    int play_count,
+    int skip_count,
+    int rating
+);
+
+// Batch Track Rating Update (by album grouping)
+// Sets ratings for multiple tracks using the correct Zune protocol:
+// SetObjectReferences per album + 0x922f operation.
+//
+// Parameters:
+//   handle           - Device handle from zune_device_create()
+//   album_mtp_ids    - Array of album MTP object IDs (0x06XXXXXX format)
+//   album_count      - Number of albums in the array
+//   track_mtp_ids    - Flat array of all track MTP object IDs (0x01XXXXXX format)
+//   track_counts     - Array of track counts per album (same length as album_count)
+//   rating           - Rating value: 0=unrated, 8=liked, 3=disliked
+//
+// Track array layout: tracks for album 0, then album 1, etc.
+// Example: 2 albums with 3 and 2 tracks: [t0a, t0b, t0c, t1a, t1b]
+//
+// Returns: 0 on success, negative error code on failure
+ZUNE_WIRELESS_API int zune_device_set_track_ratings_by_album(
+    zune_device_handle_t handle,
+    const uint32_t* album_mtp_ids,
+    uint32_t album_count,
+    const uint32_t* track_mtp_ids,
+    const uint32_t* track_counts,
+    uint8_t rating
 );
 
 // USB Discovery functions

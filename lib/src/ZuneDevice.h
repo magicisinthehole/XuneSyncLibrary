@@ -100,6 +100,7 @@ public:
     // --- Upload with Metadata (uses Library for proper MTP structure) ---
     // For Music: artist_name = artist, album_name = album
     // For Audiobook: artist_name = author, album_name = audiobook title
+    // rating: -1 = unrated, 8 = liked, 3 = disliked (Zune format, set during upload)
     int UploadTrackWithMetadata(
         MediaType media_type,
         const std::string& audio_file_path,
@@ -113,6 +114,7 @@ public:
         size_t artwork_size,
         const std::string& artist_guid = "",
         uint32_t duration_ms = 0,
+        int rating = -1,
         uint32_t* out_track_id = nullptr,
         uint32_t* out_album_id = nullptr,
         uint32_t* out_artist_id = nullptr
@@ -161,6 +163,40 @@ public:
 
     // Clear the track ObjectId cache (call when device library changes)
     void ClearTrackObjectIdCache();
+
+    // --- Track User State (Play Count, Skip Count, Rating) ---
+    // Sets track user state metadata via MTP SetObjectPropValue operations.
+    // This updates the device's internal database (will be reflected in zmdb on next sync).
+    //
+    // Parameters:
+    //   zmdb_atom_id  - The ZMDB atom_id of the track (from device library)
+    //   play_count    - DISABLED: Not supported via MTP, needs pcap investigation
+    //   skip_count    - DISABLED: Property not supported on Zune HD
+    //   rating        - Rating value: 0=unrated, 8=liked, 3=disliked (-1 to skip)
+    //
+    // Returns: 0 on success, negative error code on failure
+    //   -1: General MTP error
+    //   -2: Device not connected
+    //   -3: Invalid atom ID
+    //
+    // Note: Only rating is currently implemented using Zune vendor operations.
+    // Play count and skip count are ignored pending protocol analysis.
+    int SetTrackUserState(uint32_t zmdb_atom_id, int play_count, int skip_count, int rating);
+
+    // Batch track rating update using correct Zune protocol (SetObjectReferences + 0x922f)
+    // album_mtp_ids: Album MTP object IDs (0x06XXXXXX format)
+    // tracks_per_album: Track MTP object IDs grouped by album (0x01XXXXXX format)
+    // rating: 0=unrated, 2=disliked, 8=liked
+    int SetTrackRatingsByAlbum(
+        const std::vector<uint32_t>& album_mtp_ids,
+        const std::vector<std::vector<uint32_t>>& tracks_per_album,
+        uint8_t rating);
+
+    // Simple direct rating update via SetObjectProperty (DC8A UserRating)
+    // track_mtp_id: Track MTP object ID (0x01XXXXXX format)
+    // rating: 0=unrated, 2=disliked, 8=liked
+    // Returns 0 on success, negative on error
+    int SetTrackRatingDirect(uint32_t track_mtp_id, uint8_t rating);
 
     // --- Metadata Retrieval ---
     mtp::ByteArray GetZuneMetadata(const std::vector<uint8_t>& object_id);

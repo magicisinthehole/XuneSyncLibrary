@@ -571,7 +571,8 @@ LibraryManager::UploadContext LibraryManager::PrepareMusicUpload(
     size_t file_size,
     uint32_t duration_ms,
     mtp::ObjectFormat format,
-    const std::string& artist_guid
+    const std::string& artist_guid,
+    int rating
 ) {
     UploadContext ctx;
     ctx.is_audiobook = false;
@@ -619,9 +620,12 @@ LibraryManager::UploadContext LibraryManager::PrepareMusicUpload(
 
     // Create track entry
     Log("  Creating track entry...");
+    if (rating >= 0) {
+        Log("  → Including rating: " + std::to_string(rating));
+    }
     ctx.track_info = library_->CreateTrack(
         ctx.artist_ptr, ctx.album_ptr, format, track_title, genre,
-        track_number, filename, file_size, duration_ms
+        track_number, filename, file_size, duration_ms, rating
     );
     Log("  ✓ Track entry created");
 
@@ -698,6 +702,7 @@ int LibraryManager::UploadTrackWithMetadata(
     size_t artwork_size,
     const std::string& artist_guid,
     uint32_t duration_ms,
+    int rating,
     uint32_t* out_track_id,
     uint32_t* out_album_id,
     uint32_t* out_artist_id
@@ -734,7 +739,7 @@ int LibraryManager::UploadTrackWithMetadata(
             ? PrepareAudiobookUpload(album_name, artist_name, album_year, track_title,
                                      track_number, filename, stream->GetSize(), duration_ms, format)
             : PrepareMusicUpload(artist_name, album_name, album_year, track_title, genre,
-                                 track_number, filename, stream->GetSize(), duration_ms, format, artist_guid);
+                                 track_number, filename, stream->GetSize(), duration_ms, format, artist_guid, rating);
 
         // Upload, add artwork, link, and finalize
         UploadAudioData(stream);

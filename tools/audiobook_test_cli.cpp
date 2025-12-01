@@ -703,6 +703,7 @@ int main(int argc, char* argv[]) {
             art_size,
             "",  // artist_guid
             chapter.total_duration_ms,
+            -1,  // rating (not used for audiobooks)
             &track_id,
             &album_id,
             &artist_id
