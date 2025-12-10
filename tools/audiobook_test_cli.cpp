@@ -28,6 +28,9 @@
 #include <taglib/attachedpictureframe.h>
 #include <taglib/asffile.h>
 #include <taglib/asftag.h>
+#include <taglib/mp4file.h>
+#include <taglib/mp4tag.h>
+#include <taglib/mp4coverart.h>
 
 #include "lib/src/ZuneDevice.h"
 #include "lib/src/zmdb/ZuneHDParser.h"
@@ -220,6 +223,20 @@ std::vector<uint8_t> extract_embedded_artwork(const std::string& file_path) {
             if (!pictures.isEmpty()) {
                 TagLib::ByteVector picture = pictures[0].toPicture().picture();
                 artwork.assign(picture.begin(), picture.end());
+                return artwork;
+            }
+        }
+    }
+
+    // Try MP4/M4A/M4B
+    TagLib::MP4::File* mp4File = dynamic_cast<TagLib::MP4::File*>(fileRef.file());
+    if (mp4File && mp4File->tag()) {
+        TagLib::MP4::Tag* mp4Tag = mp4File->tag();
+        if (mp4Tag->contains("covr")) {
+            TagLib::MP4::CoverArtList covers = mp4Tag->item("covr").toCoverArtList();
+            if (!covers.isEmpty()) {
+                TagLib::ByteVector data = covers[0].data();
+                artwork.assign(data.begin(), data.end());
                 return artwork;
             }
         }
