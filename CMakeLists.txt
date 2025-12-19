@@ -177,18 +177,24 @@ if(CMAKE_BUILD_TYPE STREQUAL Debug)
     target_compile_options(zune_wireless PRIVATE -g)
 endif()
 
-# Automatically copy library to Xune app runtime directories after build (if parent project exists)
-set(XUNE_RUNTIME_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../src/Xune.App/bin/${CMAKE_BUILD_TYPE}/net8.0/runtimes")
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../src/Xune.App")
+# Automatically copy library to Xune.Infrastructure.Devices runtime directories after build
+# This is the canonical location - .NET project system handles copying to output
+set(XUNE_DEVICES_RUNTIME_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../src/Xune.Infrastructure.Devices/runtimes")
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../src/Xune.Infrastructure.Devices")
+    # Determine the runtime identifier based on architecture
+    if(CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64" OR CMAKE_OSX_ARCHITECTURES STREQUAL "arm64")
+        set(RUNTIME_ID "osx-arm64")
+    else()
+        set(RUNTIME_ID "osx-x64")
+    endif()
+
     add_custom_command(TARGET zune_wireless POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${XUNE_RUNTIME_DIR}/osx/native"
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${XUNE_RUNTIME_DIR}/osx-arm64/native"
-        COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:zune_wireless>" "${XUNE_RUNTIME_DIR}/osx/native/libzune_wireless.dylib"
-        COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:zune_wireless>" "${XUNE_RUNTIME_DIR}/osx-arm64/native/libzune_wireless.dylib"
-        COMMENT "Copying libzune_wireless.dylib to Xune app runtime directories"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${XUNE_DEVICES_RUNTIME_DIR}/${RUNTIME_ID}/native"
+        COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:zune_wireless>" "${XUNE_DEVICES_RUNTIME_DIR}/${RUNTIME_ID}/native/libzune_wireless.dylib"
+        COMMENT "Copying libzune_wireless.dylib to Xune.Infrastructure.Devices/runtimes/${RUNTIME_ID}/native/"
         VERBATIM
     )
-    message(STATUS "Xune parent project detected - will auto-copy library after build")
+    message(STATUS "Xune parent project detected - will auto-copy library to Xune.Infrastructure.Devices/runtimes/${RUNTIME_ID}/native/")
 else()
     message(STATUS "Standalone build - library will not be auto-copied to parent project")
 endif()
