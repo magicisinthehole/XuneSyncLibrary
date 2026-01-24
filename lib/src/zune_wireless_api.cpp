@@ -32,6 +32,20 @@ ZUNE_WIRELESS_API void zune_device_disconnect(zune_device_handle_t handle) {
     }
 }
 
+ZUNE_WIRELESS_API bool zune_device_is_connected(zune_device_handle_t handle) {
+    if (handle) {
+        return static_cast<ZuneDevice*>(handle)->IsConnected();
+    }
+    return false;
+}
+
+ZUNE_WIRELESS_API bool zune_device_validate_connection(zune_device_handle_t handle) {
+    if (handle) {
+        return static_cast<ZuneDevice*>(handle)->ValidateConnection();
+    }
+    return false;
+}
+
 ZUNE_WIRELESS_API void zune_device_set_log_callback(zune_device_handle_t handle, log_callback_t callback) {
     if (handle) {
         static_cast<ZuneDevice*>(handle)->SetLogCallback([callback](const std::string& message) {

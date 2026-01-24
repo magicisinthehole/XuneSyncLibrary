@@ -116,6 +116,10 @@ ZUNE_WIRELESS_API void zune_device_destroy(zune_device_handle_t handle);
 ZUNE_WIRELESS_API bool zune_device_connect_usb(zune_device_handle_t handle);
 ZUNE_WIRELESS_API void zune_device_disconnect(zune_device_handle_t handle);
 
+// Connection validation - lightweight MTP operation to verify session is still valid
+ZUNE_WIRELESS_API bool zune_device_is_connected(zune_device_handle_t handle);
+ZUNE_WIRELESS_API bool zune_device_validate_connection(zune_device_handle_t handle);
+
 ZUNE_WIRELESS_API void zune_device_set_log_callback(zune_device_handle_t handle, log_callback_t callback);
 
 ZUNE_WIRELESS_API int zune_device_establish_sync_pairing(zune_device_handle_t handle, const char* device_name);

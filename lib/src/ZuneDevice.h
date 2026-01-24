@@ -64,6 +64,7 @@ public:
     bool ConnectWireless(const std::string& ip_address);
     void Disconnect();
     bool IsConnected();
+    bool ValidateConnection();  // Lightweight MTP operation to verify session is still valid
 
     // --- Pairing ---
     int EstablishSyncPairing(const std::string& device_name = "");

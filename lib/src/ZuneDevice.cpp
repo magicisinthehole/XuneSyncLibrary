@@ -183,6 +183,25 @@ bool ZuneDevice::IsConnected() {
     return mtp_session_ != nullptr;
 }
 
+bool ZuneDevice::ValidateConnection() {
+    if (!mtp_session_ || !device_) {
+        return false;
+    }
+
+    try {
+        // Lightweight MTP operation to verify session is still valid
+        // GetInfo() queries basic device info without affecting device state
+        device_->GetInfo();
+        return true;
+    } catch (const std::exception& e) {
+        Log("ValidateConnection: MTP operation failed - " + std::string(e.what()));
+        return false;
+    } catch (...) {
+        Log("ValidateConnection: Unknown exception during MTP operation");
+        return false;
+    }
+}
+
 void ZuneDevice::SetLogCallback(LogCallback callback) {
     log_callback_ = callback;
 }
