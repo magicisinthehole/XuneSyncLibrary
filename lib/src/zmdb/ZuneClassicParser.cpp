@@ -279,17 +279,68 @@ std::optional<ZMDBTrack> ZuneClassicParser::parse_music_track(
     uint32_t genre_ref = read_uint32_le(record_data, 8);
     uint32_t album_filename_ref = read_uint32_le(record_data, 12);
 
-    // Read fixed fields (16-31)
+    // Read fixed fields - ZuneClassic structure differs from ZuneHD
     track.duration_ms = read_int32_le(record_data, 16);
-    track.file_size_bytes = read_int32_le(record_data, 20);
-    track.track_number = read_uint16_le(record_data, 24);
-    track.playcount = read_uint16_le(record_data, 26);
-    track.codec_id = read_uint16_le(record_data, 28);
-    track.rating = record_data[30];
+    
+    // Bytes 20-23: track_number (byte 20) + metadata_count (byte 22)
+    track.track_number = record_data[20];  // Just byte 20, not uint32
+    uint8_t metadata_record_count = record_data[22];  // Number of 6-byte metadata records after title
+    
+    track.codec_id = read_uint16_le(record_data, 24);
+    track.rating = record_data[26];
+    track.file_size_bytes = 0;  // Not stored in ZuneClassic fixed fields
 
-    // Read title at offset 32
-    if (record_data.size() > 32) {
-        track.title = read_null_terminated_utf8(record_data, 32);
+    // Read title at offset 28
+    size_t title_end = 28;
+    if (record_data.size() > 28) {
+        track.title = read_null_terminated_utf8(record_data, 28);
+        title_end = 28 + track.title.length() + 1;  // +1 for null terminator
+    }
+    
+    // Initialize default values
+    track.playcount = 0;
+    track.skip_count = 0;
+    
+    // Parse metadata records if present
+    if (metadata_record_count > 0 && title_end + (metadata_record_count * 6) <= record_data.size()) {
+        std::cout << "[ZuneClassicParser::parse_music_track] Track \"" << track.title 
+                  << "\" has " << (int)metadata_record_count << " metadata records" << std::endl;
+        
+        size_t metadata_offset = title_end;
+        for (uint8_t i = 0; i < metadata_record_count; i++) {
+            if (metadata_offset + 6 > record_data.size()) {
+                std::cout << "[ZuneClassicParser::parse_music_track] Insufficient data for metadata record " 
+                          << (int)i << std::endl;
+                break;
+            }
+            
+            // Each record is 6 bytes: 4-byte count + 0x04 + type byte
+            uint32_t count = read_uint32_le(record_data, metadata_offset);
+            uint8_t marker = record_data[metadata_offset + 4];  // Should be 0x04
+            uint8_t type = record_data[metadata_offset + 5];
+            
+            if (marker != 0x04) {
+                std::cout << "[ZuneClassicParser::parse_music_track] WARNING: Expected marker 0x04, got 0x" 
+                          << std::hex << (int)marker << std::dec << std::endl;
+            }
+            
+            switch (type) {
+                case 0x62:  // Play count
+                    track.playcount = count;
+                    std::cout << "[ZuneClassicParser::parse_music_track]   Play count: " << count << std::endl;
+                    break;
+                case 0x63:  // Skip count
+                    track.skip_count = count;
+                    std::cout << "[ZuneClassicParser::parse_music_track]   Skip count: " << count << std::endl;
+                    break;
+                default:
+                    std::cout << "[ZuneClassicParser::parse_music_track]   Unknown metadata type 0x" 
+                              << std::hex << (int)type << std::dec << " with value " << count << std::endl;
+                    break;
+            }
+            
+            metadata_offset += 6;
+        }
     }
 
     // Resolve references
@@ -299,6 +350,14 @@ std::optional<ZMDBTrack> ZuneClassicParser::parse_music_track(
         if (album_info.has_value()) {
             track.album_name = album_info->second;
             track.album_ref = album_ref;
+            
+            // Get album artist name and GUID from album (like ZuneHD does)
+            if (album_cache_.count(album_ref)) {
+                track.album_artist_name = album_cache_[album_ref].artist_name;
+                track.album_artist_guid = album_cache_[album_ref].artist_guid;
+                std::cout << "[ZuneClassicParser::parse_music_track] Set album artist: \"" << track.album_artist_name << "\" (GUID: \"" << track.album_artist_guid << "\")" << std::endl;
+            }
+            
             std::cout << "[ZuneClassicParser::parse_music_track] Resolved album: \"" << track.album_name << "\"" << std::endl;
         } else {
             std::cout << "[ZuneClassicParser::parse_music_track] Failed to resolve album_ref" << std::endl;
@@ -306,14 +365,56 @@ std::optional<ZMDBTrack> ZuneClassicParser::parse_music_track(
     }
 
     if (artist_ref != 0) {
-        track.artist_name = resolve_artist_name(artist_ref);
+        std::cout << "[ZuneClassicParser::parse_music_track] Resolving artist_ref=0x" << std::hex << artist_ref << std::dec << std::endl;
+        
+        // Ensure artist is fully parsed and cached (like ZuneHD does)
+        if (!artist_cache_.count(artist_ref)) {
+            if (index_table_.count(artist_ref)) {
+                uint32_t record_offset = index_table_[artist_ref];
+                auto record_opt = read_record_at_offset(zmdb_data_, record_offset);
+                if (record_opt.has_value()) {
+                    const auto& rec_data = record_opt->second;
+                    uint32_t ref0 = read_uint32_le(rec_data, 0);
+                    if (ref0 != 0) {  // Skip GUID/root artists (like ZuneHD does)
+                        auto artist = parse_artist(rec_data, artist_ref);
+                        if (artist.has_value()) {
+                            artist_cache_[artist_ref] = artist.value();
+                            std::cout << "[ZuneClassicParser::parse_music_track] Cached artist: \"" << artist->name << "\" with GUID: \"" << artist->guid << "\"" << std::endl;
+                        } else {
+                            std::cout << "[ZuneClassicParser::parse_music_track] Failed to parse artist record" << std::endl;
+                        }
+                    } else {
+                        std::cout << "[ZuneClassicParser::parse_music_track] Skipped GUID artist (ref0=0)" << std::endl;
+                    }
+                } else {
+                    std::cout << "[ZuneClassicParser::parse_music_track] Failed to read artist record at offset" << std::endl;
+                }
+            } else {
+                std::cout << "[ZuneClassicParser::parse_music_track] Artist ref not found in index table" << std::endl;
+            }
+        }
+        
+        // Get artist name and GUID from cache (like ZuneHD does)
+        if (artist_cache_.count(artist_ref)) {
+            track.artist_name = artist_cache_[artist_ref].name;
+            track.artist_guid = artist_cache_[artist_ref].guid;
+            std::cout << "[ZuneClassicParser::parse_music_track] Resolved artist: \"" << track.artist_name << "\" (GUID: \"" << track.artist_guid << "\")" << std::endl;
+        } else {
+            std::cout << "[ZuneClassicParser::parse_music_track] Artist not found in cache after resolution attempt" << std::endl;
+        }
     }
 
     if (genre_ref != 0) {
         track.genre = resolve_genre(genre_ref);
     }
 
+    if (album_filename_ref != 0) {
+        track.filename = resolve_string_reference(album_filename_ref);
+    }
+
     // Parse backwards varints for optional fields
+    // TODO: ZuneClassic appears to store these fields differently - investigate
+    /*
     size_t entry_size = get_entry_size_for_schema(Schema::Music);
     if (entry_size > 0) {
         auto fields = parse_backwards_varints(record_data, entry_size);
@@ -350,11 +451,12 @@ std::optional<ZMDBTrack> ZuneClassicParser::parse_music_track(
             }
         }
     }
-
-    // Default disc number to 1 if not present
-    if (track.disc_number == 0) {
-        track.disc_number = 1;
-    }
+    */
+    
+    // Set defaults for fields not found in ZuneClassic track records
+    track.disc_number = 1;  // Default disc number
+    track.skip_count = 0;
+    track.last_played_timestamp = 0;
 
     return track;
 }
@@ -730,15 +832,17 @@ std::optional<ZMDBAlbum> ZuneClassicParser::parse_album(
     // Read artist reference at offset 0-3
     album.artist_ref = read_uint32_le(record_data, 0);
 
-    // Read other reference fields (purposes unknown)
+    // Read other reference fields
     uint32_t ref1 = read_uint32_le(record_data, 4);
     uint32_t category_ref = read_uint32_le(record_data, 8);
-    uint32_t ref3 = read_uint32_le(record_data, 12);
-    uint32_t ref4 = read_uint32_le(record_data, 16);
 
-    // Read clean title at offset 20
-    if (record_data.size() > 20) {
-        album.title = read_null_terminated_utf8(record_data, 20);
+    // Read clean title at offset 12 (ZuneClassic structure differs from ZuneHD)
+    // ZuneClassic: artist_ref, ref1, category_ref, then title
+    // ZuneHD: artist_ref, ref1, category_ref, ref3, ref4, then title
+    size_t title_end = 12;
+    if (record_data.size() > 12) {
+        album.title = read_null_terminated_utf8(record_data, 12);
+        title_end = 12 + album.title.length() + 1; // +1 for null terminator
     }
 
     // Calculate album property ID in 0x0600xxxx format
@@ -769,23 +873,25 @@ std::optional<ZMDBAlbum> ZuneClassicParser::parse_album(
         }
     }
 
-    // Parse album filename from backwards varints (field 0x44)
-    size_t entry_size = get_entry_size_for_schema(Schema::Album);
-    std::cout << "[ZuneClassicParser::parse_album] Entry size for schema 0x06: " << entry_size << std::endl;
-    
-    if (entry_size > 0) {
-        auto fields = parse_backwards_varints(record_data, entry_size);
-        std::cout << "[ZuneClassicParser::parse_album] Found " << fields.size() << " backwards varint fields" << std::endl;
+    // Parse album filename (.alb reference) - ZuneClassic stores this as UTF-16LE after the title
+    // ZuneHD stores it in backwards varints, but ZuneClassic uses a different approach
+    if (title_end < record_data.size()) {
+        // Look for UTF-16LE string after the title
+        size_t utf16_start = title_end;
+        size_t utf16_end = utf16_start;
         
-        for (const auto& field : fields) {
-            std::cout << "[ZuneClassicParser::parse_album] Field id=0x" << std::hex << field.field_id 
-                      << ", size=" << std::dec << field.field_size << std::endl;
-                      
-            if (field.field_id == 0x44 && field.field_size > 2) {
-                album.alb_reference = utf16le_to_utf8(field.field_data);
-                std::cout << "[ZuneClassicParser::parse_album] Found alb_reference: \"" << album.alb_reference << "\"" << std::endl;
+        // Find the end of the UTF-16LE string (double null terminator)
+        while (utf16_end + 1 < record_data.size()) {
+            if (record_data[utf16_end] == 0 && record_data[utf16_end + 1] == 0) {
                 break;
             }
+            utf16_end += 2;
+        }
+        
+        if (utf16_end > utf16_start) {
+            std::vector<uint8_t> utf16_data(record_data.begin() + utf16_start, record_data.begin() + utf16_end);
+            album.alb_reference = utf16le_to_utf8(utf16_data);
+            std::cout << "[ZuneClassicParser::parse_album] Found alb_reference after title: \"" << album.alb_reference << "\"" << std::endl;
         }
     }
 
@@ -816,9 +922,9 @@ std::optional<ZMDBArtist> ZuneClassicParser::parse_artist(
         return std::nullopt;
     }
 
-    // Read clean name at offset 4
-    if (record_data.size() > 4) {
-        artist.name = read_null_terminated_utf8(record_data, 4);
+    // Read clean name at offset 1
+    if (record_data.size() > 1) {
+        artist.name = read_null_terminated_utf8(record_data, 1);
     }
 
     // Parse artist filename and GUID from backwards varints
@@ -912,7 +1018,17 @@ std::string ZuneClassicParser::resolve_artist_name(uint32_t atom_id) {
         return "";
     }
 
-    auto artist = parse_artist(record_opt->second, atom_id);
+    const auto& record_data = record_opt->second;
+
+    // Check for GUID artist (ref0 == 0) - like ZuneHD does
+    if (record_data.size() >= 4) {
+        uint32_t ref0 = read_uint32_le(record_data, 0);
+        if (ref0 == 0) {
+            return "";  // Skip GUID artists
+        }
+    }
+
+    auto artist = parse_artist(record_data, atom_id);
     if (artist.has_value()) {
         artist_cache_[atom_id] = artist.value();
         return artist->name;
