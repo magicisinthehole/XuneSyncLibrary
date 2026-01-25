@@ -82,6 +82,13 @@ ZUNE_WIRELESS_API const char* zune_device_get_model(zune_device_handle_t handle)
     return nullptr;
 }
 
+ZUNE_WIRELESS_API bool zune_device_supports_network_mode(zune_device_handle_t handle) {
+    if (handle) {
+        return static_cast<ZuneDevice*>(handle)->SupportsNetworkMode();
+    }
+    return false;
+}
+
 ZUNE_WIRELESS_API const char* zune_device_establish_wireless_pairing(zune_device_handle_t handle, const char* ssid, const char* password) {
     if (handle) {
         auto* device = static_cast<ZuneDevice*>(handle);
@@ -496,26 +503,55 @@ ZUNE_WIRELESS_API void zune_ssdp_stop_discovery() {
 ZUNE_WIRELESS_API bool zune_device_find_on_usb(const char** uuid, const char** device_name) {
     try {
         mtp::usb::ContextPtr ctx = std::make_shared<mtp::usb::Context>();
-        mtp::DevicePtr device = mtp::Device::FindFirst(ctx, "Zune", true, false);
-        if (device) {
-            // Get device info from USB descriptor - NO MTP SESSION REQUIRED
-            // This matches Windows Zune behavior: enumerate USB devices first,
-            // then open session only once for all operations
-            auto info = device->GetInfo();
 
-            thread_local std::string serial;
-            thread_local std::string model;
+        // Find Zune device and get USB Product ID for accurate model detection
+        auto devices = ctx->GetDevices();
+        for (auto desc : devices) {
+            if (desc->GetVendorId() == 0x045E) {  // Microsoft vendor ID
+                try {
+                    auto device = mtp::Device::Open(ctx, desc, true, false);
+                    if (device) {
+                        auto info = device->GetInfo();
 
-            serial = info.SerialNumber;
-            model = info.Model;  // e.g., "Zune HD", "Zune 120"
+                        thread_local std::string serial;
+                        thread_local std::string model;
 
-            *uuid = serial.c_str();
-            *device_name = model.c_str();  // USB model name, not device friendly name
+                        serial = info.SerialNumber;
 
-            // Note: Device friendly name (property 0xd402, e.g., "Andy's Zune HD")
-            // should be retrieved AFTER opening the main session using zune_device_get_name()
+                        // Use USB Product ID for accurate model detection
+                        // This matches ZuneDevice::GetModel() for consistency
+                        mtp::u16 productId = desc->GetProductId();
+                        switch (productId) {
+                            case 0x063e:  // Zune HD (all storage variants)
+                                model = "Zune HD";
+                                break;
+                            case 0x0710:  // Zune 30 (Classic)
+                                model = "Zune 30";
+                                break;
+                            case 0x0711:  // Zune 80 (Classic)
+                                model = "Zune 80";
+                                break;
+                            case 0x0712:  // Zune 120 (Classic)
+                                model = "Zune 120";
+                                break;
+                            case 0x0713:  // Zune 4/8/16 (Flash Classic)
+                                model = "Zune Flash";
+                                break;
+                            default:
+                                // Fallback to MTP DeviceInfo model string
+                                model = info.Model;
+                                break;
+                        }
 
-            return true;
+                        *uuid = serial.c_str();
+                        *device_name = model.c_str();
+
+                        return true;
+                    }
+                } catch (const std::exception&) {
+                    // Try next device
+                }
+            }
         }
     } catch (const std::exception& e) {
         // Log the error?

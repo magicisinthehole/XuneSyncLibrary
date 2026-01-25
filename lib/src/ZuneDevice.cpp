@@ -516,18 +516,46 @@ std::string ZuneDevice::GetModel() {
         u16 productId = usb_descriptor_->GetProductId();
 
         // Map Zune USB product IDs to model names
+        // Only Zune HD (0x063e) supports network mode (HTTP artist metadata proxy)
         switch (productId) {
-            case 0x063e:  // Zune HD (32 GB)
+            case 0x063e:  // Zune HD (all storage variants: 16GB, 32GB, 64GB)
                 return "Zune HD";
-            case 0x0710:  // Zune 30 (30 GB)
+            case 0x0710:  // Zune 30 (Classic, 1st gen)
                 return "Zune 30";
+            case 0x0711:  // Zune 80 (Classic, 2nd gen)
+                return "Zune 80";
+            case 0x0712:  // Zune 120 (Classic, 2nd gen)
+                return "Zune 120";
+            case 0x0713:  // Zune 4/8/16 (Flash-based Classic)
+                return "Zune Flash";
             default:
-                // Unknown product ID, return generic "Zune"
+                // Unknown product ID - log it for future mapping
+                Log("Unknown Zune product ID: 0x" +
+                    ([](u16 id) {
+                        char buf[8];
+                        snprintf(buf, sizeof(buf), "%04x", id);
+                        return std::string(buf);
+                    })(productId));
                 return "Zune";
         }
     } catch (const std::exception& e) {
         Log("Error getting device model: " + std::string(e.what()));
         return "";
+    }
+}
+
+bool ZuneDevice::SupportsNetworkMode() {
+    if (!usb_descriptor_) {
+        return false;
+    }
+    try {
+        // Only Zune HD (Product ID 0x063e) supports network mode.
+        // This is a hardware capability - Classic devices lack the required
+        // USB endpoints for HTTP-based artist metadata proxy.
+        u16 productId = usb_descriptor_->GetProductId();
+        return productId == 0x063e;
+    } catch (const std::exception&) {
+        return false;
     }
 }
 

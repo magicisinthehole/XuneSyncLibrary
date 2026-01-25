@@ -76,6 +76,11 @@ public:
     std::string GetSerialNumber();
     std::string GetModel();
 
+    // --- Device Capabilities ---
+    // Returns true if device supports network mode (HTTP-based artist metadata proxy).
+    // Only Zune HD devices (USB Product ID 0x063e) have this capability.
+    bool SupportsNetworkMode();
+
     // C API helpers - return cached strings (pointer valid until next call or device destruction)
     const char* GetNameCached();
     const char* GetSerialNumberCached();

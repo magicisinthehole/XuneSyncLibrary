@@ -131,6 +131,12 @@ ZUNE_WIRELESS_API const char* zune_device_get_name(zune_device_handle_t handle);
 ZUNE_WIRELESS_API const char* zune_device_get_serial_number(zune_device_handle_t handle);
 ZUNE_WIRELESS_API const char* zune_device_get_model(zune_device_handle_t handle);
 
+// Device Capability Functions
+// Returns true if device supports network mode (HTTP-based artist metadata proxy).
+// Only Zune HD devices (USB Product ID 0x063e) support this feature.
+// Classic devices (Zune 30/80/120/Flash) do not have the required hardware.
+ZUNE_WIRELESS_API bool zune_device_supports_network_mode(zune_device_handle_t handle);
+
 // File System Functions
 ZUNE_WIRELESS_API ZuneObjectInfo* zune_device_list_storage(zune_device_handle_t handle, uint32_t parent_handle, uint32_t* count);
 ZUNE_WIRELESS_API void zune_device_free_object_info_array(ZuneObjectInfo* array, uint32_t count);
