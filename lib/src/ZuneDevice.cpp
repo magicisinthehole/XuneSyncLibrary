@@ -152,8 +152,9 @@ bool ZuneDevice::ConnectWireless(const std::string& ip_address) {
 }
 
 void ZuneDevice::Disconnect() {
-    // Clear track ObjectId cache to prevent stale data on reconnection
-    ClearTrackObjectIdCache();
+    // Note: Don't call ClearTrackObjectIdCache() here - the cache is destroyed
+    // with library_manager_ anyway, and after USB disconnect the object state
+    // may be corrupted.
 
     if (network_manager_) {
         network_manager_.reset();
