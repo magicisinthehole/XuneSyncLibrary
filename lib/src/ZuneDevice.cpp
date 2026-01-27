@@ -646,6 +646,34 @@ int ZuneDevice::UploadWithArtwork(const std::string& media_path, const std::stri
     return -1;
 }
 
+uint32_t ZuneDevice::CreatePlaylist(
+    const std::string& name,
+    const std::string& guid,
+    const std::vector<uint32_t>& track_mtp_ids
+) {
+    if (library_manager_) {
+        return library_manager_->CreatePlaylist(name, guid, track_mtp_ids);
+    }
+    return 0;
+}
+
+bool ZuneDevice::UpdatePlaylistTracks(
+    uint32_t playlist_mtp_id,
+    const std::vector<uint32_t>& track_mtp_ids
+) {
+    if (library_manager_) {
+        return library_manager_->UpdatePlaylistTracks(playlist_mtp_id, track_mtp_ids);
+    }
+    return false;
+}
+
+bool ZuneDevice::DeletePlaylist(uint32_t playlist_mtp_id) {
+    if (library_manager_) {
+        return library_manager_->DeletePlaylist(playlist_mtp_id);
+    }
+    return false;
+}
+
 int ZuneDevice::UploadTrackWithMetadata(
     MediaType media_type,
     const std::string& audio_file_path,

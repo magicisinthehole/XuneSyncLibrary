@@ -103,6 +103,24 @@ public:
     // This function currently ignores artwork_path and only uploads the media file.
     int UploadWithArtwork(const std::string& media_path, const std::string& artwork_path);
 
+    // --- Playlist Management ---
+    // Create a playlist on the device
+    // Returns new playlist MTP object ID, or 0 on failure
+    uint32_t CreatePlaylist(
+        const std::string& name,
+        const std::string& guid,  // GUID as string "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+        const std::vector<uint32_t>& track_mtp_ids
+    );
+
+    // Update playlist track list (replaces all tracks)
+    bool UpdatePlaylistTracks(
+        uint32_t playlist_mtp_id,
+        const std::vector<uint32_t>& track_mtp_ids
+    );
+
+    // Delete a playlist from the device
+    bool DeletePlaylist(uint32_t playlist_mtp_id);
+
     // --- Upload with Metadata (uses Library for proper MTP structure) ---
     // For Music: artist_name = artist, album_name = album
     // For Audiobook: artist_name = author, album_name = audiobook title

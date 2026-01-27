@@ -102,6 +102,24 @@ public:
     // --- Metadata Retrieval ---
     mtp::ByteArray GetZuneMetadata(const std::vector<uint8_t>& object_id);
 
+    // --- Playlist Management ---
+    // Create a playlist on the device
+    // Returns new playlist MTP object ID, or 0 on failure
+    uint32_t CreatePlaylist(
+        const std::string& name,
+        const std::string& guid,  // GUID as string "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+        const std::vector<uint32_t>& track_mtp_ids
+    );
+
+    // Update playlist track list (replaces all tracks)
+    bool UpdatePlaylistTracks(
+        uint32_t playlist_mtp_id,
+        const std::vector<uint32_t>& track_mtp_ids
+    );
+
+    // Delete a playlist from the device
+    bool DeletePlaylist(uint32_t playlist_mtp_id);
+
 private:
     std::shared_ptr<mtp::Session> mtp_session_;
     std::shared_ptr<cli::Session> cli_session_;
@@ -116,6 +134,8 @@ private:
     void EnsureLibraryInitialized();
     std::string Utf16leToAscii(const mtp::ByteArray& data, bool is_guid = false);
     mtp::ByteArray HexToBytes(const std::string& hex_str);
+    mtp::ByteArray GuidStringToBytes(const std::string& guid_str);
+    mtp::ObjectId GetOrCreatePlaylistsFolder();
 
     // --- Upload Helper Types and Methods ---
     struct UploadContext {

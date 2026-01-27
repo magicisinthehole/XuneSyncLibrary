@@ -385,6 +385,79 @@ ZUNE_WIRELESS_API uint32_t zune_device_get_audio_track_object_id(zune_device_han
     return 0;
 }
 
+// ============================================================================
+// Playlist Management API
+// ============================================================================
+
+ZUNE_WIRELESS_API uint32_t zune_device_create_playlist(
+    zune_device_handle_t handle,
+    const char* name,
+    const char* guid,
+    const uint32_t* track_ids,
+    size_t track_count
+) {
+    if (!handle || !name || !guid) {
+        return 0;
+    }
+
+    try {
+        std::vector<uint32_t> track_vec;
+        if (track_ids && track_count > 0) {
+            track_vec.assign(track_ids, track_ids + track_count);
+        }
+
+        return static_cast<ZuneDevice*>(handle)->CreatePlaylist(
+            std::string(name),
+            std::string(guid),
+            track_vec
+        );
+    } catch (const std::exception& e) {
+        return 0;
+    }
+}
+
+ZUNE_WIRELESS_API int zune_device_update_playlist_tracks(
+    zune_device_handle_t handle,
+    uint32_t playlist_id,
+    const uint32_t* track_ids,
+    size_t track_count
+) {
+    if (!handle || playlist_id == 0) {
+        return -1;
+    }
+
+    try {
+        std::vector<uint32_t> track_vec;
+        if (track_ids && track_count > 0) {
+            track_vec.assign(track_ids, track_ids + track_count);
+        }
+
+        bool success = static_cast<ZuneDevice*>(handle)->UpdatePlaylistTracks(
+            playlist_id,
+            track_vec
+        );
+        return success ? 0 : -1;
+    } catch (const std::exception& e) {
+        return -1;
+    }
+}
+
+ZUNE_WIRELESS_API int zune_device_delete_playlist(
+    zune_device_handle_t handle,
+    uint32_t playlist_id
+) {
+    if (!handle || playlist_id == 0) {
+        return -1;
+    }
+
+    try {
+        bool success = static_cast<ZuneDevice*>(handle)->DeletePlaylist(playlist_id);
+        return success ? 0 : -1;
+    } catch (const std::exception& e) {
+        return -1;
+    }
+}
+
 ZUNE_WIRELESS_API int zune_device_set_track_user_state(
     zune_device_handle_t handle,
     uint32_t zmdb_atom_id,

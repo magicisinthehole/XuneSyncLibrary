@@ -219,6 +219,47 @@ ZUNE_WIRELESS_API uint32_t zune_device_get_audio_track_object_id(
     uint32_t album_object_id
 );
 
+// ============================================================================
+// Playlist Management
+// ============================================================================
+
+/// Create a playlist on the device
+/// @param handle Device handle from zune_device_create()
+/// @param name Playlist name (UTF-8)
+/// @param guid Playlist GUID as string (format: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx")
+/// @param track_ids Array of track MTP object IDs (atom_ids from zmdb)
+/// @param track_count Number of tracks in the array
+/// @return New playlist MTP object ID, or 0 on failure
+ZUNE_WIRELESS_API uint32_t zune_device_create_playlist(
+    zune_device_handle_t handle,
+    const char* name,
+    const char* guid,
+    const uint32_t* track_ids,
+    size_t track_count
+);
+
+/// Update playlist tracks (replaces entire track list)
+/// @param handle Device handle from zune_device_create()
+/// @param playlist_id MTP object ID of the playlist to update
+/// @param track_ids Array of track MTP object IDs (atom_ids from zmdb)
+/// @param track_count Number of tracks in the array
+/// @return 0 on success, negative on error
+ZUNE_WIRELESS_API int zune_device_update_playlist_tracks(
+    zune_device_handle_t handle,
+    uint32_t playlist_id,
+    const uint32_t* track_ids,
+    size_t track_count
+);
+
+/// Delete a playlist from the device
+/// @param handle Device handle from zune_device_create()
+/// @param playlist_id MTP object ID of the playlist to delete
+/// @return 0 on success, negative on error
+ZUNE_WIRELESS_API int zune_device_delete_playlist(
+    zune_device_handle_t handle,
+    uint32_t playlist_id
+);
+
 // Retrofit existing artist with MusicBrainz GUID
 // Updates an existing artist on the device to include a MusicBrainz GUID.
 // This operation:

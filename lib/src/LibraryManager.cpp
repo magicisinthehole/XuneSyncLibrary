@@ -12,6 +12,7 @@
 #include <regex>
 #include <mtp/metadata/Metadata.h>
 #include <mtp/ptp/ObjectPropertyListParser.h>
+#include <mtp/ptp/ByteArrayObjectStream.h>
 #include <cli/PosixStreams.h>
 
 using namespace mtp;
@@ -1237,4 +1238,225 @@ mtp::ByteArray LibraryManager::GetZuneMetadata(const std::vector<uint8_t>& objec
     }
 
     return result;
+}
+
+// --- Playlist Management ---
+
+mtp::ByteArray LibraryManager::GuidStringToBytes(const std::string& guid_str) {
+    // Convert GUID string "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" to 16-byte array
+    // Uses mixed-endian format (same as Windows GUID):
+    // - First 3 components: little-endian
+    // - Last 2 components (8 bytes): big-endian
+    mtp::ByteArray guid(16, 0);
+
+    // Remove dashes and validate
+    std::string hex;
+    for (char c : guid_str) {
+        if (c != '-') {
+            hex += c;
+        }
+    }
+
+    if (hex.length() != 32) {
+        Log("Error: Invalid GUID format (expected 32 hex chars, got " + std::to_string(hex.length()) + ")");
+        return guid;
+    }
+
+    // Component 1: 4 bytes (32-bit) - little-endian
+    for (int i = 3; i >= 0; --i) {
+        guid[3 - i] = static_cast<mtp::u8>(std::stoul(hex.substr(i * 2, 2), nullptr, 16));
+    }
+
+    // Component 2: 2 bytes (16-bit) - little-endian
+    for (int i = 1; i >= 0; --i) {
+        guid[4 + (1 - i)] = static_cast<mtp::u8>(std::stoul(hex.substr(8 + i * 2, 2), nullptr, 16));
+    }
+
+    // Component 3: 2 bytes (16-bit) - little-endian
+    for (int i = 1; i >= 0; --i) {
+        guid[6 + (1 - i)] = static_cast<mtp::u8>(std::stoul(hex.substr(12 + i * 2, 2), nullptr, 16));
+    }
+
+    // Component 4: 8 bytes - big-endian (as-is)
+    for (size_t i = 0; i < 8; ++i) {
+        guid[8 + i] = static_cast<mtp::u8>(std::stoul(hex.substr(16 + i * 2, 2), nullptr, 16));
+    }
+
+    return guid;
+}
+
+mtp::ObjectId LibraryManager::GetOrCreatePlaylistsFolder() {
+    // Find or create the "Playlists" folder on the device
+    if (!mtp_session_) {
+        throw std::runtime_error("MTP session not initialized");
+    }
+
+    auto storageIds = mtp_session_->GetStorageIDs();
+    if (storageIds.StorageIDs.empty()) {
+        throw std::runtime_error("No storage found on device");
+    }
+    auto storage = storageIds.StorageIDs.front();
+
+    // Search for existing "Playlists" folder in root
+    auto handles = mtp_session_->GetObjectHandles(storage, mtp::ObjectFormat::Association, mtp::Session::Root);
+    for (auto id : handles.ObjectHandles) {
+        auto filename = mtp_session_->GetObjectStringProperty(id, mtp::ObjectProperty::ObjectFilename);
+        if (filename == "Playlists") {
+            Log("Found existing Playlists folder: ObjectId 0x" + std::to_string(id.Id));
+            return id;
+        }
+    }
+
+    // Create Playlists folder
+    Log("Creating Playlists folder...");
+    auto response = mtp_session_->CreateDirectory("Playlists", mtp::Session::Root, storage);
+    Log("Created Playlists folder: ObjectId 0x" + std::to_string(response.ObjectId.Id));
+    return response.ObjectId;
+}
+
+uint32_t LibraryManager::CreatePlaylist(
+    const std::string& name,
+    const std::string& guid,
+    const std::vector<uint32_t>& track_mtp_ids
+) {
+    if (!mtp_session_) {
+        Log("Error: Not connected to device");
+        return 0;
+    }
+
+    try {
+        Log("Creating playlist: " + name);
+
+        // Get storage
+        auto storageIds = mtp_session_->GetStorageIDs();
+        if (storageIds.StorageIDs.empty()) {
+            Log("Error: No storage found");
+            return 0;
+        }
+        auto storage = storageIds.StorageIDs.front();
+
+        // Get or create Playlists folder
+        auto playlistsFolder = GetOrCreatePlaylistsFolder();
+
+        // Convert GUID string to bytes
+        auto guidBytes = GuidStringToBytes(guid);
+
+        // Build property list (4 properties)
+        mtp::ByteArray propList;
+        mtp::OutputStream os(propList);
+
+        os.Write32(4); // 4 properties
+
+        // Property 1: 0xDAB0 (Zune_CollectionID) = 0 (Uint8)
+        os.Write32(0); // object handle
+        os.Write16(0xDAB0);
+        os.Write16(static_cast<mtp::u16>(mtp::DataTypeCode::Uint8));
+        os.Write8(0);
+
+        // Property 2: ObjectFilename (0xDC07) = "{name}.pla"
+        os.Write32(0); // object handle
+        os.Write16(static_cast<mtp::u16>(mtp::ObjectProperty::ObjectFilename));
+        os.Write16(static_cast<mtp::u16>(mtp::DataTypeCode::String));
+        os.WriteString(name + ".pla");
+
+        // Property 3: ContentTypeUUID (0xDA97) = GUID bytes (Uint128)
+        os.Write32(0); // object handle
+        os.Write16(0xDA97);
+        os.Write16(static_cast<mtp::u16>(mtp::DataTypeCode::Uint128));
+        for (const auto& byte : guidBytes) {
+            os.Write8(byte);
+        }
+
+        // Property 4: Name (0xDC44) = "{name}"
+        os.Write32(0); // object handle
+        os.Write16(static_cast<mtp::u16>(mtp::ObjectProperty::Name));
+        os.Write16(static_cast<mtp::u16>(mtp::DataTypeCode::String));
+        os.WriteString(name);
+
+        // Send object property list
+        Log("Sending playlist object properties...");
+        auto response = mtp_session_->SendObjectPropList(
+            storage,
+            playlistsFolder,
+            mtp::ObjectFormat::AbstractAVPlaylist,
+            0,
+            propList
+        );
+        auto playlistId = response.ObjectId;
+        Log("Playlist object created: ObjectId 0x" + std::to_string(playlistId.Id));
+
+        // Send empty object data (required by MTP protocol)
+        mtp::ByteArray empty_data;
+        auto empty_stream = std::make_shared<ByteArrayInputStream>(empty_data);
+        mtp_session_->SendObject(empty_stream);
+        Log("Empty object data sent");
+
+        // Set object references (track IDs)
+        if (!track_mtp_ids.empty()) {
+            Log("Setting " + std::to_string(track_mtp_ids.size()) + " track references...");
+            mtp::msg::ObjectHandles handles;
+            for (uint32_t track_id : track_mtp_ids) {
+                handles.ObjectHandles.push_back(mtp::ObjectId(track_id));
+            }
+            mtp_session_->SetObjectReferences(playlistId, handles);
+            Log("Track references set");
+        }
+
+        Log("✓ Playlist created successfully: " + name);
+        return playlistId.Id;
+
+    } catch (const std::exception& e) {
+        Log("Error creating playlist: " + std::string(e.what()));
+        return 0;
+    }
+}
+
+bool LibraryManager::UpdatePlaylistTracks(
+    uint32_t playlist_mtp_id,
+    const std::vector<uint32_t>& track_mtp_ids
+) {
+    if (!mtp_session_) {
+        Log("Error: Not connected to device");
+        return false;
+    }
+
+    try {
+        Log("Updating playlist tracks for ObjectId 0x" + std::to_string(playlist_mtp_id));
+
+        // Build object handles from track IDs
+        mtp::msg::ObjectHandles handles;
+        for (uint32_t track_id : track_mtp_ids) {
+            handles.ObjectHandles.push_back(mtp::ObjectId(track_id));
+        }
+
+        // Set object references (replaces entire track list)
+        mtp_session_->SetObjectReferences(mtp::ObjectId(playlist_mtp_id), handles);
+
+        Log("✓ Updated playlist with " + std::to_string(track_mtp_ids.size()) + " tracks");
+        return true;
+
+    } catch (const std::exception& e) {
+        Log("Error updating playlist tracks: " + std::string(e.what()));
+        return false;
+    }
+}
+
+bool LibraryManager::DeletePlaylist(uint32_t playlist_mtp_id) {
+    if (!mtp_session_) {
+        Log("Error: Not connected to device");
+        return false;
+    }
+
+    try {
+        Log("Deleting playlist ObjectId 0x" + std::to_string(playlist_mtp_id));
+
+        mtp_session_->DeleteObject(mtp::ObjectId(playlist_mtp_id));
+
+        Log("✓ Playlist deleted");
+        return true;
+
+    } catch (const std::exception& e) {
+        Log("Error deleting playlist: " + std::string(e.what()));
+        return false;
+    }
 }
