@@ -648,6 +648,62 @@ target_compile_options(artist_images_tool_cli PRIVATE
     -Wno-unused-parameter
 )
 
+# Playlist Test CLI (for testing playlist create/update/delete operations)
+add_executable(playlist_test_cli
+    tools/playlist_test_cli.cpp
+    lib/src/ZuneDevice.cpp
+    lib/src/NetworkManager.cpp
+    lib/src/LibraryManager.cpp
+
+    lib/src/ZMDBLibraryExtractor.cpp
+    lib/src/zmdb/ZMDBParserBase.cpp
+    lib/src/zmdb/ZMDBUtils.cpp
+    lib/src/zmdb/ZuneHDParser.cpp
+    lib/src/zmdb/ZuneClassicParser.cpp
+    lib/src/zmdb/ZMDBParserFactory.cpp
+    lib/src/ptpip_client.cpp
+    lib/src/ssdp_discovery.cpp
+    lib/src/zune_wireless_api.cpp
+    lib/src/protocols/http/ZuneHTTPInterceptor.cpp
+    lib/src/protocols/ppp/PPPParser.cpp
+    lib/src/protocols/ppp/PPPFrameBuilder.cpp
+    lib/src/protocols/http/HTTPParser.cpp
+    lib/src/protocols/http/StaticModeHandler.cpp
+    lib/src/protocols/http/ProxyModeHandler.cpp
+    lib/src/protocols/http/HttpClient.cpp
+    lib/src/protocols/http/HybridModeHandler.cpp
+    lib/src/protocols/handlers/CCPHandler.cpp
+    lib/src/protocols/handlers/DNSHandler.cpp
+    lib/src/protocols/tcp/TCPConnectionManager.cpp
+    lib/src/protocols/tcp/TCPFlowController.cpp
+    lib/src/protocols/tcp/TCPStreamReassembler.cpp
+    lib/src/protocols/tcp/RTOManager.cpp
+)
+
+target_include_directories(playlist_test_cli PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${AFTL_INCLUDE_DIRS}
+    ${OPENSSL_INCLUDE_DIR}
+    ${CURL_INCLUDE_DIRS}
+)
+
+target_link_libraries(playlist_test_cli
+    aft-cli-static
+    ${AFTL_LIBRARY}
+    ${TAGLIB_LIBRARY}
+    ${OPENSSL_CRYPTO_LIBRARY}
+    ${CURL_LIBRARIES}
+    ${CMAKE_THREAD_LIBS_INIT}
+    ${PLATFORM_LIBRARIES}
+)
+
+target_compile_options(playlist_test_cli PRIVATE
+    -Wall
+    -Wextra
+    -Wno-unused-parameter
+)
+
 # Audiobook Test CLI
 add_executable(audiobook_test_cli
     tools/audiobook_test_cli.cpp
