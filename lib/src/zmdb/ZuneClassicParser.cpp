@@ -116,9 +116,9 @@ ZMDBLibrary ZuneClassicParser::ExtractLibrary(const std::vector<uint8_t>& zmdb_d
         library.tracks_capacity = descriptors_[1].entry_count;
         library.tracks = static_cast<ZMDBTrack*>(::operator new[](library.tracks_capacity * sizeof(ZMDBTrack)));
     }
-    if (descriptors_.size() > 2 && descriptors_[2].entry_count > 0) {
-        // Playlists on Classic use descriptor 2 (vs 11 on HD)
-        library.playlists_capacity = descriptors_[2].entry_count;
+    if (descriptors_.size() > 11 && descriptors_[11].entry_count > 0) {
+        // Playlists use descriptor 11 (same as Zune HD)
+        library.playlists_capacity = descriptors_[11].entry_count;
         library.playlists = static_cast<ZMDBPlaylist*>(::operator new[](library.playlists_capacity * sizeof(ZMDBPlaylist)));
     }
     if (descriptors_.size() > 12 && descriptors_[12].entry_count > 0) {
@@ -151,8 +151,8 @@ ZMDBLibrary ZuneClassicParser::ExtractLibrary(const std::vector<uint8_t>& zmdb_d
     }
 
     try {
-        std::cout << "[ZuneClassicParser] Extracting playlists from descriptor 2 (Classic mapping)..." << std::endl;
-        extract_media_from_descriptor(2, Schema::Playlist, library);   // Playlists (Classic: 2, HD: 11)
+        std::cout << "[ZuneClassicParser] Extracting playlists from descriptor 11..." << std::endl;
+        extract_media_from_descriptor(11, Schema::Playlist, library);  // Playlists (same as Zune HD)
         std::cout << "[ZuneClassicParser] Extracted " << library.playlist_count << " playlists" << std::endl;
     } catch (const std::exception& e) {
         throw std::runtime_error(std::string("Playlist parsing failed: ") + e.what());
@@ -572,57 +572,88 @@ std::optional<ZMDBPlaylist> ZuneClassicParser::parse_playlist(
     ZMDBPlaylist playlist;
     playlist.atom_id = atom_id;
 
-    // Read fixed fields
+    // Track count at offset 0
     playlist.track_count = read_uint32_le(record_data, 0);
-    uint32_t ref1 = read_uint32_le(record_data, 4);  // Unknown
-    uint32_t folder_ref = read_uint32_le(record_data, 8);
 
-    // Resolve folder reference
+    // Folder reference at offset 8
+    uint32_t folder_ref = read_uint32_le(record_data, 8);
     if (folder_ref != 0) {
         playlist.folder = resolve_string_reference(folder_ref);
     }
 
-    // Parse variable section
-    size_t offset = 12;
-    if (offset >= record_data.size()) {
+    // Playlist name at offset 12 (UTF-8, null-terminated)
+    if (record_data.size() <= 12) {
         return playlist;
     }
 
-    // 1. Playlist name (UTF-8, null-terminated)
-    playlist.name = read_null_terminated_utf8(record_data, offset);
-    offset += playlist.name.length() + 1;
-
-    // 2. GUID (16 bytes)
-    if (offset + 16 <= record_data.size()) {
-        std::vector<uint8_t> guid_bytes(
-            record_data.begin() + offset,
-            record_data.begin() + offset + 16
-        );
-        playlist.guid = parse_windows_guid(guid_bytes);
-        offset += 16;
+    size_t null_pos = 12;
+    while (null_pos < record_data.size() && record_data[null_pos] != 0) {
+        null_pos++;
     }
 
-    // 3. Padding (2 bytes)
-    offset += 2;
-
-    // 4. Filename (UTF-16LE, double-null terminated)
-    if (offset < record_data.size()) {
-        playlist.filename = read_utf16le_until_double_null(record_data, offset);
-        // Move past filename and double null
-        offset += (playlist.filename.length() + 1) * 2;
+    if (null_pos <= 12 || null_pos + 3 >= record_data.size()) {
+        return playlist;
     }
 
-    // 5. Padding (2 bytes)
-    offset += 2;
+    playlist.name = std::string(
+        reinterpret_cast<const char*>(&record_data[12]),
+        null_pos - 12
+    );
 
-    // 6. Track list (array of uint32 atom IDs)
-    while (offset + 4 <= record_data.size()) {
-        uint32_t track_atom_id = read_uint32_le(record_data, offset);
-        if (track_atom_id == 0) {
-            break;  // End marker
+    // Detect format: after name null, check if byte[1] == 0x00 (UTF-16LE) or not (GUID)
+    size_t pos = null_pos + 1;
+    bool has_guid = (record_data[pos + 1] != 0x00);
+
+    if (has_guid) {
+        // Software format: parse 16-byte GUID
+        if (pos + 16 > record_data.size()) {
+            return playlist;
         }
-        playlist.track_atom_ids.push_back(track_atom_id);
-        offset += 4;
+        std::stringstream guid_ss;
+        for (size_t i = 0; i < 16; i++) {
+            guid_ss << std::hex << std::setw(2) << std::setfill('0')
+                    << static_cast<int>(record_data[pos + i]);
+        }
+        playlist.guid = guid_ss.str();
+        pos += 16;
+
+        // Skip 2-byte field after GUID
+        pos += 2;
+    }
+
+    // Parse UTF-16LE filename (double-null terminated)
+    size_t utf16_start = pos;
+    while (pos + 1 < record_data.size()) {
+        if (record_data[pos] == 0 && record_data[pos + 1] == 0) {
+            break;
+        }
+        pos += 2;
+    }
+
+    if (pos > utf16_start) {
+        std::vector<uint8_t> utf16_data(
+            record_data.begin() + utf16_start,
+            record_data.begin() + pos
+        );
+        playlist.filename = utf16le_to_utf8(utf16_data);
+    }
+
+    // Skip double-null terminator + 2-byte pre-track field
+    pos += 4;
+
+    // Parse track atom_ids
+    while (pos + 4 <= record_data.size()) {
+        uint32_t track_id = read_uint32_le(record_data, pos);
+        if (track_id == 0) {
+            break;
+        }
+
+        uint8_t track_schema = (track_id >> 24) & 0xFF;
+        if (track_schema == Schema::Music) {
+            playlist.track_atom_ids.push_back(track_id);
+        }
+
+        pos += 4;
     }
 
     return playlist;
