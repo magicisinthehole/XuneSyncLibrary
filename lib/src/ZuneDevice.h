@@ -71,6 +71,15 @@ public:
     std::string EstablishWirelessPairing(const std::string& ssid, const std::string& password);
     int DisableWireless();
 
+    // --- Sync Partnership ---
+    // Returns the device's sync partner GUID (MTP property 0xd401)
+    // Returns empty string on error, "{00000000-0000-0000-0000-000000000000}" if not paired
+    std::string GetSyncPartnerGuid();
+    // Sets the device's friendly name (MTP property 0xd402)
+    // Returns 0 on success, -1 on invalid input, -2 if not connected, -3 on MTP error
+    int SetDeviceName(const std::string& name);
+    const char* GetSyncPartnerGuidCached();
+
     // --- Device Info ---
     std::string GetName();
     std::string GetSerialNumber();
@@ -270,6 +279,7 @@ private:
     mutable std::string cached_serial_number_;
     mutable std::string cached_model_;
     mutable std::string cached_session_guid_;
+    mutable std::string cached_sync_partner_guid_;
     mutable std::mutex cache_mutex_;
 
     // Network Manager

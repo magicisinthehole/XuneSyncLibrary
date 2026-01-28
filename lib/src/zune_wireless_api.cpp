@@ -112,6 +112,23 @@ ZUNE_WIRELESS_API int zune_device_disable_wireless(zune_device_handle_t handle) 
     return -1;
 }
 
+ZUNE_WIRELESS_API const char* zune_device_get_sync_partner_guid(zune_device_handle_t handle) {
+    if (handle) {
+        return static_cast<ZuneDevice*>(handle)->GetSyncPartnerGuidCached();
+    }
+    return nullptr;
+}
+
+ZUNE_WIRELESS_API int zune_device_set_device_name(zune_device_handle_t handle, const char* name) {
+    if (!handle) {
+        return -2;
+    }
+    if (!name) {
+        return -1;
+    }
+    return static_cast<ZuneDevice*>(handle)->SetDeviceName(std::string(name));
+}
+
 ZUNE_WIRELESS_API ZuneObjectInfo* zune_device_list_storage(zune_device_handle_t handle, uint32_t parent_handle, uint32_t* count) {
     if (!handle) {
         *count = 0;

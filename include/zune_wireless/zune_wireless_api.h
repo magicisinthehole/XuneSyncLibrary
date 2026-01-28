@@ -126,6 +126,16 @@ ZUNE_WIRELESS_API int zune_device_establish_sync_pairing(zune_device_handle_t ha
 ZUNE_WIRELESS_API const char* zune_device_establish_wireless_pairing(zune_device_handle_t handle, const char* ssid, const char* password);
 ZUNE_WIRELESS_API int zune_device_disable_wireless(zune_device_handle_t handle);
 
+// Sync Partnership Functions
+// GUID returned when device has no sync partnership (unpaired or pairing incomplete)
+#define ZUNE_NULL_GUID "{00000000-0000-0000-0000-000000000000}"
+// Returns device's sync partner GUID (MTP property 0xd401)
+// Returns nullptr on error, ZUNE_NULL_GUID if not paired, real GUID if paired
+ZUNE_WIRELESS_API const char* zune_device_get_sync_partner_guid(zune_device_handle_t handle);
+// Sets device friendly name (MTP property 0xd402) without full pairing
+// Returns 0 on success, -1 on invalid input, -2 if not connected, -3 on MTP error
+ZUNE_WIRELESS_API int zune_device_set_device_name(zune_device_handle_t handle, const char* name);
+
 // Device Info Functions
 ZUNE_WIRELESS_API const char* zune_device_get_name(zune_device_handle_t handle);
 ZUNE_WIRELESS_API const char* zune_device_get_serial_number(zune_device_handle_t handle);

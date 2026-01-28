@@ -14,6 +14,7 @@
 #include <cstring>
 #include <cctype>
 #include <regex>
+#include <random>
 #include <mtp/metadata/Metadata.h>
 #include <mtp/metadata/Library.h>
 #include <mtp/ptp/ObjectPropertyListParser.h>
@@ -35,6 +36,32 @@ using namespace mtp;
 static const uint8_t prop_d230_data[] = { 0x7a, 0x24, 0xec, 0x12, 0x00, 0x00, 0x00, 0x00 };
 static const uint8_t prop_d229_data[] = { 0xf4, 0x00, 0x00, 0x00 };
 static const uint8_t prop_d22a_data[] = { 0x5c, 0xfe, 0xff, 0xff };
+
+// --- UUID v4 Generator ---
+static std::string GenerateUUID() {
+    static std::random_device rd;
+    static std::mt19937_64 gen(rd());
+    static std::uniform_int_distribution<uint64_t> dist;
+
+    uint64_t ab = dist(gen);
+    uint64_t cd = dist(gen);
+
+    // Set version to 4 (random UUID) - bits 12-15 of time_hi_and_version
+    ab = (ab & 0xFFFFFFFFFFFF0FFFULL) | 0x0000000000004000ULL;
+    // Set variant to RFC 4122 - bits 6-7 of clock_seq_hi_and_reserved
+    cd = (cd & 0x3FFFFFFFFFFFFFFFULL) | 0x8000000000000000ULL;
+
+    std::ostringstream ss;
+    ss << std::hex << std::uppercase << std::setfill('0');
+    ss << "{";
+    ss << std::setw(8) << ((ab >> 32) & 0xFFFFFFFF) << "-";
+    ss << std::setw(4) << ((ab >> 16) & 0xFFFF) << "-";
+    ss << std::setw(4) << (ab & 0xFFFF) << "-";
+    ss << std::setw(4) << ((cd >> 48) & 0xFFFF) << "-";
+    ss << std::setw(12) << (cd & 0xFFFFFFFFFFFFULL);
+    ss << "}";
+    return ss.str();
+}
 
 
 
@@ -350,6 +377,10 @@ int ZuneDevice::EstablishSyncPairing(const std::string& device_name) {
         try { mtp_session_->GetDevicePropertyDesc((DeviceProperty)0xd22c); } catch (const std::exception& e) { Log("  → Failed to query 0xd22c (non-critical): " + std::string(e.what())); }
         Log("  → Queried descriptor 0xd22c");
 
+        // Generate a new sync partner GUID for this pairing
+        std::string sync_partner_guid = GenerateUUID();
+        Log("  Generated new sync partner GUID: " + sync_partner_guid);
+
         cli_session_->SetDeviceProp("d225", "{00000000-0000-0000-0000-000000000000}");
         Log("  ✓ Set property 0xd225 (Null GUID)");
 
@@ -357,8 +388,8 @@ int ZuneDevice::EstablishSyncPairing(const std::string& device_name) {
         mtp_session_->SetDeviceProperty((DeviceProperty)0xd21c, prop_d21c);
         Log("  ✓ Set property 0xd21c");
 
-        cli_session_->SetDeviceProp("d401", "{00000000-0000-0000-0000-000000000000}");
-        Log("  ✓ Set property 0xd401 (SynchronizationPartner) ⭐ KEY PROPERTY");
+        cli_session_->SetDeviceProp("d401", sync_partner_guid);
+        Log("  ✓ Set property 0xd401 (SynchronizationPartner) = " + sync_partner_guid + " ⭐ KEY PROPERTY");
 
         // Set remaining properties from embedded data
         mtp_session_->GetDevicePropertyDesc((DeviceProperty)0xd230);
@@ -459,6 +490,57 @@ int ZuneDevice::DisableWireless() {
         Log("Error disabling wireless: " + std::string(e.what()));
         return 1;
     }
+}
+
+std::string ZuneDevice::GetSyncPartnerGuid() {
+    if (!IsConnected()) {
+        Log("Error: Not connected to a device.");
+        return "";
+    }
+    try {
+        ByteArray guid_data = mtp_session_->GetDeviceProperty((DeviceProperty)0xd401);
+        std::string guid = Utf16leToAscii(guid_data, true);  // is_guid=true for proper formatting
+        // Ensure GUID has braces
+        if (!guid.empty() && guid[0] != '{') {
+            guid = "{" + guid + "}";
+        }
+        // Convert to uppercase for consistency
+        std::transform(guid.begin(), guid.end(), guid.begin(), ::toupper);
+        return guid;
+    } catch (const std::exception& e) {
+        Log("Error getting sync partner GUID: " + std::string(e.what()));
+        return "";
+    }
+}
+
+int ZuneDevice::SetDeviceName(const std::string& name) {
+    if (name.empty()) {
+        Log("Error: Device name cannot be empty.");
+        return -1;
+    }
+    if (!IsConnected()) {
+        Log("Error: Not connected to a device.");
+        return -2;
+    }
+    try {
+        // Truncate if too long (MTP limit)
+        std::string truncated = name.size() > 255 ? name.substr(0, 255) : name;
+        ByteArray name_data;
+        OutputStream stream(name_data);
+        stream << truncated;
+        mtp_session_->SetDeviceProperty((DeviceProperty)0xd402, name_data);
+        Log("Device name set to: " + truncated);
+        return 0;
+    } catch (const std::exception& e) {
+        Log("Error setting device name: " + std::string(e.what()));
+        return -3;
+    }
+}
+
+const char* ZuneDevice::GetSyncPartnerGuidCached() {
+    std::lock_guard<std::mutex> lock(cache_mutex_);
+    cached_sync_partner_guid_ = GetSyncPartnerGuid();
+    return cached_sync_partner_guid_.c_str();
 }
 
 std::vector<std::string> ZuneDevice::ScanWiFiNetworks() {
