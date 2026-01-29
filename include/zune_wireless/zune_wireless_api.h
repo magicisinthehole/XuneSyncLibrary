@@ -67,6 +67,13 @@ struct ZuneMusicAlbum {
     uint32_t artist_ref;        // Artist atom_id reference
 };
 
+struct ZuneMusicArtist {
+    const char* name;           // Artist name (UTF-8)
+    const char* filename;       // .art file reference (for artist artwork)
+    const char* guid;           // MusicBrainz GUID (optional)
+    uint32_t atom_id;           // Artist atom_id (MTP object ID)
+};
+
 struct ZuneAlbumArtwork {
     const char* alb_reference;  // e.g., "Artist--Album.alb"
     uint32_t mtp_object_id;     // MTP ObjectId for .alb file
@@ -87,6 +94,8 @@ struct ZuneMusicLibrary {
     uint32_t track_count;
     ZuneMusicAlbum* albums;
     uint32_t album_count;
+    ZuneMusicArtist* artists;
+    uint32_t artist_count;
     ZuneAlbumArtwork* artworks;
     uint32_t artwork_count;
     ZuneMusicPlaylist* playlists;

@@ -159,6 +159,9 @@ struct ZMDBLibrary {
     // Album metadata (kept as map for O(1) lookups during parsing)
     std::map<uint32_t, ZMDBAlbum> album_metadata;
 
+    // Artist metadata (kept as map for O(1) lookups during parsing)
+    std::map<uint32_t, ZMDBArtist> artist_metadata;
+
     // Counts
     int album_count = 0;
     int track_count = 0;
@@ -231,6 +234,7 @@ struct ZMDBLibrary {
           podcasts(other.podcasts),
           audiobooks(other.audiobooks),
           album_metadata(std::move(other.album_metadata)),
+          artist_metadata(std::move(other.artist_metadata)),
           album_count(other.album_count),
           track_count(other.track_count),
           video_count(other.video_count),

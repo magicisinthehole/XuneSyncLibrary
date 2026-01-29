@@ -211,6 +211,15 @@ ZMDBLibrary ZuneClassicParser::ExtractLibrary(const std::vector<uint8_t>& zmdb_d
         throw std::runtime_error(std::string("Album metadata move failed: ") + e.what());
     }
 
+    // Move artist metadata from cache
+    try {
+        library.artist_metadata = std::move(artist_cache_);
+        library.artist_count = library.artist_metadata.size();
+        std::cout << "[ZuneClassicParser] Moved " << library.artist_count << " artists to library" << std::endl;
+    } catch (const std::exception& e) {
+        throw std::runtime_error(std::string("Artist metadata move failed: ") + e.what());
+    }
+
     std::cout << "[ZuneClassicParser] ZMDB extraction complete: "
               << library.track_count << " tracks, "
               << library.album_count << " albums, "
@@ -240,12 +249,9 @@ bool ZuneClassicParser::should_filter_record(
         return true;  // Root/system entry
     }
 
-    // Filter 2: GUID artists (schema 0x08, ref0 == 0)
-    if (schema_type == Schema::Artist && ref0 == 0) {
-        return true;  // GUID placeholder artist
-    }
+    // Note: GUID artists (ref0 == 0) are now included so albums can reference them
 
-    // Filter 3: 32-byte placeholder tracks (schema 0x01, size == 32)
+    // Filter 2: 32-byte placeholder tracks (schema 0x01, size == 32)
     if (schema_type == Schema::Music && record_data.size() == 32) {
         return true;  // Placeholder/miscategorized track
     }
@@ -374,17 +380,13 @@ std::optional<ZMDBTrack> ZuneClassicParser::parse_music_track(
                 auto record_opt = read_record_at_offset(zmdb_data_, record_offset);
                 if (record_opt.has_value()) {
                     const auto& rec_data = record_opt->second;
-                    uint32_t ref0 = read_uint32_le(rec_data, 0);
-                    if (ref0 != 0) {  // Skip GUID/root artists (like ZuneHD does)
-                        auto artist = parse_artist(rec_data, artist_ref);
-                        if (artist.has_value()) {
-                            artist_cache_[artist_ref] = artist.value();
-                            std::cout << "[ZuneClassicParser::parse_music_track] Cached artist: \"" << artist->name << "\" with GUID: \"" << artist->guid << "\"" << std::endl;
-                        } else {
-                            std::cout << "[ZuneClassicParser::parse_music_track] Failed to parse artist record" << std::endl;
-                        }
+                    // Include all artists (including GUID/root artists) so albums can reference them
+                    auto artist = parse_artist(rec_data, artist_ref);
+                    if (artist.has_value()) {
+                        artist_cache_[artist_ref] = artist.value();
+                        std::cout << "[ZuneClassicParser::parse_music_track] Cached artist: \"" << artist->name << "\" with GUID: \"" << artist->guid << "\"" << std::endl;
                     } else {
-                        std::cout << "[ZuneClassicParser::parse_music_track] Skipped GUID artist (ref0=0)" << std::endl;
+                        std::cout << "[ZuneClassicParser::parse_music_track] Failed to parse artist record" << std::endl;
                     }
                 } else {
                     std::cout << "[ZuneClassicParser::parse_music_track] Failed to read artist record at offset" << std::endl;
@@ -1051,14 +1053,7 @@ std::string ZuneClassicParser::resolve_artist_name(uint32_t atom_id) {
 
     const auto& record_data = record_opt->second;
 
-    // Check for GUID artist (ref0 == 0) - like ZuneHD does
-    if (record_data.size() >= 4) {
-        uint32_t ref0 = read_uint32_le(record_data, 0);
-        if (ref0 == 0) {
-            return "";  // Skip GUID artists
-        }
-    }
-
+    // Include all artists (including GUID/root artists) so albums can reference them
     auto artist = parse_artist(record_data, atom_id);
     if (artist.has_value()) {
         artist_cache_[atom_id] = artist.value();

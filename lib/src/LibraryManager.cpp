@@ -332,6 +332,18 @@ ZuneMusicLibrary* LibraryManager::GetMusicLibrary(const std::string& device_mode
             album_idx++;
         }
 
+        // Copy artists
+        result->artist_count = library.artist_metadata.size();
+        result->artists = new ZuneMusicArtist[result->artist_count];
+        size_t artist_idx = 0;
+        for (const auto& [atom_id, artist] : library.artist_metadata) {
+            result->artists[artist_idx].name = strdup(artist.name.c_str());
+            result->artists[artist_idx].filename = strdup(artist.filename.c_str());
+            result->artists[artist_idx].guid = strdup(artist.guid.c_str());
+            result->artists[artist_idx].atom_id = artist.atom_id;
+            artist_idx++;
+        }
+
         // Build artwork array
         result->artwork_count = alb_to_objectid.size();
         result->artworks = new ZuneAlbumArtwork[result->artwork_count];
@@ -367,6 +379,7 @@ ZuneMusicLibrary* LibraryManager::GetMusicLibrary(const std::string& device_mode
 
         Log("Library retrieval complete: " + std::to_string(result->track_count) + " tracks, " +
             std::to_string(result->album_count) + " albums, " +
+            std::to_string(result->artist_count) + " artists, " +
             std::to_string(result->artwork_count) + " artworks, " +
             std::to_string(result->playlist_count) + " playlists");
 

@@ -216,6 +216,14 @@ ZUNE_WIRELESS_API void zune_device_free_music_library(ZuneMusicLibrary* library)
     }
     delete[] library->albums;
 
+    // Free artists
+    for (uint32_t i = 0; i < library->artist_count; ++i) {
+        free((void*)library->artists[i].name);
+        free((void*)library->artists[i].filename);
+        free((void*)library->artists[i].guid);
+    }
+    delete[] library->artists;
+
     // Free artworks
     for (uint32_t i = 0; i < library->artwork_count; ++i) {
         free((void*)library->artworks[i].alb_reference);
