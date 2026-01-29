@@ -206,6 +206,14 @@ int LibraryManager::DeleteFile(uint32_t object_handle) {
     if (!mtp_session_) return -1;
     try {
         mtp_session_->DeleteObject(mtp::ObjectId(object_handle));
+
+        // Invalidate library cache after deletion to ensure fresh ObjectIds on next upload.
+        // The device may reorganize album/artist objects after deletions, causing stale
+        // ObjectIds in the cached library to produce InvalidObjectHandle errors.
+        if (library_) {
+            library_.reset();
+            library_ = nullptr;
+        }
     } catch (const std::exception& e) {
         Log("Error deleting file: " + std::string(e.what()));
         return -1;
