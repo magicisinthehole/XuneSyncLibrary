@@ -54,6 +54,7 @@ struct ZMDBTrack {
     uint64_t last_played_timestamp = 0; // Windows FILETIME of last play/skip event (varint field 0x70)
     uint32_t atom_id = 0;
     uint32_t album_ref = 0;         // Album atom_id reference for grouping tracks
+    uint32_t genre_ref = 0;         // Genre atom_id reference
     std::string filename;
 };
 
@@ -74,6 +75,12 @@ struct ZMDBArtist {
     std::string name;
     std::string filename;  // .art file reference
     std::string guid;      // Artist GUID from field 0x14 (optional)
+    uint32_t atom_id = 0;
+};
+
+// Genre structure
+struct ZMDBGenre {
+    std::string name;
     uint32_t atom_id = 0;
 };
 
@@ -162,6 +169,9 @@ struct ZMDBLibrary {
     // Artist metadata (kept as map for O(1) lookups during parsing)
     std::map<uint32_t, ZMDBArtist> artist_metadata;
 
+    // Genre metadata (kept as map for O(1) lookups during parsing)
+    std::map<uint32_t, ZMDBGenre> genre_metadata;
+
     // Counts
     int album_count = 0;
     int track_count = 0;
@@ -170,6 +180,7 @@ struct ZMDBLibrary {
     int playlist_count = 0;
     int podcast_count = 0;
     int artist_count = 0;
+    int genre_count = 0;
     int audiobook_count = 0;
 
     // Capacities (for tracking allocated sizes)
@@ -235,6 +246,7 @@ struct ZMDBLibrary {
           audiobooks(other.audiobooks),
           album_metadata(std::move(other.album_metadata)),
           artist_metadata(std::move(other.artist_metadata)),
+          genre_metadata(std::move(other.genre_metadata)),
           album_count(other.album_count),
           track_count(other.track_count),
           video_count(other.video_count),
@@ -242,6 +254,7 @@ struct ZMDBLibrary {
           playlist_count(other.playlist_count),
           podcast_count(other.podcast_count),
           artist_count(other.artist_count),
+          genre_count(other.genre_count),
           audiobook_count(other.audiobook_count),
           tracks_capacity(other.tracks_capacity),
           videos_capacity(other.videos_capacity),

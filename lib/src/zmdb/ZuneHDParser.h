@@ -101,6 +101,7 @@ private:
     std::map<uint32_t, std::string> string_cache_;
     std::map<uint32_t, ZMDBArtist> artist_cache_;
     std::map<uint32_t, ZMDBAlbum> album_cache_;
+    std::map<uint32_t, ZMDBGenre> genre_cache_;
 
     // Parsed descriptors
     std::vector<Descriptor> descriptors_;

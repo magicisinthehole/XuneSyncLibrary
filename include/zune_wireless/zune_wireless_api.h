@@ -49,6 +49,7 @@ struct ZuneMusicTrack {
     int file_size_bytes;    // File size in bytes
     uint32_t album_ref;     // References album atom_id for grouping
     uint32_t atom_id;
+    uint32_t genre_ref;     // References genre atom_id
     uint16_t playcount;     // Play count (offset 26-27)
     uint16_t skip_count;    // Skip count (field 0x63)
     uint16_t codec_id;      // Format code: 0xb901=WMA, 0x3009=MP3
@@ -74,6 +75,11 @@ struct ZuneMusicArtist {
     uint32_t atom_id;           // Artist atom_id (MTP object ID)
 };
 
+struct ZuneMusicGenre {
+    const char* name;           // Genre name (UTF-8)
+    uint32_t atom_id;           // Genre atom_id from ZMDB
+};
+
 struct ZuneAlbumArtwork {
     const char* alb_reference;  // e.g., "Artist--Album.alb"
     uint32_t mtp_object_id;     // MTP ObjectId for .alb file
@@ -96,6 +102,8 @@ struct ZuneMusicLibrary {
     uint32_t album_count;
     ZuneMusicArtist* artists;
     uint32_t artist_count;
+    ZuneMusicGenre* genres;
+    uint32_t genre_count;
     ZuneAlbumArtwork* artworks;
     uint32_t artwork_count;
     ZuneMusicPlaylist* playlists;

@@ -153,6 +153,14 @@ ZMDBLibrary ZuneHDParser::ExtractLibrary(const std::vector<uint8_t>& zmdb_data) 
         throw std::runtime_error(std::string("Artist metadata move failed: ") + e.what());
     }
 
+    // Move genre metadata from cache
+    try {
+        library.genre_metadata = std::move(genre_cache_);
+        library.genre_count = library.genre_metadata.size();
+    } catch (const std::exception& e) {
+        throw std::runtime_error(std::string("Genre metadata move failed: ") + e.what());
+    }
+
     return library;
 }
 
@@ -210,6 +218,9 @@ std::optional<ZMDBTrack> ZuneHDParser::parse_music_track(
 
     // Store album_ref for grouping tracks into albums
     track.album_ref = album_ref;
+
+    // Store genre_ref for genre entity tracking
+    track.genre_ref = genre_ref;
 
     // Read title at offset 32
     if (record_data.size() > 32) {
@@ -893,7 +904,22 @@ std::string ZuneHDParser::resolve_artist_name(uint32_t atom_id) {
 }
 
 std::string ZuneHDParser::resolve_genre(uint32_t atom_id) {
-    return resolve_string_reference(atom_id);
+    // Check cache first
+    if (genre_cache_.count(atom_id)) {
+        return genre_cache_[atom_id].name;
+    }
+
+    std::string name = resolve_string_reference(atom_id);
+
+    // Cache the genre for metadata collection
+    if (!name.empty()) {
+        ZMDBGenre genre;
+        genre.atom_id = atom_id;
+        genre.name = name;
+        genre_cache_[atom_id] = genre;
+    }
+
+    return name;
 }
 
 std::optional<std::pair<uint32_t, std::string>> ZuneHDParser::resolve_album_info(uint32_t atom_id) {
