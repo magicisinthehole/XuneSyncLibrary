@@ -557,6 +557,290 @@ ZUNE_WIRELESS_API void zune_device_set_verbose_network_logging(
     bool enable
 );
 
+// ============================================================================
+// Low-Level MTP Primitives
+// ============================================================================
+// These primitives expose raw MTP operations for C# orchestration.
+// They enable ID-based entity management and support for generic MTP devices.
+
+/// MTP data type codes (for property list building)
+typedef enum {
+    ZUNE_MTP_TYPE_UINT8   = 0x0002,
+    ZUNE_MTP_TYPE_UINT16  = 0x0004,
+    ZUNE_MTP_TYPE_UINT32  = 0x0006,
+    ZUNE_MTP_TYPE_UINT64  = 0x0008,
+    ZUNE_MTP_TYPE_UINT128 = 0x000A,
+    ZUNE_MTP_TYPE_STRING  = 0xFFFF
+} ZuneMtpDataType;
+
+/// MTP object format codes
+typedef enum {
+    ZUNE_FORMAT_UNDEFINED         = 0x3000,
+    ZUNE_FORMAT_ASSOCIATION       = 0x3001,  // Folder/directory
+    ZUNE_FORMAT_MP3               = 0x3009,
+    ZUNE_FORMAT_WAV               = 0x3008,
+    ZUNE_FORMAT_WMA               = 0xB901,
+    ZUNE_FORMAT_AAC               = 0xB903,
+    ZUNE_FORMAT_FLAC              = 0xB906,
+    ZUNE_FORMAT_ARTIST            = 0xB218,  // Metadata artist object (with GUID)
+    ZUNE_FORMAT_ABSTRACT_ALBUM    = 0xBA03,  // Album container
+    ZUNE_FORMAT_AV_PLAYLIST       = 0xBA09   // Playlist container
+} ZuneMtpObjectFormat;
+
+/// MTP property codes commonly used for Zune
+typedef enum {
+    ZUNE_PROP_STORAGE_ID              = 0xDC01,
+    ZUNE_PROP_OBJECT_FORMAT           = 0xDC02,
+    ZUNE_PROP_OBJECT_SIZE             = 0xDC04,
+    ZUNE_PROP_OBJECT_FILENAME         = 0xDC07,
+    ZUNE_PROP_DATE_CREATED            = 0xDC08,
+    ZUNE_PROP_DATE_MODIFIED           = 0xDC09,
+    ZUNE_PROP_PARENT_OBJECT           = 0xDC0B,
+    ZUNE_PROP_NAME                    = 0xDC44,
+    ZUNE_PROP_ARTIST                  = 0xDC46,  // Artist name string (fallback)
+    ZUNE_PROP_DATE_AUTHORED           = 0xDC47,  // Album year
+    ZUNE_PROP_DESCRIPTION             = 0xDC48,
+    ZUNE_PROP_REPRESENTATIVE_SAMPLE   = 0xDC86,  // Artwork data
+    ZUNE_PROP_DURATION                = 0xDC89,  // Duration in ms
+    ZUNE_PROP_USER_RATING             = 0xDC8A,  // Rating value
+    ZUNE_PROP_TRACK                   = 0xDC8B,  // Track number
+    ZUNE_PROP_GENRE                   = 0xDC8C,  // Genre string
+    ZUNE_PROP_USE_COUNT               = 0xDC91,  // Play count
+    ZUNE_PROP_SKIP_COUNT              = 0xDC92,
+    ZUNE_PROP_ALBUM_NAME              = 0xDC9A,
+    ZUNE_PROP_ALBUM_ARTIST            = 0xDC9B,
+    ZUNE_PROP_CONTENT_TYPE_UUID       = 0xDA97,  // MusicBrainz GUID (Uint128)
+    ZUNE_PROP_AUDIOBOOK_NAME          = 0xDA9A,
+    ZUNE_PROP_ZUNE_COLLECTION_ID      = 0xDAB0,  // Always 0 for artist/playlist
+    ZUNE_PROP_ARTIST_ID               = 0xDAB9,  // Artist MTP ObjectId reference
+    ZUNE_PROP_ALBUM_ID                = 0xDABB
+} ZuneMtpPropertyCode;
+
+/// Property element for building MTP SendObjectPropList requests
+typedef struct {
+    uint32_t object_handle;     // Usually 0 for new objects
+    uint16_t property_code;     // ZuneMtpPropertyCode
+    uint16_t data_type;         // ZuneMtpDataType
+    const void* value;          // Pointer to value data
+    uint32_t value_size;        // Size of value data in bytes
+} ZuneMtpProperty;
+
+/// Result of SendObjectPropList operation
+typedef struct {
+    uint32_t object_id;         // Created object's MTP ObjectId
+    uint32_t storage_id;        // Storage where object was created
+    uint32_t parent_id;         // Parent object ID
+    int status;                 // 0 = success, negative = error code
+} ZuneMtpCreateResult;
+
+/// Well-known folder IDs on Zune device
+typedef struct {
+    uint32_t artists_folder;    // Artists metadata folder
+    uint32_t albums_folder;     // Albums metadata folder
+    uint32_t music_folder;      // Music content folder (parent for artist subfolders)
+    uint32_t playlists_folder;  // Playlists folder (may be 0 if not found)
+    uint32_t storage_id;        // Default storage ID
+} ZuneMtpFolderIds;
+
+// --- Core MTP Operations ---
+
+/// Send object property list (create metadata object)
+/// @param handle Device handle
+/// @param storage_id Storage ID (use 0 for default)
+/// @param parent_id Parent folder ObjectId
+/// @param format Object format (ZuneMtpObjectFormat)
+/// @param object_size Size of following object data (0 for metadata-only objects)
+/// @param properties Array of property elements
+/// @param property_count Number of properties
+/// @return Created object info with status
+ZUNE_WIRELESS_API ZuneMtpCreateResult zune_mtp_send_object_prop_list(
+    zune_device_handle_t handle,
+    uint32_t storage_id,
+    uint32_t parent_id,
+    uint16_t format,
+    uint64_t object_size,
+    const ZuneMtpProperty* properties,
+    uint32_t property_count
+);
+
+/// Send object data after SendObjectPropList
+/// @param handle Device handle
+/// @param data Object data (audio file bytes, or NULL for empty metadata objects)
+/// @param size Data size (0 for empty object)
+/// @return 0 on success, negative on error
+ZUNE_WIRELESS_API int zune_mtp_send_object(
+    zune_device_handle_t handle,
+    const void* data,
+    uint64_t size
+);
+
+/// Send object data from file path (streaming, avoids memory copy)
+/// @param handle Device handle
+/// @param file_path Path to file to upload
+/// @return 0 on success, negative on error
+ZUNE_WIRELESS_API int zune_mtp_send_object_from_file(
+    zune_device_handle_t handle,
+    const char* file_path
+);
+
+/// Set object references (link tracks to album/playlist)
+/// @param handle Device handle
+/// @param object_id Album or playlist ObjectId
+/// @param ref_ids Array of track ObjectIds to link
+/// @param ref_count Number of references
+/// @return 0 on success, negative on error
+ZUNE_WIRELESS_API int zune_mtp_set_object_references(
+    zune_device_handle_t handle,
+    uint32_t object_id,
+    const uint32_t* ref_ids,
+    uint32_t ref_count
+);
+
+/// Get object references (tracks in album/playlist)
+/// @param handle Device handle
+/// @param object_id Album or playlist ObjectId
+/// @param out_ref_ids Output array (caller allocates)
+/// @param max_refs Maximum refs to return
+/// @param out_count Actual number of refs returned
+/// @return 0 on success, negative on error
+ZUNE_WIRELESS_API int zune_mtp_get_object_references(
+    zune_device_handle_t handle,
+    uint32_t object_id,
+    uint32_t* out_ref_ids,
+    uint32_t max_refs,
+    uint32_t* out_count
+);
+
+/// Set single object property (string value)
+/// @return 0 on success, negative on error
+ZUNE_WIRELESS_API int zune_mtp_set_object_property_string(
+    zune_device_handle_t handle,
+    uint32_t object_id,
+    uint16_t property_code,
+    const char* value
+);
+
+/// Set single object property (integer value, any size up to 64-bit)
+/// @return 0 on success, negative on error
+ZUNE_WIRELESS_API int zune_mtp_set_object_property_int(
+    zune_device_handle_t handle,
+    uint32_t object_id,
+    uint16_t property_code,
+    uint64_t value
+);
+
+/// Set object property as byte array (for artwork)
+/// @return 0 on success, negative on error
+ZUNE_WIRELESS_API int zune_mtp_set_object_property_array(
+    zune_device_handle_t handle,
+    uint32_t object_id,
+    uint16_t property_code,
+    const void* data,
+    uint32_t data_size
+);
+
+/// Get object handles matching criteria
+/// @param handle Device handle
+/// @param storage_id Storage ID (0 = all storages)
+/// @param format Object format filter (0 = any)
+/// @param parent_id Parent filter (0xFFFFFFFF = root/all)
+/// @param out_handles Output array (caller allocates)
+/// @param max_handles Maximum handles to return
+/// @param out_count Actual count returned
+/// @return 0 on success, negative on error
+ZUNE_WIRELESS_API int zune_mtp_get_object_handles(
+    zune_device_handle_t handle,
+    uint32_t storage_id,
+    uint16_t format,
+    uint32_t parent_id,
+    uint32_t* out_handles,
+    uint32_t max_handles,
+    uint32_t* out_count
+);
+
+/// Create directory/folder
+/// @param handle Device handle
+/// @param name Directory name
+/// @param parent_id Parent folder ObjectId
+/// @param storage_id Storage ID (0 for default)
+/// @return ObjectId of created folder, or 0 on error
+ZUNE_WIRELESS_API uint32_t zune_mtp_create_directory(
+    zune_device_handle_t handle,
+    const char* name,
+    uint32_t parent_id,
+    uint32_t storage_id
+);
+
+/// Get storage IDs
+/// @param handle Device handle
+/// @param out_storage_ids Output array (caller allocates)
+/// @param max_storages Maximum storages to return
+/// @return Number of storages, or negative on error
+ZUNE_WIRELESS_API int zune_mtp_get_storage_ids(
+    zune_device_handle_t handle,
+    uint32_t* out_storage_ids,
+    uint32_t max_storages
+);
+
+/// Get default storage ID
+/// @return Storage ID, or 0 on error
+ZUNE_WIRELESS_API uint32_t zune_mtp_get_default_storage(
+    zune_device_handle_t handle
+);
+
+/// Get well-known folder IDs (Artists, Albums, Music, Playlists)
+/// Call this once per session to get folder ObjectIds for creating content.
+/// @param handle Device handle
+/// @param out_folders Output structure with folder IDs
+/// @return 0 on success, negative on error
+ZUNE_WIRELESS_API int zune_mtp_get_well_known_folders(
+    zune_device_handle_t handle,
+    ZuneMtpFolderIds* out_folders
+);
+
+/// Delete an MTP object
+/// @param handle Device handle
+/// @param object_id ObjectId to delete
+/// @return 0 on success, negative on error
+ZUNE_WIRELESS_API int zune_mtp_delete_object(
+    zune_device_handle_t handle,
+    uint32_t object_id
+);
+
+// --- Zune Vendor Operations ---
+
+/// Zune DB sync operation (Operation 0x9217)
+/// Triggers device to sync its internal database after uploads.
+/// @param handle Device handle
+/// @param param Usually 1
+/// @return 0 on success, negative on error
+ZUNE_WIRELESS_API int zune_mtp_operation_9217(
+    zune_device_handle_t handle,
+    uint32_t param
+);
+
+/// Zune track context registration (Operation 0x922A)
+/// Registers a track for metadata retrieval.
+/// @param handle Device handle
+/// @param track_name Track name to register
+/// @return 0 on success, negative on error
+ZUNE_WIRELESS_API int zune_mtp_operation_922a(
+    zune_device_handle_t handle,
+    const char* track_name
+);
+
+/// Zune property query (Operation 0x9802)
+/// Query property description for Windows compatibility.
+/// @param handle Device handle
+/// @param property_code Property to query
+/// @param format_type Object format type
+/// @return 0 on success, negative on error
+ZUNE_WIRELESS_API int zune_mtp_operation_9802(
+    zune_device_handle_t handle,
+    uint16_t property_code,
+    uint16_t format_type
+);
+
 
 #ifdef __cplusplus
 }

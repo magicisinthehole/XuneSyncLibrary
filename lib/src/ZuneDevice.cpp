@@ -978,3 +978,88 @@ void ZuneDevice::SetVerboseNetworkLogging(bool enable) {
     }
 }
 
+// === Low-Level MTP Access Methods ===
+
+uint32_t ZuneDevice::GetDefaultStorageId() {
+    if (!mtp_session_) {
+        return 0;
+    }
+
+    try {
+        auto storages = mtp_session_->GetStorageIDs();
+        if (storages.StorageIDs.empty()) {
+            return 0;
+        }
+        return storages.StorageIDs[0].Id;
+    } catch (const std::exception& e) {
+        Log("GetDefaultStorageId failed: " + std::string(e.what()));
+        return 0;
+    }
+}
+
+ZuneDevice::FolderIds ZuneDevice::GetWellKnownFolders() {
+    FolderIds result = {};
+
+    if (!mtp_session_) {
+        return result;
+    }
+
+    try {
+        // Get default storage
+        auto storages = mtp_session_->GetStorageIDs();
+        if (storages.StorageIDs.empty()) {
+            return result;
+        }
+        result.storage_id = storages.StorageIDs[0].Id;
+
+        // Query root folder for well-known folders by name
+        mtp::ByteArray data = mtp_session_->GetObjectPropertyList(
+            mtp::Session::Root,
+            mtp::ObjectFormat::Association,
+            mtp::ObjectProperty::ObjectFilename,
+            0, 1);
+
+        mtp::ObjectStringPropertyListParser::Parse(data,
+            [&](mtp::ObjectId id, mtp::ObjectProperty property, const std::string& name) {
+                if (name == "Artists") {
+                    result.artists_folder = id.Id;
+                } else if (name == "Albums") {
+                    result.albums_folder = id.Id;
+                } else if (name == "Music") {
+                    result.music_folder = id.Id;
+                } else if (name == "Playlists") {
+                    result.playlists_folder = id.Id;
+                }
+            });
+
+        // Create missing essential folders
+        mtp::StorageId storage(result.storage_id);
+
+        if (result.albums_folder == 0) {
+            auto info = mtp_session_->CreateDirectory("Albums", mtp::Session::Root, storage);
+            result.albums_folder = info.ObjectId.Id;
+        }
+
+        if (result.music_folder == 0) {
+            auto info = mtp_session_->CreateDirectory("Music", mtp::Session::Root, storage);
+            result.music_folder = info.ObjectId.Id;
+        }
+
+        // Artists folder only needed if device supports Artist format
+        if (result.artists_folder == 0) {
+            auto deviceInfo = mtp_session_->GetDeviceInfo();
+            if (deviceInfo.Supports(mtp::ObjectFormat::Artist)) {
+                auto info = mtp_session_->CreateDirectory("Artists", mtp::Session::Root, storage);
+                result.artists_folder = info.ObjectId.Id;
+            }
+        }
+
+        // Playlists folder is optional - don't create if not present
+
+    } catch (const std::exception& e) {
+        Log("GetWellKnownFolders failed: " + std::string(e.what()));
+    }
+
+    return result;
+}
+

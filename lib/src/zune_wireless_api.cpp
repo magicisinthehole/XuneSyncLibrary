@@ -4,7 +4,12 @@
 #include "ssdp_discovery.h"
 #include <vector>
 #include <cstring>
+#include <iostream>
 #include <mtp/ptp/Device.h>
+#include <mtp/ptp/Session.h>
+#include <mtp/ptp/OutputStream.h>
+#include <mtp/ptp/ByteArrayObjectStream.h>
+#include <cli/PosixStreams.h>
 #include <usb/Context.h>
 
 static std::unique_ptr<ssdp::SSDPDiscovery> g_discovery;
@@ -882,6 +887,524 @@ void zune_device_set_verbose_network_logging(zune_device_handle_t handle, bool e
         device->SetVerboseNetworkLogging(enable);
     } catch (const std::exception& e) {
         // Silently fail - errors are logged by ZuneDevice
+    }
+}
+
+// ============================================================================
+// Low-Level MTP Primitives Implementation
+// ============================================================================
+
+ZUNE_WIRELESS_API ZuneMtpCreateResult zune_mtp_send_object_prop_list(
+    zune_device_handle_t handle,
+    uint32_t storage_id,
+    uint32_t parent_id,
+    uint16_t format,
+    uint64_t object_size,
+    const ZuneMtpProperty* properties,
+    uint32_t property_count
+) {
+    ZuneMtpCreateResult result = {0, 0, 0, -1};
+
+    if (!handle || (property_count > 0 && !properties)) {
+        return result;
+    }
+
+    try {
+        auto* device = static_cast<ZuneDevice*>(handle);
+        auto session = device->GetMtpSession();
+        if (!session) {
+            result.status = -2;  // Not connected
+            return result;
+        }
+
+        // Get storage ID if not provided
+        mtp::StorageId mtpStorage(storage_id ? storage_id : device->GetDefaultStorageId());
+
+        // Build property list byte array
+        mtp::ByteArray propList;
+        mtp::OutputStream os(propList);
+        os.Write32(property_count);
+
+        for (uint32_t i = 0; i < property_count; i++) {
+            const auto& prop = properties[i];
+            os.Write32(prop.object_handle);
+            os.Write16(prop.property_code);
+            os.Write16(prop.data_type);
+
+            switch (prop.data_type) {
+                case ZUNE_MTP_TYPE_UINT8:
+                    if (prop.value && prop.value_size >= 1) {
+                        os.Write8(*static_cast<const uint8_t*>(prop.value));
+                    }
+                    break;
+                case ZUNE_MTP_TYPE_UINT16:
+                    if (prop.value && prop.value_size >= 2) {
+                        os.Write16(*static_cast<const uint16_t*>(prop.value));
+                    }
+                    break;
+                case ZUNE_MTP_TYPE_UINT32:
+                    if (prop.value && prop.value_size >= 4) {
+                        os.Write32(*static_cast<const uint32_t*>(prop.value));
+                    }
+                    break;
+                case ZUNE_MTP_TYPE_UINT64:
+                    if (prop.value && prop.value_size >= 8) {
+                        os.Write64(*static_cast<const uint64_t*>(prop.value));
+                    }
+                    break;
+                case ZUNE_MTP_TYPE_UINT128:
+                    if (prop.value && prop.value_size >= 16) {
+                        const uint8_t* bytes = static_cast<const uint8_t*>(prop.value);
+                        for (int j = 0; j < 16; j++) {
+                            os.Write8(bytes[j]);
+                        }
+                    }
+                    break;
+                case ZUNE_MTP_TYPE_STRING:
+                    if (prop.value) {
+                        os.WriteString(static_cast<const char*>(prop.value));
+                    } else {
+                        os.WriteString("");
+                    }
+                    break;
+                default:
+                    // Unknown type - write raw bytes if available
+                    if (prop.value && prop.value_size > 0) {
+                        const uint8_t* bytes = static_cast<const uint8_t*>(prop.value);
+                        for (uint32_t j = 0; j < prop.value_size; j++) {
+                            os.Write8(bytes[j]);
+                        }
+                    }
+                    break;
+            }
+        }
+
+        auto response = session->SendObjectPropList(
+            mtpStorage,
+            mtp::ObjectId(parent_id),
+            static_cast<mtp::ObjectFormat>(format),
+            object_size,
+            propList);
+
+        result.object_id = response.ObjectId.Id;
+        result.storage_id = response.StorageId.Id;
+        result.parent_id = response.ParentObjectId.Id;
+        result.status = 0;
+
+    } catch (const std::exception& e) {
+        std::cerr << "[zune_mtp_send_object_prop_list] Exception: " << e.what() << std::endl;
+        result.status = -1;
+    }
+
+    return result;
+}
+
+ZUNE_WIRELESS_API int zune_mtp_send_object(
+    zune_device_handle_t handle,
+    const void* data,
+    uint64_t size
+) {
+    if (!handle) return -1;
+
+    try {
+        auto* device = static_cast<ZuneDevice*>(handle);
+        auto session = device->GetMtpSession();
+        if (!session) return -2;
+
+        if (size == 0 || !data) {
+            // Send empty object
+            mtp::ByteArray empty;
+            auto stream = std::make_shared<mtp::ByteArrayObjectInputStream>(empty);
+            session->SendObject(stream);
+        } else {
+            mtp::ByteArray bytes(static_cast<const uint8_t*>(data),
+                                  static_cast<const uint8_t*>(data) + size);
+            auto stream = std::make_shared<mtp::ByteArrayObjectInputStream>(bytes);
+            session->SendObject(stream);
+        }
+
+        return 0;
+    } catch (const std::exception& e) {
+        return -1;
+    }
+}
+
+ZUNE_WIRELESS_API int zune_mtp_send_object_from_file(
+    zune_device_handle_t handle,
+    const char* file_path
+) {
+    if (!handle || !file_path) return -1;
+
+    try {
+        auto* device = static_cast<ZuneDevice*>(handle);
+        auto session = device->GetMtpSession();
+        if (!session) return -2;
+
+        auto stream = std::make_shared<cli::ObjectInputStream>(file_path);
+        session->SendObject(stream);
+
+        return 0;
+    } catch (const std::exception& e) {
+        return -1;
+    }
+}
+
+ZUNE_WIRELESS_API int zune_mtp_set_object_references(
+    zune_device_handle_t handle,
+    uint32_t object_id,
+    const uint32_t* ref_ids,
+    uint32_t ref_count
+) {
+    if (!handle || object_id == 0) return -1;
+
+    try {
+        auto* device = static_cast<ZuneDevice*>(handle);
+        auto session = device->GetMtpSession();
+        if (!session) return -2;
+
+        mtp::msg::ObjectHandles handles;
+        if (ref_ids && ref_count > 0) {
+            handles.ObjectHandles.reserve(ref_count);
+            for (uint32_t i = 0; i < ref_count; i++) {
+                handles.ObjectHandles.push_back(mtp::ObjectId(ref_ids[i]));
+            }
+        }
+
+        session->SetObjectReferences(mtp::ObjectId(object_id), handles);
+        return 0;
+
+    } catch (const std::exception& e) {
+        return -1;
+    }
+}
+
+ZUNE_WIRELESS_API int zune_mtp_get_object_references(
+    zune_device_handle_t handle,
+    uint32_t object_id,
+    uint32_t* out_ref_ids,
+    uint32_t max_refs,
+    uint32_t* out_count
+) {
+    if (!handle || object_id == 0 || !out_count) return -1;
+
+    *out_count = 0;
+
+    try {
+        auto* device = static_cast<ZuneDevice*>(handle);
+        auto session = device->GetMtpSession();
+        if (!session) return -2;
+
+        auto handles = session->GetObjectReferences(mtp::ObjectId(object_id));
+
+        uint32_t count = std::min(static_cast<uint32_t>(handles.ObjectHandles.size()), max_refs);
+        if (out_ref_ids && count > 0) {
+            for (uint32_t i = 0; i < count; i++) {
+                out_ref_ids[i] = handles.ObjectHandles[i].Id;
+            }
+        }
+        *out_count = static_cast<uint32_t>(handles.ObjectHandles.size());
+
+        return 0;
+
+    } catch (const std::exception& e) {
+        return -1;
+    }
+}
+
+ZUNE_WIRELESS_API int zune_mtp_set_object_property_string(
+    zune_device_handle_t handle,
+    uint32_t object_id,
+    uint16_t property_code,
+    const char* value
+) {
+    if (!handle || object_id == 0) return -1;
+
+    try {
+        auto* device = static_cast<ZuneDevice*>(handle);
+        auto session = device->GetMtpSession();
+        if (!session) return -2;
+
+        session->SetObjectProperty(
+            mtp::ObjectId(object_id),
+            static_cast<mtp::ObjectProperty>(property_code),
+            std::string(value ? value : ""));
+
+        return 0;
+
+    } catch (const std::exception& e) {
+        return -1;
+    }
+}
+
+ZUNE_WIRELESS_API int zune_mtp_set_object_property_int(
+    zune_device_handle_t handle,
+    uint32_t object_id,
+    uint16_t property_code,
+    uint64_t value
+) {
+    if (!handle || object_id == 0) return -1;
+
+    try {
+        auto* device = static_cast<ZuneDevice*>(handle);
+        auto session = device->GetMtpSession();
+        if (!session) return -2;
+
+        session->SetObjectProperty(
+            mtp::ObjectId(object_id),
+            static_cast<mtp::ObjectProperty>(property_code),
+            value);
+
+        return 0;
+
+    } catch (const std::exception& e) {
+        return -1;
+    }
+}
+
+ZUNE_WIRELESS_API int zune_mtp_set_object_property_array(
+    zune_device_handle_t handle,
+    uint32_t object_id,
+    uint16_t property_code,
+    const void* data,
+    uint32_t data_size
+) {
+    if (!handle || object_id == 0) return -1;
+
+    try {
+        auto* device = static_cast<ZuneDevice*>(handle);
+        auto session = device->GetMtpSession();
+        if (!session) return -2;
+
+        mtp::ByteArray bytes;
+        if (data && data_size > 0) {
+            const uint8_t* ptr = static_cast<const uint8_t*>(data);
+            bytes.assign(ptr, ptr + data_size);
+        }
+
+        session->SetObjectPropertyAsArray(
+            mtp::ObjectId(object_id),
+            static_cast<mtp::ObjectProperty>(property_code),
+            bytes);
+
+        return 0;
+
+    } catch (const std::exception& e) {
+        return -1;
+    }
+}
+
+ZUNE_WIRELESS_API int zune_mtp_get_object_handles(
+    zune_device_handle_t handle,
+    uint32_t storage_id,
+    uint16_t format,
+    uint32_t parent_id,
+    uint32_t* out_handles,
+    uint32_t max_handles,
+    uint32_t* out_count
+) {
+    if (!handle || !out_count) return -1;
+
+    *out_count = 0;
+
+    try {
+        auto* device = static_cast<ZuneDevice*>(handle);
+        auto session = device->GetMtpSession();
+        if (!session) return -2;
+
+        mtp::StorageId mtpStorage(storage_id ? storage_id : device->GetDefaultStorageId());
+        mtp::ObjectFormat mtpFormat = format ? static_cast<mtp::ObjectFormat>(format) : mtp::ObjectFormat::Any;
+        mtp::ObjectId mtpParent = (parent_id == 0xFFFFFFFF) ? mtp::Session::Root : mtp::ObjectId(parent_id);
+
+        auto handles = session->GetObjectHandles(mtpStorage, mtpFormat, mtpParent);
+
+        uint32_t count = std::min(static_cast<uint32_t>(handles.ObjectHandles.size()), max_handles);
+        if (out_handles && count > 0) {
+            for (uint32_t i = 0; i < count; i++) {
+                out_handles[i] = handles.ObjectHandles[i].Id;
+            }
+        }
+        *out_count = static_cast<uint32_t>(handles.ObjectHandles.size());
+
+        return 0;
+
+    } catch (const std::exception& e) {
+        return -1;
+    }
+}
+
+ZUNE_WIRELESS_API uint32_t zune_mtp_create_directory(
+    zune_device_handle_t handle,
+    const char* name,
+    uint32_t parent_id,
+    uint32_t storage_id
+) {
+    if (!handle || !name) return 0;
+
+    try {
+        auto* device = static_cast<ZuneDevice*>(handle);
+        auto session = device->GetMtpSession();
+        if (!session) return 0;
+
+        mtp::StorageId mtpStorage(storage_id ? storage_id : device->GetDefaultStorageId());
+        mtp::ObjectId mtpParent = (parent_id == 0) ? mtp::Session::Root : mtp::ObjectId(parent_id);
+
+        auto info = session->CreateDirectory(std::string(name), mtpParent, mtpStorage);
+        return info.ObjectId.Id;
+
+    } catch (const std::exception& e) {
+        return 0;
+    }
+}
+
+ZUNE_WIRELESS_API int zune_mtp_get_storage_ids(
+    zune_device_handle_t handle,
+    uint32_t* out_storage_ids,
+    uint32_t max_storages
+) {
+    if (!handle) return -1;
+
+    try {
+        auto* device = static_cast<ZuneDevice*>(handle);
+        auto session = device->GetMtpSession();
+        if (!session) return -2;
+
+        auto storages = session->GetStorageIDs();
+
+        uint32_t count = std::min(static_cast<uint32_t>(storages.StorageIDs.size()), max_storages);
+        if (out_storage_ids && count > 0) {
+            for (uint32_t i = 0; i < count; i++) {
+                out_storage_ids[i] = storages.StorageIDs[i].Id;
+            }
+        }
+
+        return static_cast<int>(storages.StorageIDs.size());
+
+    } catch (const std::exception& e) {
+        return -1;
+    }
+}
+
+ZUNE_WIRELESS_API uint32_t zune_mtp_get_default_storage(
+    zune_device_handle_t handle
+) {
+    if (!handle) return 0;
+
+    try {
+        auto* device = static_cast<ZuneDevice*>(handle);
+        return device->GetDefaultStorageId();
+    } catch (const std::exception& e) {
+        return 0;
+    }
+}
+
+ZUNE_WIRELESS_API int zune_mtp_get_well_known_folders(
+    zune_device_handle_t handle,
+    ZuneMtpFolderIds* out_folders
+) {
+    if (!handle || !out_folders) return -1;
+
+    try {
+        auto* device = static_cast<ZuneDevice*>(handle);
+        auto folders = device->GetWellKnownFolders();
+
+        out_folders->artists_folder = folders.artists_folder;
+        out_folders->albums_folder = folders.albums_folder;
+        out_folders->music_folder = folders.music_folder;
+        out_folders->playlists_folder = folders.playlists_folder;
+        out_folders->storage_id = folders.storage_id;
+
+        return 0;
+
+    } catch (const std::exception& e) {
+        return -1;
+    }
+}
+
+ZUNE_WIRELESS_API int zune_mtp_delete_object(
+    zune_device_handle_t handle,
+    uint32_t object_id
+) {
+    if (!handle || object_id == 0) return -1;
+
+    try {
+        auto* device = static_cast<ZuneDevice*>(handle);
+        auto session = device->GetMtpSession();
+        if (!session) return -2;
+
+        session->DeleteObject(mtp::ObjectId(object_id));
+        return 0;
+
+    } catch (const std::exception& e) {
+        return -1;
+    }
+}
+
+// --- Zune Vendor Operations ---
+
+ZUNE_WIRELESS_API int zune_mtp_operation_9217(
+    zune_device_handle_t handle,
+    uint32_t param
+) {
+    if (!handle) return -1;
+
+    try {
+        auto* device = static_cast<ZuneDevice*>(handle);
+        auto session = device->GetMtpSession();
+        if (!session) return -2;
+
+        // Use the Session's proper Operation9217 method which passes param
+        // as an MTP operation parameter (not data payload)
+        session->Operation9217(param);
+        return 0;
+
+    } catch (const std::exception& e) {
+        std::cerr << "[zune_mtp_operation_9217] Exception: " << e.what() << std::endl;
+        return -1;
+    }
+}
+
+ZUNE_WIRELESS_API int zune_mtp_operation_922a(
+    zune_device_handle_t handle,
+    const char* track_name
+) {
+    if (!handle) return -1;
+
+    try {
+        auto* device = static_cast<ZuneDevice*>(handle);
+        auto session = device->GetMtpSession();
+        if (!session) return -2;
+
+        // Use the Session's proper Operation922a method which builds the correct
+        // 530-byte data structure with UTF-16LE encoding
+        session->Operation922a(track_name ? track_name : "");
+        return 0;
+
+    } catch (const std::exception& e) {
+        std::cerr << "[zune_mtp_operation_922a] Exception: " << e.what() << std::endl;
+        return -1;
+    }
+}
+
+ZUNE_WIRELESS_API int zune_mtp_operation_9802(
+    zune_device_handle_t handle,
+    uint16_t property_code,
+    uint16_t format_type
+) {
+    if (!handle) return -1;
+
+    try {
+        auto* device = static_cast<ZuneDevice*>(handle);
+        auto session = device->GetMtpSession();
+        if (!session) return -2;
+
+        // Use the Session's proper Operation9802 method which passes params
+        // as MTP operation parameters (not data payload)
+        session->Operation9802(property_code, format_type);
+        return 0;
+
+    } catch (const std::exception& e) {
+        std::cerr << "[zune_mtp_operation_9802] Exception: " << e.what() << std::endl;
+        return -1;
     }
 }
 

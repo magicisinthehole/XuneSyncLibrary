@@ -245,6 +245,24 @@ public:
     // The handles and endpoints remain valid after MTP closes
     USBHandlesWithEndpoints ExtractUSBHandles();
 
+    // --- Low-Level MTP Access (for C# orchestration) ---
+    // Returns the underlying MTP session for direct MTP primitive operations.
+    // Returns nullptr if not connected.
+    mtp::SessionPtr GetMtpSession() const { return mtp_session_; }
+
+    // Get default storage ID (first storage or cached value)
+    uint32_t GetDefaultStorageId();
+
+    // Get well-known folder IDs for device content organization
+    struct FolderIds {
+        uint32_t artists_folder = 0;
+        uint32_t albums_folder = 0;
+        uint32_t music_folder = 0;
+        uint32_t playlists_folder = 0;
+        uint32_t storage_id = 0;
+    };
+    FolderIds GetWellKnownFolders();
+
 private:
     // --- Internal Helper Methods ---
     bool LoadMacGuid();
