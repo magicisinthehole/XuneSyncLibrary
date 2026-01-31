@@ -1325,6 +1325,7 @@ ZUNE_WIRELESS_API int zune_mtp_get_well_known_folders(
         out_folders->music_folder = folders.music_folder;
         out_folders->playlists_folder = folders.playlists_folder;
         out_folders->storage_id = folders.storage_id;
+        out_folders->artist_format_supported = folders.artist_format_supported ? 1 : 0;
 
         return 0;
 

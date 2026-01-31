@@ -1142,13 +1142,15 @@ ZuneDevice::FolderIds ZuneDevice::GetWellKnownFolders() {
             result.music_folder = info.ObjectId.Id;
         }
 
+        // Check if device supports Artist format (0xB218)
+        auto deviceInfo = mtp_session_->GetDeviceInfo();
+        result.artist_format_supported = deviceInfo.Supports(mtp::ObjectFormat::Artist);
+        Log("Device supports Artist format (0xB218): " + std::string(result.artist_format_supported ? "yes" : "no"));
+
         // Artists folder only needed if device supports Artist format
-        if (result.artists_folder == 0) {
-            auto deviceInfo = mtp_session_->GetDeviceInfo();
-            if (deviceInfo.Supports(mtp::ObjectFormat::Artist)) {
-                auto info = mtp_session_->CreateDirectory("Artists", mtp::Session::Root, storage);
-                result.artists_folder = info.ObjectId.Id;
-            }
+        if (result.artists_folder == 0 && result.artist_format_supported) {
+            auto info = mtp_session_->CreateDirectory("Artists", mtp::Session::Root, storage);
+            result.artists_folder = info.ObjectId.Id;
         }
 
         // Playlists folder is optional - don't create if not present

@@ -648,11 +648,12 @@ typedef struct {
 
 /// Well-known folder IDs on Zune device
 typedef struct {
-    uint32_t artists_folder;    // Artists metadata folder
+    uint32_t artists_folder;    // Artists metadata folder (0 if not supported)
     uint32_t albums_folder;     // Albums metadata folder
     uint32_t music_folder;      // Music content folder (parent for artist subfolders)
     uint32_t playlists_folder;  // Playlists folder (may be 0 if not found)
     uint32_t storage_id;        // Default storage ID
+    uint8_t artist_format_supported;  // 1 if device supports Artist format (0xB218), 0 otherwise
 } ZuneMtpFolderIds;
 
 // --- Core MTP Operations ---

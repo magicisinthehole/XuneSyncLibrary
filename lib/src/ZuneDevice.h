@@ -266,6 +266,7 @@ public:
         uint32_t music_folder = 0;
         uint32_t playlists_folder = 0;
         uint32_t storage_id = 0;
+        bool artist_format_supported = false;
     };
     FolderIds GetWellKnownFolders();
 
