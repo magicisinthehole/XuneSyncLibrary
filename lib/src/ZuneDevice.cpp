@@ -492,6 +492,103 @@ int ZuneDevice::DisableWireless() {
     }
 }
 
+int ZuneDevice::EraseAllContent() {
+    if (!IsConnected()) {
+        Log("Error: Not connected to a device.");
+        return -1;
+    }
+    
+    try {
+        Log("WARNING: Erasing all content on device...");
+        
+        // Get the default storage ID (typically 0x00010001)
+        uint32_t storageId = GetDefaultStorageId();
+        if (storageId == 0) {
+            Log("Error: Could not find default storage on device.");
+            return -2;
+        }
+        
+        // Step 1: Perform the FormatStore operation
+        Log("Step 1: Executing FormatStore operation...");
+        mtp_session_->FormatStore(mtp::StorageId(storageId), 0);
+        Log("FormatStore completed (device content erased)");
+        
+        // Step 2: Query device property 0xd217 twice (happens quickly after format)
+        Log("Step 2: Checking device state...");
+        for (int i = 0; i < 2; i++) {
+            try {
+                auto prop = mtp_session_->GetDeviceProperty(mtp::DeviceProperty(0xd217));
+                // Check if we got the expected value (0x7E) seen in captures
+                if (prop.size() >= 4) {
+                    uint32_t value = 0;
+                    std::memcpy(&value, prop.data(), 4);
+                    std::stringstream ss;
+                    ss << "Property 0xd217 query " << (i+1) 
+                       << " returned: 0x" << std::hex << value
+                       << " (" << std::dec << value << ")";
+                    VerboseLog(ss.str());
+                } else {
+                    VerboseLog("Property 0xd217 query " + std::to_string(i+1) + " complete");
+                }
+            } catch (const std::exception& e) {
+                VerboseLog("Property 0xd217 not available: " + std::string(e.what()));
+            }
+        }
+        
+        // Step 3: Call Zune-specific finalization operation
+        Log("Step 3: Executing device finalization...");
+        mtp_session_->Operation9217(1);
+        Log("Device finalization complete");
+        
+        // Step 4: Verify storage was formatted
+        Log("Step 4: Verifying storage state...");
+        auto storage_info = mtp_session_->GetStorageInfo(mtp::StorageId(storageId));
+        Log("Storage verified - Free space: " + std::to_string(storage_info.FreeSpaceInBytes / 1024 / 1024) + " MB");
+        
+        // Step 5: Query property 0xd217 one more time (third query happens here)
+        Log("Step 5: Final device state check...");
+        try {
+            auto prop = mtp_session_->GetDeviceProperty(mtp::DeviceProperty(0xd217));
+            if (prop.size() >= 4) {
+                uint32_t value = 0;
+                std::memcpy(&value, prop.data(), 4);
+                std::stringstream ss;
+                ss << "Property 0xd217 final query returned: 0x" << std::hex << value
+                   << " (" << std::dec << value << ")";
+                VerboseLog(ss.str());
+            }
+        } catch (const std::exception& e) {
+            VerboseLog("Property 0xd217 final query failed: " + std::string(e.what()));
+        }
+        
+        // Step 6: Reboot the device
+        Log("Step 6: Rebooting device...");
+        try {
+            mtp_session_->RebootDevice();
+            // Note: This command will not receive a response as the device is rebooting
+        } catch (const std::exception& e) {
+            // Expected - device won't respond after reboot command
+            VerboseLog("RebootDevice exception (expected): " + std::string(e.what()));
+        }
+        
+        Log("Device is rebooting. The device will be unavailable for a few seconds.");
+        
+        // Clear cached data since device content has changed and device is rebooting
+        ClearTrackObjectIdCache();
+        library_manager_ = nullptr;
+        
+        // Mark as disconnected since device is rebooting
+        mtp_session_ = nullptr;
+        cli_session_ = nullptr;
+        device_ = nullptr;
+        
+        return 0;
+    } catch (const std::exception& e) {
+        Log("Error during erase operation: " + std::string(e.what()));
+        return -2;
+    }
+}
+
 std::string ZuneDevice::GetSyncPartnerGuid() {
     if (!IsConnected()) {
         Log("Error: Not connected to a device.");

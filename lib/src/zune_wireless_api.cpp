@@ -117,6 +117,13 @@ ZUNE_WIRELESS_API int zune_device_disable_wireless(zune_device_handle_t handle) 
     return -1;
 }
 
+ZUNE_WIRELESS_API int zune_device_erase_all_content(zune_device_handle_t handle) {
+    if (handle) {
+        return static_cast<ZuneDevice*>(handle)->EraseAllContent();
+    }
+    return -1;
+}
+
 ZUNE_WIRELESS_API const char* zune_device_get_sync_partner_guid(zune_device_handle_t handle) {
     if (handle) {
         return static_cast<ZuneDevice*>(handle)->GetSyncPartnerGuidCached();

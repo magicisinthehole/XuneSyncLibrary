@@ -143,6 +143,11 @@ ZUNE_WIRELESS_API int zune_device_establish_sync_pairing(zune_device_handle_t ha
 ZUNE_WIRELESS_API const char* zune_device_establish_wireless_pairing(zune_device_handle_t handle, const char* ssid, const char* password);
 ZUNE_WIRELESS_API int zune_device_disable_wireless(zune_device_handle_t handle);
 
+// Device Management
+// Erase all content on the device (WARNING: This will delete all music, playlists, and other content)
+// Returns: 0 on success, -1 if not connected, -2 on MTP error
+ZUNE_WIRELESS_API int zune_device_erase_all_content(zune_device_handle_t handle);
+
 // Sync Partnership Functions
 // GUID returned when device has no sync partnership (unpaired or pairing incomplete)
 #define ZUNE_NULL_GUID "{00000000-0000-0000-0000-000000000000}"

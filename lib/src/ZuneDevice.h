@@ -71,6 +71,12 @@ public:
     std::string EstablishWirelessPairing(const std::string& ssid, const std::string& password);
     int DisableWireless();
 
+    // --- Device Management ---
+    // Erases all content on the device (performs MTP FormatStore operation)
+    // WARNING: This will delete all music, playlists, and other content on the device
+    // Returns 0 on success, -1 if not connected, -2 on MTP error
+    int EraseAllContent();
+
     // --- Sync Partnership ---
     // Returns the device's sync partner GUID (MTP property 0xd401)
     // Returns empty string on error, "{00000000-0000-0000-0000-000000000000}" if not paired

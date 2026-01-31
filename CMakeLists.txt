@@ -4,12 +4,18 @@ project(zune_wireless)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Build options
+option(ZUNE_BUILD_TESTS "Build test executables" OFF)
+option(ZUNE_BUILD_TOOLS "Build tool executables" OFF)
+
 # Build type
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
 endif()
 
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
+message(STATUS "Build tests: ${ZUNE_BUILD_TESTS}")
+message(STATUS "Build tools: ${ZUNE_BUILD_TOOLS}")
 
 # AFTL library configuration
 set(AFTL_ROOT "${CMAKE_SOURCE_DIR}/vendor/android-file-transfer-linux")
@@ -198,6 +204,11 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../src/Xune.Infrastructure.Devices")
 else()
     message(STATUS "Standalone build - library will not be auto-copied to parent project")
 endif()
+
+# =============================================================================
+# Test Executables (only built when ZUNE_BUILD_TESTS=ON)
+# =============================================================================
+if(ZUNE_BUILD_TESTS)
 
 # Test executable for library JSON export
 add_executable(test_library_json
@@ -591,6 +602,150 @@ target_compile_options(test_http_monitor_boot PRIVATE
     -Wno-unused-parameter
 )
 
+# Test executable for rating iteration
+add_executable(test_rating
+    tests/test_rating.cpp
+    lib/src/ZuneDevice.cpp
+    lib/src/NetworkManager.cpp
+    lib/src/LibraryManager.cpp
+
+    lib/src/ZMDBLibraryExtractor.cpp
+    lib/src/zmdb/ZMDBParserBase.cpp
+    lib/src/zmdb/ZMDBUtils.cpp
+    lib/src/zmdb/ZuneHDParser.cpp
+    lib/src/zmdb/ZuneClassicParser.cpp
+    lib/src/zmdb/ZMDBParserFactory.cpp
+    lib/src/ptpip_client.cpp
+    lib/src/ssdp_discovery.cpp
+    lib/src/zune_wireless_api.cpp
+    lib/src/protocols/http/ZuneHTTPInterceptor.cpp
+    lib/src/protocols/ppp/PPPParser.cpp
+    lib/src/protocols/ppp/PPPFrameBuilder.cpp
+    lib/src/protocols/http/HTTPParser.cpp
+    lib/src/protocols/http/StaticModeHandler.cpp
+    lib/src/protocols/http/ProxyModeHandler.cpp
+    lib/src/protocols/http/HttpClient.cpp
+    lib/src/protocols/http/HybridModeHandler.cpp
+    lib/src/protocols/handlers/CCPHandler.cpp
+    lib/src/protocols/handlers/DNSHandler.cpp
+    lib/src/protocols/tcp/TCPConnectionManager.cpp
+    lib/src/protocols/tcp/TCPFlowController.cpp
+    lib/src/protocols/tcp/TCPStreamReassembler.cpp
+    lib/src/protocols/tcp/RTOManager.cpp
+)
+
+target_include_directories(test_rating PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${AFTL_INCLUDE_DIRS}
+    ${OPENSSL_INCLUDE_DIR}
+    ${CURL_INCLUDE_DIRS}
+    ${TAGLIB_INCLUDE_DIR}
+)
+
+target_link_libraries(test_rating
+    aft-cli-static
+    ${AFTL_LIBRARY}
+    ${TAGLIB_LIBRARY}
+    ${OPENSSL_CRYPTO_LIBRARY}
+    ${CURL_LIBRARIES}
+    ${CMAKE_THREAD_LIBS_INIT}
+    ${PLATFORM_LIBRARIES}
+)
+
+target_compile_options(test_rating PRIVATE
+    -Wall
+    -Wextra
+    -Wno-unused-parameter
+)
+
+# Test executable for network stack
+add_executable(test_network_stack
+    tests/test_network_stack.cpp
+    lib/src/protocols/http/ZuneHTTPInterceptor.cpp
+    lib/src/protocols/ppp/PPPParser.cpp
+    lib/src/protocols/ppp/PPPFrameBuilder.cpp
+    lib/src/protocols/http/HTTPParser.cpp
+    lib/src/protocols/http/StaticModeHandler.cpp
+    lib/src/protocols/http/ProxyModeHandler.cpp
+    lib/src/protocols/http/HttpClient.cpp
+    lib/src/protocols/http/HybridModeHandler.cpp
+    lib/src/protocols/handlers/CCPHandler.cpp
+    lib/src/protocols/handlers/DNSHandler.cpp
+    lib/src/protocols/tcp/TCPConnectionManager.cpp
+    lib/src/protocols/tcp/TCPFlowController.cpp
+    lib/src/protocols/tcp/TCPStreamReassembler.cpp
+    lib/src/protocols/tcp/RTOManager.cpp
+)
+
+target_include_directories(test_network_stack PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${AFTL_INCLUDE_DIRS}
+    ${CURL_INCLUDE_DIRS}
+)
+
+target_link_libraries(test_network_stack
+    aft-cli-static
+    ${AFTL_LIBRARY}
+    ${CURL_LIBRARIES}
+    ${CMAKE_THREAD_LIBS_INIT}
+    ${PLATFORM_LIBRARIES}
+)
+
+target_compile_options(test_network_stack PRIVATE
+    -Wall
+    -Wextra
+    -Wno-unused-parameter
+)
+
+# Test executable for HTTP interceptor integration (Phase 5.4)
+add_executable(test_http_interceptor_integration
+    tests/test_http_interceptor_integration.cpp
+    lib/src/protocols/http/ZuneHTTPInterceptor.cpp
+    lib/src/protocols/handlers/CCPHandler.cpp
+    lib/src/protocols/handlers/DNSHandler.cpp
+    lib/src/protocols/tcp/TCPConnectionManager.cpp
+    lib/src/protocols/tcp/TCPFlowController.cpp
+    lib/src/protocols/tcp/TCPStreamReassembler.cpp
+    lib/src/protocols/tcp/RTOManager.cpp
+    lib/src/protocols/ppp/PPPParser.cpp
+    lib/src/protocols/ppp/PPPFrameBuilder.cpp
+    lib/src/protocols/http/HTTPParser.cpp
+    lib/src/protocols/http/StaticModeHandler.cpp
+    lib/src/protocols/http/ProxyModeHandler.cpp
+    lib/src/protocols/http/HttpClient.cpp
+    lib/src/protocols/http/HybridModeHandler.cpp
+)
+
+target_include_directories(test_http_interceptor_integration PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${AFTL_INCLUDE_DIRS}
+    ${CURL_INCLUDE_DIRS}
+)
+
+target_link_libraries(test_http_interceptor_integration
+    aft-cli-static
+    ${AFTL_LIBRARY}
+    ${CURL_LIBRARIES}
+    ${CMAKE_THREAD_LIBS_INIT}
+    ${PLATFORM_LIBRARIES}
+)
+
+target_compile_options(test_http_interceptor_integration PRIVATE
+    -Wall
+    -Wextra
+    -Wno-unused-parameter
+)
+
+endif() # ZUNE_BUILD_TESTS
+
+# =============================================================================
+# Tool Executables (only built when ZUNE_BUILD_TOOLS=ON)
+# =============================================================================
+if(ZUNE_BUILD_TOOLS)
+
 # Artist Images Tool CLI
 add_executable(artist_images_tool_cli
     tools/artist_images_tool_cli.cpp
@@ -819,6 +974,64 @@ target_compile_options(sync_partnership_test_cli PRIVATE
     -Wno-unused-parameter
 )
 
+# Erase Content Test CLI
+add_executable(erase_content_test_cli
+    tools/erase_content_test_cli.cpp
+    lib/src/ZuneDevice.cpp
+    lib/src/NetworkManager.cpp
+    lib/src/LibraryManager.cpp
+
+    lib/src/ZMDBLibraryExtractor.cpp
+    lib/src/zmdb/ZMDBParserBase.cpp
+    lib/src/zmdb/ZMDBUtils.cpp
+    lib/src/zmdb/ZuneHDParser.cpp
+    lib/src/zmdb/ZuneClassicParser.cpp
+    lib/src/zmdb/ZMDBParserFactory.cpp
+
+    lib/src/ptpip_client.cpp
+    lib/src/ssdp_discovery.cpp
+    lib/src/zune_wireless_api.cpp
+
+    lib/src/protocols/http/ZuneHTTPInterceptor.cpp
+    lib/src/protocols/ppp/PPPParser.cpp
+    lib/src/protocols/ppp/PPPFrameBuilder.cpp
+    lib/src/protocols/http/HTTPParser.cpp
+    lib/src/protocols/http/StaticModeHandler.cpp
+    lib/src/protocols/http/ProxyModeHandler.cpp
+    lib/src/protocols/http/HttpClient.cpp
+    lib/src/protocols/http/HybridModeHandler.cpp
+    lib/src/protocols/handlers/CCPHandler.cpp
+    lib/src/protocols/handlers/DNSHandler.cpp
+    lib/src/protocols/tcp/TCPConnectionManager.cpp
+    lib/src/protocols/tcp/TCPFlowController.cpp
+    lib/src/protocols/tcp/TCPStreamReassembler.cpp
+    lib/src/protocols/tcp/RTOManager.cpp
+)
+
+target_include_directories(erase_content_test_cli PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${AFTL_INCLUDE_DIRS}
+    ${OPENSSL_INCLUDE_DIR}
+    ${CURL_INCLUDE_DIRS}
+)
+
+target_link_libraries(erase_content_test_cli
+    aft-cli-static
+    ${AFTL_LIBRARY}
+    ${TAGLIB_LIBRARY}
+    ${OPENSSL_CRYPTO_LIBRARY}
+    ${CURL_LIBRARIES}
+    ${CMAKE_THREAD_LIBS_INIT}
+    ${PLATFORM_LIBRARIES}
+)
+
+target_compile_options(erase_content_test_cli PRIVATE
+    -Wall
+    -Wextra
+    -Wno-unused-parameter
+)
+
 # Upload Test CLI (for debugging upload hang issues)
 add_executable(upload_test_cli
     tools/upload_test_cli.cpp
@@ -876,64 +1089,11 @@ target_compile_options(upload_test_cli PRIVATE
     -Wno-unused-parameter
 )
 
-# Test executable for rating iteration
-add_executable(test_rating
-    tests/test_rating.cpp
-    lib/src/ZuneDevice.cpp
-    lib/src/NetworkManager.cpp
-    lib/src/LibraryManager.cpp
+endif() # ZUNE_BUILD_TOOLS
 
-    lib/src/ZMDBLibraryExtractor.cpp
-    lib/src/zmdb/ZMDBParserBase.cpp
-    lib/src/zmdb/ZMDBUtils.cpp
-    lib/src/zmdb/ZuneHDParser.cpp
-    lib/src/zmdb/ZuneClassicParser.cpp
-    lib/src/zmdb/ZMDBParserFactory.cpp
-    lib/src/ptpip_client.cpp
-    lib/src/ssdp_discovery.cpp
-    lib/src/zune_wireless_api.cpp
-    lib/src/protocols/http/ZuneHTTPInterceptor.cpp
-    lib/src/protocols/ppp/PPPParser.cpp
-    lib/src/protocols/ppp/PPPFrameBuilder.cpp
-    lib/src/protocols/http/HTTPParser.cpp
-    lib/src/protocols/http/StaticModeHandler.cpp
-    lib/src/protocols/http/ProxyModeHandler.cpp
-    lib/src/protocols/http/HttpClient.cpp
-    lib/src/protocols/http/HybridModeHandler.cpp
-    lib/src/protocols/handlers/CCPHandler.cpp
-    lib/src/protocols/handlers/DNSHandler.cpp
-    lib/src/protocols/tcp/TCPConnectionManager.cpp
-    lib/src/protocols/tcp/TCPFlowController.cpp
-    lib/src/protocols/tcp/TCPStreamReassembler.cpp
-    lib/src/protocols/tcp/RTOManager.cpp
-)
-
-target_include_directories(test_rating PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${AFTL_INCLUDE_DIRS}
-    ${OPENSSL_INCLUDE_DIR}
-    ${CURL_INCLUDE_DIRS}
-    ${TAGLIB_INCLUDE_DIR}
-)
-
-target_link_libraries(test_rating
-    aft-cli-static
-    ${AFTL_LIBRARY}
-    ${TAGLIB_LIBRARY}
-    ${OPENSSL_CRYPTO_LIBRARY}
-    ${CURL_LIBRARIES}
-    ${CMAKE_THREAD_LIBS_INIT}
-    ${PLATFORM_LIBRARIES}
-)
-
-target_compile_options(test_rating PRIVATE
-    -Wall
-    -Wextra
-    -Wno-unused-parameter
-)
-
+# =============================================================================
 # Install
+# =============================================================================
 install(TARGETS zune_wireless
     LIBRARY DESTINATION lib
     ARCHIVE DESTINATION lib
@@ -948,84 +1108,6 @@ message(STATUS "  C++ standard: ${CMAKE_CXX_STANDARD}")
 message(STATUS "  AFTL library: ${AFTL_LIBRARY}")
 message(STATUS "  OpenSSL: ${OPENSSL_CRYPTO_LIBRARY}")
 message(STATUS "  Platform libraries: ${PLATFORM_LIBRARIES}")
+message(STATUS "  Build tests: ${ZUNE_BUILD_TESTS}")
+message(STATUS "  Build tools: ${ZUNE_BUILD_TOOLS}")
 message(STATUS "")
-
-# Test executable for network stack
-add_executable(test_network_stack
-    tests/test_network_stack.cpp
-    lib/src/protocols/http/ZuneHTTPInterceptor.cpp
-    lib/src/protocols/ppp/PPPParser.cpp
-    lib/src/protocols/ppp/PPPFrameBuilder.cpp
-    lib/src/protocols/http/HTTPParser.cpp
-    lib/src/protocols/http/StaticModeHandler.cpp
-    lib/src/protocols/http/ProxyModeHandler.cpp
-    lib/src/protocols/http/HttpClient.cpp
-    lib/src/protocols/http/HybridModeHandler.cpp
-    lib/src/protocols/handlers/CCPHandler.cpp
-    lib/src/protocols/handlers/DNSHandler.cpp
-    lib/src/protocols/tcp/TCPConnectionManager.cpp
-    lib/src/protocols/tcp/TCPFlowController.cpp
-    lib/src/protocols/tcp/TCPStreamReassembler.cpp
-    lib/src/protocols/tcp/RTOManager.cpp
-)
-
-target_include_directories(test_network_stack PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${AFTL_INCLUDE_DIRS}
-    ${CURL_INCLUDE_DIRS}
-)
-
-target_link_libraries(test_network_stack
-    aft-cli-static
-    ${AFTL_LIBRARY}
-    ${CURL_LIBRARIES}
-    ${CMAKE_THREAD_LIBS_INIT}
-    ${PLATFORM_LIBRARIES}
-)
-
-target_compile_options(test_network_stack PRIVATE
-    -Wall
-    -Wextra
-    -Wno-unused-parameter
-)
-
-# Test executable for HTTP interceptor integration (Phase 5.4)
-add_executable(test_http_interceptor_integration
-    tests/test_http_interceptor_integration.cpp
-    lib/src/protocols/http/ZuneHTTPInterceptor.cpp
-    lib/src/protocols/handlers/CCPHandler.cpp
-    lib/src/protocols/handlers/DNSHandler.cpp
-    lib/src/protocols/tcp/TCPConnectionManager.cpp
-    lib/src/protocols/tcp/TCPFlowController.cpp
-    lib/src/protocols/tcp/TCPStreamReassembler.cpp
-    lib/src/protocols/tcp/RTOManager.cpp
-    lib/src/protocols/ppp/PPPParser.cpp
-    lib/src/protocols/ppp/PPPFrameBuilder.cpp
-    lib/src/protocols/http/HTTPParser.cpp
-    lib/src/protocols/http/StaticModeHandler.cpp
-    lib/src/protocols/http/ProxyModeHandler.cpp
-    lib/src/protocols/http/HttpClient.cpp
-    lib/src/protocols/http/HybridModeHandler.cpp
-)
-
-target_include_directories(test_http_interceptor_integration PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${AFTL_INCLUDE_DIRS}
-    ${CURL_INCLUDE_DIRS}
-)
-
-target_link_libraries(test_http_interceptor_integration
-    aft-cli-static
-    ${AFTL_LIBRARY}
-    ${CURL_LIBRARIES}
-    ${CMAKE_THREAD_LIBS_INIT}
-    ${PLATFORM_LIBRARIES}
-)
-
-target_compile_options(test_http_interceptor_integration PRIVATE
-    -Wall
-    -Wextra
-    -Wno-unused-parameter
-)
