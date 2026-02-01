@@ -1,4 +1,5 @@
 #include "ZuneDevice.h"
+#include "ZuneDeviceIdentification.h"
 #include "ptpip_client.h"
 #include "ssdp_discovery.h"
 #include "protocols/http/ZuneHTTPInterceptor.h"
@@ -686,57 +687,36 @@ std::string ZuneDevice::GetSerialNumber() {
     }
 }
 
-std::string ZuneDevice::GetModel() {
-    if (!usb_descriptor_) {
+uint64_t ZuneDevice::GetStorageCapacityBytes() {
+    if (!IsConnected()) {
         Log("Error: Not connected to a device.");
-        return "";
+        return 0;
     }
-    try {
-        // Get USB product ID from descriptor
-        u16 productId = usb_descriptor_->GetProductId();
 
-        // Map Zune USB product IDs to model names
-        // Only Zune HD (0x063e) supports network mode (HTTP artist metadata proxy)
-        switch (productId) {
-            case 0x063e:  // Zune HD (all storage variants: 16GB, 32GB, 64GB)
-                return "Zune HD";
-            case 0x0710:  // Zune 30 (Classic, 1st gen)
-                return "Zune 30";
-            case 0x0711:  // Zune 80 (Classic, 2nd gen)
-                return "Zune 80";
-            case 0x0712:  // Zune 120 (Classic, 2nd gen)
-                return "Zune 120";
-            case 0x0713:  // Zune 4/8/16 (Flash-based Classic)
-                return "Zune Flash";
-            default:
-                // Unknown product ID - log it for future mapping
-                Log("Unknown Zune product ID: 0x" +
-                    ([](u16 id) {
-                        char buf[8];
-                        snprintf(buf, sizeof(buf), "%04x", id);
-                        return std::string(buf);
-                    })(productId));
-                return "Zune";
+    try {
+        auto storage_ids = mtp_session_->GetStorageIDs();
+        if (storage_ids.StorageIDs.empty()) {
+            Log("Error: No storage found on device.");
+            return 0;
         }
+
+        // Get capacity from first (primary) storage
+        auto storage_info = mtp_session_->GetStorageInfo(storage_ids.StorageIDs[0]);
+        return storage_info.MaxCapacity;
     } catch (const std::exception& e) {
-        Log("Error getting device model: " + std::string(e.what()));
-        return "";
+        Log("Error getting storage capacity: " + std::string(e.what()));
+        return 0;
     }
 }
 
 bool ZuneDevice::SupportsNetworkMode() {
-    if (!usb_descriptor_) {
+    if (!IsConnected()) {
         return false;
     }
-    try {
-        // Only Zune HD (Product ID 0x063e) supports network mode.
-        // This is a hardware capability - Classic devices lack the required
-        // USB endpoints for HTTP-based artist metadata proxy.
-        u16 productId = usb_descriptor_->GetProductId();
-        return productId == 0x063e;
-    } catch (const std::exception&) {
-        return false;
-    }
+
+    // Only Pavo (Zune HD) supports network mode - determined by device family
+    CacheDeviceIdentification();
+    return zune::FamilySupportsNetworkMode(cached_device_ident_.family);
 }
 
 // C API cached helpers - these cache results and return pointers that remain valid
@@ -753,16 +733,87 @@ const char* ZuneDevice::GetSerialNumberCached() {
     return cached_serial_number_.c_str();
 }
 
-const char* ZuneDevice::GetModelCached() {
-    std::lock_guard<std::mutex> lock(cache_mutex_);
-    cached_model_ = GetModel();
-    return cached_model_.c_str();
-}
-
 const char* ZuneDevice::GetSessionGuidCached() {
     std::lock_guard<std::mutex> lock(cache_mutex_);
     cached_session_guid_ = session_guid_;
     return cached_session_guid_.c_str();
+}
+
+// ============================================================================
+// Device Identification (from MTP property 0xd21a)
+// ============================================================================
+
+void ZuneDevice::CacheDeviceIdentification() const {
+    if (device_ident_cached_) {
+        return;
+    }
+
+    if (!mtp_session_) {
+        // No MTP session - leave as Unknown
+        return;
+    }
+
+    try {
+        // Read MTP property 0xd21a (device identification)
+        // All Zune models support this property
+        ByteArray data = mtp_session_->GetDeviceProperty(static_cast<DeviceProperty>(0xd21a));
+
+        if (data.size() >= 4) {
+            // Build 32-bit value from little-endian bytes
+            uint32_t raw = static_cast<uint32_t>(data[0]) |
+                          (static_cast<uint32_t>(data[1]) << 8) |
+                          (static_cast<uint32_t>(data[2]) << 16) |
+                          (static_cast<uint32_t>(data[3]) << 24);
+
+            cached_device_ident_ = zune::ParseDeviceIdentification(raw);
+            device_ident_cached_ = true;
+
+            // Log the identification result
+            if (log_callback_) {
+                std::ostringstream ss;
+                ss << "Device identification: Family=" << cached_device_ident_.family_name
+                   << ", Color=" << cached_device_ident_.color_name
+                   << " (ID=" << static_cast<int>(cached_device_ident_.color_id) << ")";
+                log_callback_(ss.str());
+            }
+        }
+    } catch (const std::exception& e) {
+        if (log_callback_) {
+            log_callback_("Failed to read device identification (0xd21a): " + std::string(e.what()));
+        }
+    }
+}
+
+zune::DeviceFamily ZuneDevice::GetDeviceFamily() {
+    CacheDeviceIdentification();
+    return cached_device_ident_.family;
+}
+
+uint8_t ZuneDevice::GetDeviceColorId() {
+    CacheDeviceIdentification();
+    return cached_device_ident_.color_id;
+}
+
+std::string ZuneDevice::GetDeviceColorName() {
+    CacheDeviceIdentification();
+    return cached_device_ident_.color_name;
+}
+
+std::string ZuneDevice::GetDeviceFamilyName() {
+    CacheDeviceIdentification();
+    return cached_device_ident_.family_name;
+}
+
+const char* ZuneDevice::GetDeviceFamilyNameCached() {
+    std::lock_guard<std::mutex> lock(cache_mutex_);
+    cached_family_name_ = GetDeviceFamilyName();
+    return cached_family_name_.c_str();
+}
+
+const char* ZuneDevice::GetDeviceColorNameCached() {
+    std::lock_guard<std::mutex> lock(cache_mutex_);
+    cached_color_name_ = GetDeviceColorName();
+    return cached_color_name_.c_str();
 }
 
 // ============================================================================
@@ -778,7 +829,7 @@ std::vector<ZuneObjectInfoInternal> ZuneDevice::ListStorage(uint32_t parent_hand
 
 ZuneMusicLibrary* ZuneDevice::GetMusicLibrary() {
     if (library_manager_) {
-        return library_manager_->GetMusicLibrary(GetModel());
+        return library_manager_->GetMusicLibrary(GetDeviceFamily());
     }
     return nullptr;
 }

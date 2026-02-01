@@ -1,5 +1,6 @@
 #include "zune_wireless/zune_wireless_api.h"
 #include "ZuneDevice.h"
+#include "ZuneDeviceIdentification.h"
 #include "protocols/http/ZuneHTTPInterceptor.h"
 #include "ssdp_discovery.h"
 #include <vector>
@@ -85,11 +86,11 @@ ZUNE_WIRELESS_API const char* zune_device_get_serial_number(zune_device_handle_t
     return nullptr;
 }
 
-ZUNE_WIRELESS_API const char* zune_device_get_model(zune_device_handle_t handle) {
+ZUNE_WIRELESS_API uint64_t zune_device_get_storage_capacity_bytes(zune_device_handle_t handle) {
     if (handle) {
-        return static_cast<ZuneDevice*>(handle)->GetModelCached();
+        return static_cast<ZuneDevice*>(handle)->GetStorageCapacityBytes();
     }
-    return nullptr;
+    return 0;
 }
 
 ZUNE_WIRELESS_API bool zune_device_supports_network_mode(zune_device_handle_t handle) {
@@ -97,6 +98,34 @@ ZUNE_WIRELESS_API bool zune_device_supports_network_mode(zune_device_handle_t ha
         return static_cast<ZuneDevice*>(handle)->SupportsNetworkMode();
     }
     return false;
+}
+
+ZUNE_WIRELESS_API zune_device_family_t zune_device_get_family(zune_device_handle_t handle) {
+    if (handle) {
+        return static_cast<zune_device_family_t>(static_cast<ZuneDevice*>(handle)->GetDeviceFamily());
+    }
+    return ZUNE_FAMILY_UNKNOWN;
+}
+
+ZUNE_WIRELESS_API uint8_t zune_device_get_color_id(zune_device_handle_t handle) {
+    if (handle) {
+        return static_cast<ZuneDevice*>(handle)->GetDeviceColorId();
+    }
+    return 0xFF;
+}
+
+ZUNE_WIRELESS_API const char* zune_device_get_color_name(zune_device_handle_t handle) {
+    if (handle) {
+        return static_cast<ZuneDevice*>(handle)->GetDeviceColorNameCached();
+    }
+    return nullptr;
+}
+
+ZUNE_WIRELESS_API const char* zune_device_get_family_name(zune_device_handle_t handle) {
+    if (handle) {
+        return static_cast<ZuneDevice*>(handle)->GetDeviceFamilyNameCached();
+    }
+    return nullptr;
 }
 
 ZUNE_WIRELESS_API const char* zune_device_establish_wireless_pairing(zune_device_handle_t handle, const char* ssid, const char* password) {
@@ -625,7 +654,9 @@ ZUNE_WIRELESS_API bool zune_device_find_on_usb(const char** uuid, const char** d
     try {
         mtp::usb::ContextPtr ctx = std::make_shared<mtp::usb::Context>();
 
-        // Find Zune device and get USB Product ID for accurate model detection
+        // Find Zune device on USB (Microsoft vendor ID)
+        // This is a lightweight discovery check - actual model detection
+        // happens after full connection via ZuneDevice::GetModel()
         auto devices = ctx->GetDevices();
         for (auto desc : devices) {
             if (desc->GetVendorId() == 0x045E) {  // Microsoft vendor ID
@@ -635,37 +666,13 @@ ZUNE_WIRELESS_API bool zune_device_find_on_usb(const char** uuid, const char** d
                         auto info = device->GetInfo();
 
                         thread_local std::string serial;
-                        thread_local std::string model;
+                        thread_local std::string name;
 
                         serial = info.SerialNumber;
-
-                        // Use USB Product ID for accurate model detection
-                        // This matches ZuneDevice::GetModel() for consistency
-                        mtp::u16 productId = desc->GetProductId();
-                        switch (productId) {
-                            case 0x063e:  // Zune HD (all storage variants)
-                                model = "Zune HD";
-                                break;
-                            case 0x0710:  // Zune 30 (Classic)
-                                model = "Zune 30";
-                                break;
-                            case 0x0711:  // Zune 80 (Classic)
-                                model = "Zune 80";
-                                break;
-                            case 0x0712:  // Zune 120 (Classic)
-                                model = "Zune 120";
-                                break;
-                            case 0x0713:  // Zune 4/8/16 (Flash Classic)
-                                model = "Zune Flash";
-                                break;
-                            default:
-                                // Fallback to MTP DeviceInfo model string
-                                model = info.Model;
-                                break;
-                        }
+                        name = "Zune";  // Generic name for discovery
 
                         *uuid = serial.c_str();
-                        *device_name = model.c_str();
+                        *device_name = name.c_str();
 
                         return true;
                     }
@@ -674,8 +681,8 @@ ZUNE_WIRELESS_API bool zune_device_find_on_usb(const char** uuid, const char** d
                 }
             }
         }
-    } catch (const std::exception& e) {
-        // Log the error?
+    } catch (const std::exception&) {
+        // Discovery failed
     }
     return false;
 }

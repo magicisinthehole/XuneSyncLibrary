@@ -9,8 +9,9 @@ namespace zmdb {
 ZMDBLibraryExtractor::ZMDBLibraryExtractor() {
 }
 
-ZMDBLibrary ZMDBLibraryExtractor::ExtractLibrary(const mtp::ByteArray& zmdb_data, const std::string& device_model) {
+ZMDBLibrary ZMDBLibraryExtractor::ExtractLibrary(const mtp::ByteArray& zmdb_data, zune::DeviceFamily family) {
     ZMDBLibrary library;
+    library.device_family = family;
 
     if (zmdb_data.empty()) {
         Log("Error: Empty zmdb data");
@@ -18,31 +19,20 @@ ZMDBLibrary ZMDBLibraryExtractor::ExtractLibrary(const mtp::ByteArray& zmdb_data
     }
 
     Log("Starting zmdb extraction, size: " + std::to_string(zmdb_data.size()) + " bytes");
+    Log("Device family: " + std::string(zune::GetFamilyName(family)) +
+        " (" + std::string(family == zune::DeviceFamily::Pavo ? "ZuneHD" : "Classic") + ")");
 
     // 1. Build property map
     auto props = BuildPropertyMap(zmdb_data, 0x2F0);
     Log("Built property map: " + std::to_string(props.size()) + " properties");
 
-    // Debug logging for 0x0100 properties (commented out)
-    // for (const auto& [pid, ptr] : props) {
-    //     uint16_t cat = GetPropertyCategory(pid);
-    //     uint16_t idx = GetPropertyIndex(pid);
-    //     if (cat == 0x0100) {
-    //         Log("Property 0x0100[" + std::to_string(idx) + "] -> ptr=0x" + std::to_string(ptr));
-    //     }
-    // }
-
-    // 2. Detect device type from device_model
-    library.device_type = DetectDeviceType(device_model);
-    Log("Detected device type: " + std::string(library.device_type == DeviceType::ZuneHD ? "ZuneHD" : "Zune30"));
-
     // 3. Scan all tracks first (collect track refs per album)
     std::map<uint32_t, std::set<uint32_t>> album_tracks_refs;  // album_pid -> set of track 0x0800 refs
-    auto album_tracks = ScanTracks(zmdb_data, library.device_type, album_tracks_refs);
+    auto album_tracks = ScanTracks(zmdb_data, library.device_family, album_tracks_refs);
     Log("Scanned tracks: " + std::to_string(album_tracks.size()) + " albums with tracks");
 
     // 4. Extract albums - iterate over album_tracks (like Python parser)
-    bool is_zunehd = (library.device_type == DeviceType::ZuneHD);
+    bool is_zunehd = (library.device_family == zune::DeviceFamily::Pavo);
     int albums_processed = 0;
     int albums_skipped_garbage = 0;
     int albums_added = 0;
@@ -79,7 +69,7 @@ ZMDBLibrary ZMDBLibraryExtractor::ExtractLibrary(const mtp::ByteArray& zmdb_data
             }
 
             // Extract album metadata
-            ZMDBAlbum album = ExtractAlbum(zmdb_data, album_pid, props, library.device_type, track_refs);
+            ZMDBAlbum album = ExtractAlbum(zmdb_data, album_pid, props, library.device_family, track_refs);
 
             // Attach tracks
             album.tracks = tracks;
@@ -150,22 +140,6 @@ std::map<uint32_t, uint32_t> ZMDBLibraryExtractor::BuildPropertyMap(const mtp::B
     }
 
     return props;
-}
-
-DeviceType ZMDBLibraryExtractor::DetectDeviceType(const std::string& device_model) {
-    // Map device model string from USB descriptor to DeviceType
-    // Models from GetModel(): "Zune HD", "Zune 30", or generic "Zune"
-
-    if (device_model.find("HD") != std::string::npos) {
-        return DeviceType::ZuneHD;
-    }
-
-    if (device_model.find("30") != std::string::npos) {
-        return DeviceType::Zune30;
-    }
-
-    // Default to Zune30 for unknown models
-    return DeviceType::Zune30;
 }
 
 std::string ZMDBLibraryExtractor::ReadNullTerminatedAscii(const mtp::ByteArray& blob, size_t pos) const {
@@ -269,12 +243,12 @@ size_t ZMDBLibraryExtractor::FindFMarker(const mtp::ByteArray& blob, size_t star
 }
 
 ZMDBLibraryExtractor::FMarkerData ZMDBLibraryExtractor::ExtractFromFMarker(
-    const mtp::ByteArray& blob, size_t property_ptr, size_t f_offset, DeviceType device_type) const {
+    const mtp::ByteArray& blob, size_t property_ptr, size_t f_offset, zune::DeviceFamily family) const {
 
     FMarkerData data;
 
     // F marker header size differs by device
-    const int HEADER_SIZE = (device_type == DeviceType::ZuneHD) ? 24 : 16;
+    const int HEADER_SIZE = (family == zune::DeviceFamily::Pavo) ? 24 : 16;
     size_t ascii_start = property_ptr + f_offset + HEADER_SIZE;
 
     if (ascii_start >= blob.size()) {
@@ -325,7 +299,7 @@ ZMDBLibraryExtractor::FMarkerData ZMDBLibraryExtractor::ExtractFromFMarker(
 }
 
 ZMDBLibraryExtractor::MetadataResult ZMDBLibraryExtractor::ExtractMetadataDirect(
-    const mtp::ByteArray& blob, uint32_t ptr, DeviceType device_type) const {
+    const mtp::ByteArray& blob, uint32_t ptr, zune::DeviceFamily family) const {
 
     MetadataResult result;
 
@@ -333,8 +307,8 @@ ZMDBLibraryExtractor::MetadataResult ZMDBLibraryExtractor::ExtractMetadataDirect
         return result;
     }
 
-    // Use configured offset based on device type
-    const int metadata_offset = (device_type == DeviceType::ZuneHD) ? 32 : 24;
+    // Use configured offset based on device family
+    const int metadata_offset = (family == zune::DeviceFamily::Pavo) ? 32 : 24;
 
     // Read album name from ASCII section
     std::string album_name = ReadNullTerminatedAscii(blob, ptr + metadata_offset);
@@ -369,7 +343,7 @@ ZMDBLibraryExtractor::MetadataResult ZMDBLibraryExtractor::FindFMarkerWithMatchi
     const mtp::ByteArray& blob,
     uint32_t ptr,
     const std::set<uint32_t>& track_0x0800_refs,
-    DeviceType device_type) const {
+    zune::DeviceFamily family) const {
 
     MetadataResult result;
 
@@ -385,7 +359,7 @@ ZMDBLibraryExtractor::MetadataResult ZMDBLibraryExtractor::FindFMarkerWithMatchi
             // No refs = take first F-marker
             // Otherwise match refs
             if (track_0x0800_refs.empty() || track_0x0800_refs.count(f_marker_0x0800_ref) > 0) {
-                FMarkerData f_data = ExtractFromFMarker(blob, ptr, f_offset, device_type);
+                FMarkerData f_data = ExtractFromFMarker(blob, ptr, f_offset, family);
                 if (f_data.valid) {
                     result.album_name = f_data.album_name;
                     result.artist_name = f_data.artist_name;
@@ -403,15 +377,16 @@ ZMDBLibraryExtractor::MetadataResult ZMDBLibraryExtractor::FindFMarkerWithMatchi
 
 std::map<uint32_t, std::vector<ZMDBTrack>> ZMDBLibraryExtractor::ScanTracks(
     const mtp::ByteArray& blob,
-    DeviceType device_type,
+    zune::DeviceFamily family,
     std::map<uint32_t, std::set<uint32_t>>& album_tracks_refs) const {
 
     std::map<uint32_t, std::vector<ZMDBTrack>> album_tracks;
 
-    // Device-specific offsets
-    const int ALBUM_PID_OFFSET = (device_type == DeviceType::ZuneHD) ? -28 : -24;
+    // Device-specific offsets (Pavo = Zune HD, others = Classic)
+    bool is_zunehd = (family == zune::DeviceFamily::Pavo);
+    const int ALBUM_PID_OFFSET = is_zunehd ? -28 : -24;
     const int REF_0X0800_OFFSET = -20;  // Always -20 for both devices
-    const size_t TRACK_REGION_START = (device_type == DeviceType::ZuneHD) ? 0 : 0x000312B0;  // ZuneHD: 0, Zune30: skip stale data
+    const size_t TRACK_REGION_START = is_zunehd ? 0 : 0x000312B0;  // ZuneHD: 0, Zune30: skip stale data
     const size_t TRACK_REGION_END = (blob.size() > 4) ? (blob.size() - 4) : 0;  // Only need 4 bytes for marker check
 
     int total_markers_found = 0;
@@ -453,9 +428,9 @@ std::map<uint32_t, std::vector<ZMDBTrack>> ZMDBLibraryExtractor::ScanTracks(
                 // Validate it's an album PID (0x0600 category)
                 if (category == 0x0600) {
                     // For ZuneHD: Convert album_pid (0x0600xxxx) to metadata_pid (0x0800xxxx)
-                    // For Zune30: Use album_pid as-is (0x0600xxxx)
+                    // For Classic: Use album_pid as-is (0x0600xxxx)
                     uint32_t metadata_pid = album_pid;
-                    if (device_type == DeviceType::ZuneHD) {
+                    if (is_zunehd) {
                         uint16_t album_idx = GetPropertyIndex(album_pid);
                         metadata_pid = (0x0800 << 16) | album_idx;
                     }
@@ -502,14 +477,14 @@ ZMDBAlbum ZMDBLibraryExtractor::ExtractAlbum(
     const mtp::ByteArray& blob,
     uint32_t album_pid,
     const std::map<uint32_t, uint32_t>& props,
-    DeviceType device_type,
+    zune::DeviceFamily family,
     const std::set<uint32_t>& track_0x0800_refs) const {
 
     ZMDBAlbum album;
     album.album_pid = album_pid;
 
     uint16_t album_idx = GetPropertyIndex(album_pid);
-    bool is_zunehd = (device_type == DeviceType::ZuneHD);
+    bool is_zunehd = (family == zune::DeviceFamily::Pavo);
 
     MetadataResult metadata;
     std::string source;
@@ -526,7 +501,7 @@ ZMDBAlbum ZMDBLibraryExtractor::ExtractAlbum(
     // Try 1: 0x0800[idx] direct
     uint32_t pid = (0x0800 << 16) | album_idx;
     if (props.count(pid)) {
-        metadata = ExtractMetadataDirect(blob, props.at(pid), device_type);
+        metadata = ExtractMetadataDirect(blob, props.at(pid), family);
         if (metadata.valid) {
             source = "0x0800[idx]";
         }
@@ -538,12 +513,12 @@ ZMDBAlbum ZMDBLibraryExtractor::ExtractAlbum(
         pid = (0x0700 << 16) | album_idx;
         if (props.count(pid)) {
             if (is_zunehd) {
-                metadata = ExtractMetadataDirect(blob, props.at(pid), device_type);
+                metadata = ExtractMetadataDirect(blob, props.at(pid), family);
                 if (metadata.valid) {
                     source = "0x0700[idx]";
                 }
             } else {
-                metadata = FindFMarkerWithMatching(blob, props.at(pid), track_0x0800_refs, device_type);
+                metadata = FindFMarkerWithMatching(blob, props.at(pid), track_0x0800_refs, family);
                 if (metadata.valid) {
                     source = "0x0700[idx]";
                 }
@@ -564,7 +539,7 @@ ZMDBAlbum ZMDBLibraryExtractor::ExtractAlbum(
                 pid = (0x0100 << 16) | (album_idx + 1);
                 if (props.count(pid)) {
                     std::set<uint32_t> empty_refs;  // No matching
-                    metadata = FindFMarkerWithMatching(blob, props.at(pid), empty_refs, device_type);
+                    metadata = FindFMarkerWithMatching(blob, props.at(pid), empty_refs, family);
                     if (metadata.valid) {
                         source = "0x0100[idx+1]";
                     }
@@ -574,7 +549,7 @@ ZMDBAlbum ZMDBLibraryExtractor::ExtractAlbum(
                 pid = (0x0600 << 16) | album_idx;
                 if (props.count(pid)) {
                     std::set<uint32_t> empty_refs;  // No matching
-                    metadata = FindFMarkerWithMatching(blob, props.at(pid), empty_refs, device_type);
+                    metadata = FindFMarkerWithMatching(blob, props.at(pid), empty_refs, family);
                     if (metadata.valid) {
                         source = "0x0600[idx]";
                     }
@@ -587,7 +562,7 @@ ZMDBAlbum ZMDBLibraryExtractor::ExtractAlbum(
                     pid = (0x0600 << 16) | album_idx;
                     if (props.count(pid)) {
                         std::set<uint32_t> empty_refs;
-                        metadata = FindFMarkerWithMatching(blob, props.at(pid), empty_refs, device_type);
+                        metadata = FindFMarkerWithMatching(blob, props.at(pid), empty_refs, family);
                         if (metadata.valid) {
                             source = "0x0600[idx]";
                         }
@@ -596,7 +571,7 @@ ZMDBAlbum ZMDBLibraryExtractor::ExtractAlbum(
                     pid = (0x0100 << 16) | (album_idx + 1);
                     if (props.count(pid)) {
                         std::set<uint32_t> empty_refs;
-                        metadata = FindFMarkerWithMatching(blob, props.at(pid), empty_refs, device_type);
+                        metadata = FindFMarkerWithMatching(blob, props.at(pid), empty_refs, family);
                         if (metadata.valid) {
                             source = "0x0100[idx+1]";
                         }
@@ -609,7 +584,7 @@ ZMDBAlbum ZMDBLibraryExtractor::ExtractAlbum(
                 for (int offset_val = 1; offset_val < 100 && !metadata.valid; offset_val++) {
                     pid = (0x0100 << 16) | (album_idx + offset_val);
                     if (props.count(pid)) {
-                        metadata = FindFMarkerWithMatching(blob, props.at(pid), track_0x0800_refs, device_type);
+                        metadata = FindFMarkerWithMatching(blob, props.at(pid), track_0x0800_refs, family);
                         if (metadata.valid) {
                             source = "0x0100[idx+" + std::to_string(offset_val) + "]";
                             break;
@@ -623,7 +598,7 @@ ZMDBAlbum ZMDBLibraryExtractor::ExtractAlbum(
                 pid = (0x0100 << 16) | (album_idx + 1);
                 if (props.count(pid)) {
                     std::set<uint32_t> empty_refs;  // No matching
-                    metadata = FindFMarkerWithMatching(blob, props.at(pid), empty_refs, device_type);
+                    metadata = FindFMarkerWithMatching(blob, props.at(pid), empty_refs, family);
                     if (metadata.valid) {
                         source = "0x0100[idx+1]";
                     }
@@ -636,7 +611,7 @@ ZMDBAlbum ZMDBLibraryExtractor::ExtractAlbum(
     if (!metadata.valid && !is_zunehd) {
         pid = (0x0600 << 16) | album_idx;
         if (props.count(pid)) {
-            metadata = FindFMarkerWithMatching(blob, props.at(pid), track_0x0800_refs, device_type);
+            metadata = FindFMarkerWithMatching(blob, props.at(pid), track_0x0800_refs, family);
             if (metadata.valid) {
                 source = "0x0600[idx]";
             }
@@ -647,7 +622,7 @@ ZMDBAlbum ZMDBLibraryExtractor::ExtractAlbum(
     if (!metadata.valid) {
         pid = (0x0600 << 16) | (album_idx + 1);
         if (props.count(pid)) {
-            metadata = FindFMarkerWithMatching(blob, props.at(pid), track_0x0800_refs, device_type);
+            metadata = FindFMarkerWithMatching(blob, props.at(pid), track_0x0800_refs, family);
             if (metadata.valid) {
                 source = "0x0600[idx+1]";
             }
@@ -658,7 +633,7 @@ ZMDBAlbum ZMDBLibraryExtractor::ExtractAlbum(
     if (!metadata.valid) {
         pid = (0x0800 << 16) | (album_idx + 1);
         if (props.count(pid)) {
-            metadata = FindFMarkerWithMatching(blob, props.at(pid), track_0x0800_refs, device_type);
+            metadata = FindFMarkerWithMatching(blob, props.at(pid), track_0x0800_refs, family);
             if (metadata.valid) {
                 source = "0x0800[idx+1]";
             }

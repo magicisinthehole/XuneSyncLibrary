@@ -13,6 +13,7 @@
 #include <cli/Session.h>
 #include "zune_wireless/zune_wireless_api.h"
 #include "ZuneTypes.h"
+#include "ZuneDeviceIdentification.h"
 
 
 // Forward declare Library for optional usage
@@ -89,17 +90,32 @@ public:
     // --- Device Info ---
     std::string GetName();
     std::string GetSerialNumber();
-    std::string GetModel();
+
+    // --- Storage ---
+    // Returns total storage capacity in bytes (from MTP StorageInfo)
+    uint64_t GetStorageCapacityBytes();
+
+    // --- Device Identification (from MTP property 0xd21a) ---
+    // Returns the device family enum (Keel, Scorpius, Draco, Pavo)
+    zune::DeviceFamily GetDeviceFamily();
+    // Returns the raw color ID from 0xd21a byte 0
+    uint8_t GetDeviceColorId();
+    // Returns the color name (e.g., "Brown", "Platinum", "BlackBlack")
+    std::string GetDeviceColorName();
+    // Returns the family codename (e.g., "Keel", "Pavo")
+    std::string GetDeviceFamilyName();
+    // C API cached versions - pointer valid until next call or device destruction
+    const char* GetDeviceFamilyNameCached();
+    const char* GetDeviceColorNameCached();
 
     // --- Device Capabilities ---
     // Returns true if device supports network mode (HTTP-based artist metadata proxy).
-    // Only Zune HD devices (USB Product ID 0x063e) have this capability.
+    // Only Pavo family (Zune HD) devices have this capability.
     bool SupportsNetworkMode();
 
     // C API helpers - return cached strings (pointer valid until next call or device destruction)
     const char* GetNameCached();
     const char* GetSerialNumberCached();
-    const char* GetModelCached();
     const char* GetSessionGuidCached();
 
     // --- Discovery ---
@@ -302,10 +318,16 @@ private:
     // Cached device info strings (handle-scoped, thread-safe)
     mutable std::string cached_name_;
     mutable std::string cached_serial_number_;
-    mutable std::string cached_model_;
     mutable std::string cached_session_guid_;
     mutable std::string cached_sync_partner_guid_;
+    mutable std::string cached_family_name_;
+    mutable std::string cached_color_name_;
     mutable std::mutex cache_mutex_;
+
+    // Device identification cache (from MTP property 0xd21a)
+    mutable zune::DeviceIdentification cached_device_ident_;
+    mutable bool device_ident_cached_ = false;
+    void CacheDeviceIdentification() const;
 
     // Network Manager
     std::unique_ptr<NetworkManager> network_manager_;

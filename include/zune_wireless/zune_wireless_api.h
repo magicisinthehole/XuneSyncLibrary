@@ -161,7 +161,31 @@ ZUNE_WIRELESS_API int zune_device_set_device_name(zune_device_handle_t handle, c
 // Device Info Functions
 ZUNE_WIRELESS_API const char* zune_device_get_name(zune_device_handle_t handle);
 ZUNE_WIRELESS_API const char* zune_device_get_serial_number(zune_device_handle_t handle);
-ZUNE_WIRELESS_API const char* zune_device_get_model(zune_device_handle_t handle);
+
+// Storage capacity in bytes (from MTP StorageInfo)
+ZUNE_WIRELESS_API uint64_t zune_device_get_storage_capacity_bytes(zune_device_handle_t handle);
+
+// Device Family enumeration (from MTP property 0xd21a)
+// Values match the Zune firmware's internal family IDs
+typedef enum {
+    ZUNE_FAMILY_UNKNOWN = 0xFF,
+    ZUNE_FAMILY_KEEL = 0,      // 1st Gen - Zune 30
+    ZUNE_FAMILY_SCORPIUS = 2,  // 2nd Gen Flash - Zune 4/8/16
+    ZUNE_FAMILY_DRACO = 3,     // 2nd Gen HDD - Zune 80/120
+    ZUNE_FAMILY_PAVO = 6       // HD - Zune HD 16/32/64
+} zune_device_family_t;
+
+// Device Identification Functions (from MTP property 0xd21a)
+// Returns the device family enum
+ZUNE_WIRELESS_API zune_device_family_t zune_device_get_family(zune_device_handle_t handle);
+// Returns the raw color ID from 0xd21a byte 0
+ZUNE_WIRELESS_API uint8_t zune_device_get_color_id(zune_device_handle_t handle);
+// Returns the color name (e.g., "Brown", "Platinum", "BlackBlack")
+// Pointer remains valid until next call or device destruction
+ZUNE_WIRELESS_API const char* zune_device_get_color_name(zune_device_handle_t handle);
+// Returns the family name with generation (e.g., "Keel (1st Gen)", "Draco (2nd Gen HDD)")
+// Pointer remains valid until next call or device destruction
+ZUNE_WIRELESS_API const char* zune_device_get_family_name(zune_device_handle_t handle);
 
 // Device Capability Functions
 // Returns true if device supports network mode (HTTP-based artist metadata proxy).

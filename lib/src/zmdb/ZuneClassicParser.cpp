@@ -9,7 +9,7 @@ namespace zmdb {
 
 ZMDBLibrary ZuneClassicParser::ExtractLibrary(const std::vector<uint8_t>& zmdb_data) {
     ZMDBLibrary library;
-    library.device_type = DeviceType::Zune30;
+    library.device_family = zune::DeviceFamily::Unknown;  // Caller sets the specific family
 
     std::cout << "[ZuneClassicParser] Starting ZMDB extraction, data size: " << zmdb_data.size() << " bytes" << std::endl;
 

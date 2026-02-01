@@ -13,6 +13,7 @@
 
 #include "zune_wireless/zune_wireless_api.h"
 #include "ZuneTypes.h"
+#include "ZuneDeviceIdentification.h"
 
 
 // Forward declarations
@@ -33,7 +34,7 @@ public:
 
     // --- File System Operations ---
     std::vector<ZuneObjectInfoInternal> ListStorage(uint32_t parent_handle = 0);
-    ZuneMusicLibrary* GetMusicLibrary(const std::string& device_model);  // Fast: Returns flat data using zmdb
+    ZuneMusicLibrary* GetMusicLibrary(zune::DeviceFamily device_family);  // Fast: Returns flat data using zmdb
     ZuneMusicLibrary* GetMusicLibrarySlow();  // Slow: For testing only (uses AFTL enumeration)
     std::vector<ZunePlaylistInfo> GetPlaylists();
     int DownloadFile(uint32_t object_handle, const std::string& destination_path);

@@ -3,6 +3,7 @@
 #include "ZMDBParserBase.h"
 #include "ZuneHDParser.h"
 #include "ZuneClassicParser.h"
+#include "../ZuneDeviceIdentification.h"
 #include <memory>
 
 namespace zmdb {
@@ -10,19 +11,19 @@ namespace zmdb {
 /**
  * Factory for creating device-specific ZMDB parsers.
  *
- * Routes to appropriate parser implementation based on device type:
- * - ZuneHD → ZuneHDParser (fully implemented)
- * - Zune30/Classic → ZuneClassicParser (stubbed for now)
+ * Routes to appropriate parser implementation based on device family:
+ * - Pavo (Zune HD) → ZuneHDParser (fully implemented)
+ * - Keel/Scorpius/Draco (Classic devices) → ZuneClassicParser
  */
 class ZMDBParserFactory {
 public:
     /**
-     * Create a parser for the given device type.
+     * Create a parser for the given device family.
      *
-     * @param type Device type (ZuneHD or Zune30)
+     * @param family Device family from MTP property 0xd21a
      * @return Unique pointer to parser instance
      */
-    static std::unique_ptr<ZMDBParserBase> CreateParser(DeviceType type);
+    static std::unique_ptr<ZMDBParserBase> CreateParser(zune::DeviceFamily family);
 };
 
 } // namespace zmdb

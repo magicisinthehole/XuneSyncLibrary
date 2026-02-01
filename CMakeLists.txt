@@ -126,6 +126,7 @@ target_compile_options(aft-cli-static PRIVATE
 # Main library
 add_library(zune_wireless SHARED
     lib/src/ZuneDevice.cpp
+    lib/src/ZuneDeviceIdentification.cpp
     lib/src/NetworkManager.cpp
     lib/src/LibraryManager.cpp
 
@@ -745,6 +746,15 @@ endif() # ZUNE_BUILD_TESTS
 # Tool Executables (only built when ZUNE_BUILD_TOOLS=ON)
 # =============================================================================
 if(ZUNE_BUILD_TOOLS)
+
+# Device Info Dump CLI (reads raw MTP device properties)
+add_executable(device_info_dump_cli tools/device_info_dump_cli.cpp)
+target_include_directories(device_info_dump_cli PRIVATE
+    ${CMAKE_SOURCE_DIR}/vendor/android-file-transfer-linux
+    ${CMAKE_SOURCE_DIR}/vendor/android-file-transfer-linux/mtp/backend/posix
+    ${CMAKE_SOURCE_DIR}/vendor/android-file-transfer-linux/mtp/backend/darwin
+)
+target_link_libraries(device_info_dump_cli ${AFTL_LIBRARY} ${CMAKE_THREAD_LIBS_INIT} ${PLATFORM_LIBRARIES})
 
 # Artist Images Tool CLI
 add_executable(artist_images_tool_cli

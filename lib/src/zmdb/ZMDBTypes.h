@@ -4,15 +4,16 @@
 #include <string>
 #include <vector>
 #include <map>
+#include "../ZuneDeviceIdentification.h"
 
 namespace zmdb {
 
-// Device type enum
-enum class DeviceType {
-    Unknown,
-    Zune30,
-    ZuneHD
-};
+// Use zune::DeviceFamily for device identification
+// DeviceFamily enum values:
+//   Keel (0)     = Zune 30
+//   Scorpius (2) = Zune 4/8/16 (flash)
+//   Draco (3)    = Zune 80/120 (HDD)
+//   Pavo (6)     = Zune HD
 
 // Schema type constants (from ZMDB analysis)
 namespace Schema {
@@ -153,7 +154,7 @@ struct ZMDBAudiobook {
 
 // Complete ZMDB library structure (uses raw C arrays for zero-copy to C API)
 struct ZMDBLibrary {
-    DeviceType device_type = DeviceType::Unknown;
+    zune::DeviceFamily device_family = zune::DeviceFamily::Unknown;
 
     // Flat arrays of media types (allocated once, no reallocation)
     ZMDBTrack* tracks = nullptr;
@@ -237,7 +238,7 @@ struct ZMDBLibrary {
 
     // Move constructor
     ZMDBLibrary(ZMDBLibrary&& other) noexcept
-        : device_type(other.device_type),
+        : device_family(other.device_family),
           tracks(other.tracks),
           videos(other.videos),
           pictures(other.pictures),

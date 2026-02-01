@@ -1,4 +1,5 @@
 #include "LibraryManager.h"
+#include "ZuneDeviceIdentification.h"
 #include "zmdb/ZMDBParserFactory.h"
 #include <iostream>
 #include <fstream>
@@ -234,7 +235,7 @@ int LibraryManager::UploadWithArtwork(const std::string& media_path, const std::
     return 0;
 }
 
-ZuneMusicLibrary* LibraryManager::GetMusicLibrary(const std::string& device_model) {
+ZuneMusicLibrary* LibraryManager::GetMusicLibrary(zune::DeviceFamily device_family) {
     if (!mtp_session_) {
         Log("Error: Not connected to a device.");
         return nullptr;
@@ -254,18 +255,12 @@ ZuneMusicLibrary* LibraryManager::GetMusicLibrary(const std::string& device_mode
 
         Log("Retrieved zmdb: " + std::to_string(zmdb_data.size()) + " bytes");
 
-        // Step 2: Parse zmdb
-        if (device_model.empty()) {
-            Log("Error: Device model is empty");
-            return nullptr;
-        }
+        // Step 2: Parse zmdb using appropriate parser for device family
+        Log("Using device family: " + std::string(zune::GetFamilyName(device_family)));
 
-        zmdb::DeviceType device_type = (device_model.find("HD") != std::string::npos)
-            ? zmdb::DeviceType::ZuneHD
-            : zmdb::DeviceType::Zune30;
-
-        auto parser = zmdb::ZMDBParserFactory::CreateParser(device_type);
+        auto parser = zmdb::ZMDBParserFactory::CreateParser(device_family);
         zmdb::ZMDBLibrary library = parser->ExtractLibrary(zmdb_data);
+        library.device_family = device_family;
 
         Log("Extracted " + std::to_string(library.track_count) + " tracks, " +
             std::to_string(library.album_count) + " albums");

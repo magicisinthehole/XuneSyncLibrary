@@ -9,7 +9,7 @@ namespace zmdb {
 
 ZMDBLibrary ZuneHDParser::ExtractLibrary(const std::vector<uint8_t>& zmdb_data) {
     ZMDBLibrary library;
-    library.device_type = DeviceType::ZuneHD;
+    library.device_family = zune::DeviceFamily::Pavo;
 
     if (zmdb_data.empty()) {
         return library;

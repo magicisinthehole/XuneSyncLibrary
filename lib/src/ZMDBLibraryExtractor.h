@@ -7,6 +7,7 @@
 #include <set>
 #include <cstdint>
 #include <mtp/ByteArray.h>
+#include "ZuneDeviceIdentification.h"
 
 namespace zmdb {
 
@@ -14,13 +15,11 @@ namespace zmdb {
  * High-level library extractor for Zune zmdb files.
  * Implements the F marker extraction algorithm from Python reference parsers.
  * Achieves 100% accuracy for Zune 30 and 99.9% for Zune HD.
+ *
+ * Uses zune::DeviceFamily for device identification:
+ *   Pavo (6) = Zune HD
+ *   All others = Classic (Zune 30, 4/8/16, 80/120)
  */
-
-enum class DeviceType {
-    Zune30,
-    ZuneHD,
-    Unknown
-};
 
 struct ZMDBTrack {
     std::string title;
@@ -41,7 +40,7 @@ struct ZMDBAlbum {
 };
 
 struct ZMDBLibrary {
-    DeviceType device_type = DeviceType::Unknown;
+    zune::DeviceFamily device_family = zune::DeviceFamily::Unknown;
     std::vector<ZMDBAlbum> albums;
     std::map<std::string, std::vector<ZMDBAlbum>> albums_by_artist;
 
@@ -59,14 +58,13 @@ public:
      * Main parsing entry point.
      * Extracts complete library from zmdb binary using F marker algorithm.
      * @param zmdb_data The raw ZMDB binary data
-     * @param device_model The device model string from AFTL (e.g., "Zune 30", "Zune HD")
+     * @param family The device family (from MTP property 0xd21a)
      */
-    ZMDBLibrary ExtractLibrary(const mtp::ByteArray& zmdb_data, const std::string& device_model);
+    ZMDBLibrary ExtractLibrary(const mtp::ByteArray& zmdb_data, zune::DeviceFamily family);
 
 private:
     // Core extraction algorithms
     std::map<uint32_t, uint32_t> BuildPropertyMap(const mtp::ByteArray& blob, size_t start = 0x2F0);
-    DeviceType DetectDeviceType(const std::string& device_model);
 
     // String utilities
     std::string ReadNullTerminatedAscii(const mtp::ByteArray& blob, size_t pos) const;
@@ -93,24 +91,24 @@ private:
 
     bool IsFMarker(const mtp::ByteArray& blob, size_t offset) const;
     size_t FindFMarker(const mtp::ByteArray& blob, size_t start, size_t max_search = 200) const;
-    FMarkerData ExtractFromFMarker(const mtp::ByteArray& blob, size_t property_ptr, size_t f_offset, DeviceType device_type) const;
+    FMarkerData ExtractFromFMarker(const mtp::ByteArray& blob, size_t property_ptr, size_t f_offset, zune::DeviceFamily family) const;
 
     // Extract metadata directly from 0x0800 property (Python: extract_metadata_direct)
-    MetadataResult ExtractMetadataDirect(const mtp::ByteArray& blob, uint32_t ptr, DeviceType device_type) const;
+    MetadataResult ExtractMetadataDirect(const mtp::ByteArray& blob, uint32_t ptr, zune::DeviceFamily family) const;
 
     // Find F-marker with optional matching against track refs (Python: find_f_marker)
     MetadataResult FindFMarkerWithMatching(
         const mtp::ByteArray& blob,
         uint32_t ptr,
         const std::set<uint32_t>& track_0x0800_refs,
-        DeviceType device_type) const;
+        zune::DeviceFamily family) const;
 
     // Track extraction
     // Returns: map of album_pid -> tracks
     // Also fills album_tracks_refs with album_pid -> set of track 0x0800 refs
     std::map<uint32_t, std::vector<ZMDBTrack>> ScanTracks(
         const mtp::ByteArray& blob,
-        DeviceType device_type,
+        zune::DeviceFamily family,
         std::map<uint32_t, std::set<uint32_t>>& album_tracks_refs) const;
 
     // Album extraction with clean parser's 6-step strategy
@@ -118,7 +116,7 @@ private:
         const mtp::ByteArray& blob,
         uint32_t album_pid,
         const std::map<uint32_t, uint32_t>& props,
-        DeviceType device_type,
+        zune::DeviceFamily family,
         const std::set<uint32_t>& track_0x0800_refs) const;
 
     // Logging
