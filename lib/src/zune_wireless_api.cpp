@@ -93,6 +93,13 @@ ZUNE_WIRELESS_API uint64_t zune_device_get_storage_capacity_bytes(zune_device_ha
     return 0;
 }
 
+ZUNE_WIRELESS_API uint64_t zune_device_get_storage_free_bytes(zune_device_handle_t handle) {
+    if (handle) {
+        return static_cast<ZuneDevice*>(handle)->GetStorageFreeBytes();
+    }
+    return 0;
+}
+
 ZUNE_WIRELESS_API bool zune_device_supports_network_mode(zune_device_handle_t handle) {
     if (handle) {
         return static_cast<ZuneDevice*>(handle)->SupportsNetworkMode();

@@ -94,6 +94,8 @@ public:
     // --- Storage ---
     // Returns total storage capacity in bytes (from MTP StorageInfo)
     uint64_t GetStorageCapacityBytes();
+    // Returns free storage space in bytes (from MTP StorageInfo)
+    uint64_t GetStorageFreeBytes();
 
     // --- Device Identification (from MTP property 0xd21a) ---
     // Returns the device family enum (Keel, Scorpius, Draco, Pavo)

@@ -165,6 +165,9 @@ ZUNE_WIRELESS_API const char* zune_device_get_serial_number(zune_device_handle_t
 // Storage capacity in bytes (from MTP StorageInfo)
 ZUNE_WIRELESS_API uint64_t zune_device_get_storage_capacity_bytes(zune_device_handle_t handle);
 
+// Storage free space in bytes (from MTP StorageInfo)
+ZUNE_WIRELESS_API uint64_t zune_device_get_storage_free_bytes(zune_device_handle_t handle);
+
 // Device Family enumeration (from MTP property 0xd21a)
 // Values match the Zune firmware's internal family IDs
 typedef enum {

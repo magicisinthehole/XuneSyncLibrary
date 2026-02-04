@@ -709,6 +709,28 @@ uint64_t ZuneDevice::GetStorageCapacityBytes() {
     }
 }
 
+uint64_t ZuneDevice::GetStorageFreeBytes() {
+    if (!IsConnected()) {
+        Log("Error: Not connected to a device.");
+        return 0;
+    }
+
+    try {
+        auto storage_ids = mtp_session_->GetStorageIDs();
+        if (storage_ids.StorageIDs.empty()) {
+            Log("Error: No storage found on device.");
+            return 0;
+        }
+
+        // Get free space from first (primary) storage
+        auto storage_info = mtp_session_->GetStorageInfo(storage_ids.StorageIDs[0]);
+        return storage_info.FreeSpaceInBytes;
+    } catch (const std::exception& e) {
+        Log("Error getting storage free space: " + std::string(e.what()));
+        return 0;
+    }
+}
+
 bool ZuneDevice::SupportsNetworkMode() {
     if (!IsConnected()) {
         return false;
