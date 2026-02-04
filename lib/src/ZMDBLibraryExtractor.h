@@ -86,6 +86,7 @@ private:
         std::string album_name;
         std::string artist_name;
         std::string alb_reference;  // .alb file reference from F marker
+        int release_year = 0;       // Extracted from FILETIME
         bool valid = false;
     };
 

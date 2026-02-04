@@ -1,6 +1,7 @@
 #include "ZuneHDParser.h"
 #include "ZMDBUtils.h"
 #include <cstring>
+#include <ctime>
 #include <iostream>
 #include <sstream>
 #include <iomanip>
@@ -704,6 +705,34 @@ std::optional<ZMDBAlbum> ZuneHDParser::parse_album(
 
     // Album artist reference at offset 0
     album.artist_ref = read_uint32_le(record_data, 0);
+
+    // Release year from FILETIME at offset 12 (8 bytes)
+    // FILETIME = 100-nanosecond intervals since January 1, 1601
+    uint64_t filetime = read_uint64_le(record_data, 12);
+    if (filetime > 0) {
+        // Convert FILETIME to Unix timestamp, then extract year
+        // FILETIME epoch: 1601-01-01, Unix epoch: 1970-01-01
+        // Difference: 11644473600 seconds
+        constexpr uint64_t TICKS_PER_SECOND = 10000000ULL;
+        constexpr uint64_t EPOCH_DIFF_SECONDS = 11644473600ULL;
+
+        uint64_t seconds_since_1601 = filetime / TICKS_PER_SECOND;
+        if (seconds_since_1601 > EPOCH_DIFF_SECONDS) {
+            time_t unix_time = static_cast<time_t>(seconds_since_1601 - EPOCH_DIFF_SECONDS);
+            struct tm tm_result;
+#ifdef _WIN32
+            // Windows: gmtime_s has reversed parameter order and returns errno_t
+            if (gmtime_s(&tm_result, &unix_time) == 0) {
+                album.release_year = tm_result.tm_year + 1900;
+            }
+#else
+            // POSIX (macOS/Linux): gmtime_r returns pointer to result
+            if (gmtime_r(&unix_time, &tm_result) != nullptr) {
+                album.release_year = tm_result.tm_year + 1900;
+            }
+#endif
+        }
+    }
 
     // Album title at offset 20 (UTF-8)
     if (record_data.size() > 20) {

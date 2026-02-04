@@ -215,6 +215,7 @@ if(ZUNE_BUILD_TESTS)
 add_executable(test_library_json
     tests/test_library_json.cpp
     lib/src/ZuneDevice.cpp
+    lib/src/ZuneDeviceIdentification.cpp
     lib/src/NetworkManager.cpp
     lib/src/LibraryManager.cpp
 
@@ -271,6 +272,7 @@ target_compile_options(test_library_json PRIVATE
 add_executable(test_zmdb_fast
     tests/test_zmdb_fast.cpp
     lib/src/ZuneDevice.cpp
+    lib/src/ZuneDeviceIdentification.cpp
     lib/src/NetworkManager.cpp
     lib/src/LibraryManager.cpp
 
@@ -327,6 +329,7 @@ target_compile_options(test_zmdb_fast PRIVATE
 add_executable(test_zmdb_extractor
     tests/test_zmdb_extractor.cpp
     lib/src/ZuneDevice.cpp
+    lib/src/ZuneDeviceIdentification.cpp
     lib/src/NetworkManager.cpp
     lib/src/LibraryManager.cpp
 
@@ -383,6 +386,7 @@ target_compile_options(test_zmdb_extractor PRIVATE
 add_executable(test_http_interceptor
     tests/test_http_interceptor.cpp
     lib/src/ZuneDevice.cpp
+    lib/src/ZuneDeviceIdentification.cpp
     lib/src/NetworkManager.cpp
     lib/src/LibraryManager.cpp
 

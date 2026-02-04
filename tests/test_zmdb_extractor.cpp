@@ -9,6 +9,7 @@
 #include <algorithm>
 
 #include "lib/src/ZuneDevice.h"
+#include "lib/src/ZuneDeviceIdentification.h"
 #include "lib/src/ZMDBLibraryExtractor.h"
 
 // JSON escaping helper
@@ -221,7 +222,19 @@ int main(int argc, char* argv[]) {
     }
 
     mtp::ByteArray zmdb_data;
-    std::string device_model;
+    zune::DeviceFamily device_family = zune::DeviceFamily::Unknown;
+
+    // Helper to parse device type string to enum
+    auto parseDeviceType = [](const std::string& type) -> zune::DeviceFamily {
+        if (type == "Zune30" || type == "Zune 30" || type == "Classic" || type == "Keel") {
+            return zune::DeviceFamily::Keel;  // 1st Gen - Zune 30
+        } else if (type == "Zune80" || type == "Zune 80" || type == "Draco") {
+            return zune::DeviceFamily::Draco;  // 2nd Gen HDD - Zune 80/120
+        } else if (type == "ZuneHD" || type == "Zune HD" || type == "HD" || type == "Pavo") {
+            return zune::DeviceFamily::Pavo;  // HD - Zune HD
+        }
+        return zune::DeviceFamily::Keel;  // Default to Classic
+    };
 
     // ===== SOURCE: Read zmdb from file =====
     if (source_mode == "file") {
@@ -241,8 +254,8 @@ int main(int argc, char* argv[]) {
 
         std::cout << "✓ Loaded " << zmdb_data.size() << " bytes\n";
 
-        // Use override or default to Zune30
-        device_model = device_type_override.empty() ? "Zune 30" : device_type_override;
+        // Use override or default to Keel (Zune 30)
+        device_family = device_type_override.empty() ? zune::DeviceFamily::Keel : parseDeviceType(device_type_override);
     }
     // ===== SOURCE: Connect to device =====
     else {
@@ -269,12 +282,12 @@ int main(int argc, char* argv[]) {
         // Get device info
         std::string device_name = device.GetName();
         std::string device_serial = device.GetSerialNumber();
-        device_model = device.GetModel();
+        device_family = device.GetDeviceFamily();
 
         std::cout << "\nDevice Information:\n";
         std::cout << "  Name: " << device_name << "\n";
         std::cout << "  Serial: " << device_serial << "\n";
-        std::cout << "  Model: " << device_model << "\n";
+        std::cout << "  Model: " << zune::GetFamilyName(device_family) << "\n";
 
         // Fetch zmdb from device
         std::cout << "\nFetching zmdb from device...\n";
@@ -303,12 +316,12 @@ int main(int argc, char* argv[]) {
     std::cout << "Parsing ZMDB\n";
     std::cout << "========================================\n";
 
-    // Use override if provided, otherwise use detected device_model
-    std::string parse_device_type = device_type_override.empty() ? device_model : device_type_override;
-    std::cout << "Device type: " << parse_device_type << "\n";
+    // Use override if provided, otherwise use detected device_family
+    zune::DeviceFamily parse_family = device_type_override.empty() ? device_family : parseDeviceType(device_type_override);
+    std::cout << "Device type: " << zune::GetFamilyName(parse_family) << "\n";
 
     zmdb::ZMDBLibraryExtractor extractor;
-    zmdb::ZMDBLibrary library = extractor.ExtractLibrary(zmdb_data, parse_device_type);
+    zmdb::ZMDBLibrary library = extractor.ExtractLibrary(zmdb_data, parse_family);
 
     PrintLibrarySummary(library, "Extraction Results");
     PrintFirstArtists(library, 5);
