@@ -3,6 +3,7 @@ project(zune_wireless)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 # Build options
 option(ZUNE_BUILD_TESTS "Build test executables" OFF)
@@ -35,6 +36,7 @@ if(NOT EXISTS "${AFTL_LIBRARY}")
             -S ${AFTL_ROOT}
             -B ${AFTL_BUILD_DIR}
             -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
+            -DCMAKE_POSITION_INDEPENDENT_CODE=ON
             -DBUILD_SHARED_LIB=OFF
             -DBUILD_QT_UI=OFF
             -DBUILD_PYTHON=OFF
@@ -68,15 +70,34 @@ find_package(OpenSSL REQUIRED)
 find_package(CURL REQUIRED)
 
 # Find TagLib (required by AFTL Metadata)
-find_library(TAGLIB_LIBRARY NAMES tag PATHS /opt/homebrew/lib /usr/local/lib)
-find_path(TAGLIB_INCLUDE_DIR NAMES taglib/tag.h PATHS /opt/homebrew/include /usr/local/include)
-
-if(NOT TAGLIB_LIBRARY OR NOT TAGLIB_INCLUDE_DIR)
-    message(FATAL_ERROR "TagLib not found. Install with: brew install taglib")
+find_package(PkgConfig QUIET)
+if(PKG_CONFIG_FOUND)
+    pkg_check_modules(TAGLIB QUIET taglib)
+    if(TAGLIB_FOUND)
+        link_directories(${TAGLIB_LIBRARY_DIRS})
+    endif()
 endif()
 
-message(STATUS "TagLib library: ${TAGLIB_LIBRARY}")
-message(STATUS "TagLib include: ${TAGLIB_INCLUDE_DIR}")
+if(NOT TAGLIB_FOUND)
+    find_library(TAGLIB_LIBRARIES NAMES tag
+        PATHS /opt/homebrew/lib /usr/local/lib /usr/lib /usr/lib/x86_64-linux-gnu /usr/lib/aarch64-linux-gnu)
+    find_path(TAGLIB_INCLUDE_DIRS NAMES taglib/tag.h
+        PATHS /opt/homebrew/include /usr/local/include /usr/include)
+    if(TAGLIB_LIBRARIES AND TAGLIB_INCLUDE_DIRS)
+        set(TAGLIB_FOUND TRUE)
+    endif()
+endif()
+
+if(NOT TAGLIB_FOUND)
+    if(APPLE)
+        message(FATAL_ERROR "TagLib not found. Install with: brew install taglib")
+    else()
+        message(FATAL_ERROR "TagLib not found. Install with: sudo apt install libtag1-dev")
+    endif()
+endif()
+
+message(STATUS "TagLib library: ${TAGLIB_LIBRARIES}")
+message(STATUS "TagLib include: ${TAGLIB_INCLUDE_DIRS}")
 
 # macOS specific settings
 if(APPLE)
@@ -159,14 +180,14 @@ target_include_directories(zune_wireless PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${AFTL_INCLUDE_DIRS}
     ${OPENSSL_INCLUDE_DIR}
-    ${TAGLIB_INCLUDE_DIR}
+    ${TAGLIB_INCLUDE_DIRS}
     ${CURL_INCLUDE_DIRS}
 )
 
 target_link_libraries(zune_wireless
     aft-cli-static
     ${AFTL_LIBRARY}
-    ${TAGLIB_LIBRARY}
+    ${TAGLIB_LIBRARIES}
     ${OPENSSL_CRYPTO_LIBRARY}
     ${CURL_LIBRARIES}
     ${CMAKE_THREAD_LIBS_INIT}
@@ -188,17 +209,25 @@ endif()
 # This is the canonical location - .NET project system handles copying to output
 set(XUNE_DEVICES_RUNTIME_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../src/Xune.Infrastructure.Devices/runtimes")
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../src/Xune.Infrastructure.Devices")
-    # Determine the runtime identifier based on architecture
-    if(CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64" OR CMAKE_OSX_ARCHITECTURES STREQUAL "arm64")
-        set(RUNTIME_ID "osx-arm64")
-    else()
-        set(RUNTIME_ID "osx-x64")
+    # Determine the runtime identifier based on platform and architecture
+    if(APPLE)
+        if(CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64" OR CMAKE_OSX_ARCHITECTURES STREQUAL "arm64")
+            set(RUNTIME_ID "osx-arm64")
+        else()
+            set(RUNTIME_ID "osx-x64")
+        endif()
+    elseif(UNIX AND NOT APPLE)
+        if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
+            set(RUNTIME_ID "linux-arm64")
+        else()
+            set(RUNTIME_ID "linux-x64")
+        endif()
     endif()
 
     add_custom_command(TARGET zune_wireless POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E make_directory "${XUNE_DEVICES_RUNTIME_DIR}/${RUNTIME_ID}/native"
-        COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:zune_wireless>" "${XUNE_DEVICES_RUNTIME_DIR}/${RUNTIME_ID}/native/libzune_wireless.dylib"
-        COMMENT "Copying libzune_wireless.dylib to Xune.Infrastructure.Devices/runtimes/${RUNTIME_ID}/native/"
+        COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:zune_wireless>" "${XUNE_DEVICES_RUNTIME_DIR}/${RUNTIME_ID}/native/$<TARGET_FILE_NAME:zune_wireless>"
+        COMMENT "Copying $<TARGET_FILE_NAME:zune_wireless> to Xune.Infrastructure.Devices/runtimes/${RUNTIME_ID}/native/"
         VERBATIM
     )
     message(STATUS "Xune parent project detected - will auto-copy library to Xune.Infrastructure.Devices/runtimes/${RUNTIME_ID}/native/")
@@ -255,7 +284,7 @@ target_include_directories(test_library_json PRIVATE
 target_link_libraries(test_library_json
     aft-cli-static
     ${AFTL_LIBRARY}
-    ${TAGLIB_LIBRARY}
+    ${TAGLIB_LIBRARIES}
     ${OPENSSL_CRYPTO_LIBRARY}
     ${CURL_LIBRARIES}
     ${CMAKE_THREAD_LIBS_INIT}
@@ -312,7 +341,7 @@ target_include_directories(test_zmdb_fast PRIVATE
 target_link_libraries(test_zmdb_fast
     aft-cli-static
     ${AFTL_LIBRARY}
-    ${TAGLIB_LIBRARY}
+    ${TAGLIB_LIBRARIES}
     ${OPENSSL_CRYPTO_LIBRARY}
     ${CURL_LIBRARIES}
     ${CMAKE_THREAD_LIBS_INIT}
@@ -369,7 +398,7 @@ target_include_directories(test_zmdb_extractor PRIVATE
 target_link_libraries(test_zmdb_extractor
     aft-cli-static
     ${AFTL_LIBRARY}
-    ${TAGLIB_LIBRARY}
+    ${TAGLIB_LIBRARIES}
     ${OPENSSL_CRYPTO_LIBRARY}
     ${CURL_LIBRARIES}
     ${CMAKE_THREAD_LIBS_INIT}
@@ -421,13 +450,13 @@ target_include_directories(test_http_interceptor PRIVATE
     ${AFTL_INCLUDE_DIRS}
     ${OPENSSL_INCLUDE_DIR}
     ${CURL_INCLUDE_DIRS}
-    ${TAGLIB_INCLUDE_DIR}
+    ${TAGLIB_INCLUDE_DIRS}
 )
 
 target_link_libraries(test_http_interceptor
     aft-cli-static
     ${AFTL_LIBRARY}
-    ${TAGLIB_LIBRARY}
+    ${TAGLIB_LIBRARIES}
     ${OPENSSL_CRYPTO_LIBRARY}
     ${CURL_LIBRARIES}
     ${CMAKE_THREAD_LIBS_INIT}
@@ -588,13 +617,13 @@ target_include_directories(test_http_monitor_boot PRIVATE
     ${AFTL_INCLUDE_DIRS}
     ${OPENSSL_INCLUDE_DIR}
     ${CURL_INCLUDE_DIRS}
-    ${TAGLIB_INCLUDE_DIR}
+    ${TAGLIB_INCLUDE_DIRS}
 )
 
 target_link_libraries(test_http_monitor_boot
     aft-cli-static
     ${AFTL_LIBRARY}
-    ${TAGLIB_LIBRARY}
+    ${TAGLIB_LIBRARIES}
     ${OPENSSL_CRYPTO_LIBRARY}
     ${CURL_LIBRARIES}
     ${CMAKE_THREAD_LIBS_INIT}
@@ -645,13 +674,13 @@ target_include_directories(test_rating PRIVATE
     ${AFTL_INCLUDE_DIRS}
     ${OPENSSL_INCLUDE_DIR}
     ${CURL_INCLUDE_DIRS}
-    ${TAGLIB_INCLUDE_DIR}
+    ${TAGLIB_INCLUDE_DIRS}
 )
 
 target_link_libraries(test_rating
     aft-cli-static
     ${AFTL_LIBRARY}
-    ${TAGLIB_LIBRARY}
+    ${TAGLIB_LIBRARIES}
     ${OPENSSL_CRYPTO_LIBRARY}
     ${CURL_LIBRARIES}
     ${CMAKE_THREAD_LIBS_INIT}
@@ -798,13 +827,13 @@ target_include_directories(artist_images_tool_cli PRIVATE
     ${AFTL_INCLUDE_DIRS}
     ${OPENSSL_INCLUDE_DIR}
     ${CURL_INCLUDE_DIRS}
-    ${TAGLIB_INCLUDE_DIR}
+    ${TAGLIB_INCLUDE_DIRS}
 )
 
 target_link_libraries(artist_images_tool_cli
     aft-cli-static
     ${AFTL_LIBRARY}
-    ${TAGLIB_LIBRARY}
+    ${TAGLIB_LIBRARIES}
     ${OPENSSL_CRYPTO_LIBRARY}
     ${CURL_LIBRARIES}
     ${CMAKE_THREAD_LIBS_INIT}
@@ -860,7 +889,7 @@ target_include_directories(playlist_test_cli PRIVATE
 target_link_libraries(playlist_test_cli
     aft-cli-static
     ${AFTL_LIBRARY}
-    ${TAGLIB_LIBRARY}
+    ${TAGLIB_LIBRARIES}
     ${OPENSSL_CRYPTO_LIBRARY}
     ${CURL_LIBRARIES}
     ${CMAKE_THREAD_LIBS_INIT}
@@ -911,13 +940,13 @@ target_include_directories(audiobook_test_cli PRIVATE
     ${AFTL_INCLUDE_DIRS}
     ${OPENSSL_INCLUDE_DIR}
     ${CURL_INCLUDE_DIRS}
-    ${TAGLIB_INCLUDE_DIR}
+    ${TAGLIB_INCLUDE_DIRS}
 )
 
 target_link_libraries(audiobook_test_cli
     aft-cli-static
     ${AFTL_LIBRARY}
-    ${TAGLIB_LIBRARY}
+    ${TAGLIB_LIBRARIES}
     ${OPENSSL_CRYPTO_LIBRARY}
     ${CURL_LIBRARIES}
     ${CMAKE_THREAD_LIBS_INIT}
@@ -975,7 +1004,7 @@ target_include_directories(sync_partnership_test_cli PRIVATE
 target_link_libraries(sync_partnership_test_cli
     aft-cli-static
     ${AFTL_LIBRARY}
-    ${TAGLIB_LIBRARY}
+    ${TAGLIB_LIBRARIES}
     ${OPENSSL_CRYPTO_LIBRARY}
     ${CURL_LIBRARIES}
     ${CMAKE_THREAD_LIBS_INIT}
@@ -1033,7 +1062,7 @@ target_include_directories(erase_content_test_cli PRIVATE
 target_link_libraries(erase_content_test_cli
     aft-cli-static
     ${AFTL_LIBRARY}
-    ${TAGLIB_LIBRARY}
+    ${TAGLIB_LIBRARIES}
     ${OPENSSL_CRYPTO_LIBRARY}
     ${CURL_LIBRARIES}
     ${CMAKE_THREAD_LIBS_INIT}
@@ -1084,13 +1113,13 @@ target_include_directories(upload_test_cli PRIVATE
     ${AFTL_INCLUDE_DIRS}
     ${OPENSSL_INCLUDE_DIR}
     ${CURL_INCLUDE_DIRS}
-    ${TAGLIB_INCLUDE_DIR}
+    ${TAGLIB_INCLUDE_DIRS}
 )
 
 target_link_libraries(upload_test_cli
     aft-cli-static
     ${AFTL_LIBRARY}
-    ${TAGLIB_LIBRARY}
+    ${TAGLIB_LIBRARIES}
     ${OPENSSL_CRYPTO_LIBRARY}
     ${CURL_LIBRARIES}
     ${CMAKE_THREAD_LIBS_INIT}

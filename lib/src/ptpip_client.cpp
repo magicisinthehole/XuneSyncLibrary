@@ -8,6 +8,7 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <algorithm>
 #include <cstring>
 #include <stdexcept>
 #include <iostream>
