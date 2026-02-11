@@ -21,6 +21,8 @@
 #include <mtp/ptp/ObjectPropertyListParser.h>
 #include <cli/PosixStreams.h>
 #include <unordered_map>
+#include <curl/curl.h>
+#include <sys/stat.h>
 #include "zmdb/ZMDBParserFactory.h"
 #include "NetworkManager.h"
 #include "LibraryManager.h"
@@ -30,6 +32,70 @@
 using namespace mtp;
 
 // === Helper Functions ===
+
+// MTPZ data file URL - same source used by AFTL's Qt GUI
+static const char* MTPZ_DATA_URL = "https://raw.githubusercontent.com/kbhomes/libmtp-zune/master/src/.mtpz-data";
+
+static std::string GetMtpzDataPath() {
+    const char* home = getenv("HOME");
+    return std::string(home ? home : ".") + "/.mtpz-data";
+}
+
+static size_t MtpzWriteCallback(void* contents, size_t size, size_t nmemb, void* userp) {
+    auto* data = static_cast<std::string*>(userp);
+    data->append(static_cast<char*>(contents), size * nmemb);
+    return size * nmemb;
+}
+
+// Downloads ~/.mtpz-data if missing. Returns true if the file exists afterward.
+static bool EnsureMtpzData(std::function<void(const std::string&)> log) {
+    std::string path = GetMtpzDataPath();
+
+    struct stat st;
+    if (stat(path.c_str(), &st) == 0 && st.st_size > 0) {
+        return true;
+    }
+
+    log("MTPZ data file not found at " + path + ", downloading...");
+
+    CURL* curl = curl_easy_init();
+    if (!curl) {
+        log("  ✗ Failed to initialize CURL for MTPZ download");
+        return false;
+    }
+
+    std::string response;
+    curl_easy_setopt(curl, CURLOPT_URL, MTPZ_DATA_URL);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, MtpzWriteCallback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
+    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 15L);
+
+    CURLcode res = curl_easy_perform(curl);
+    long http_code = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+    curl_easy_cleanup(curl);
+
+    if (res != CURLE_OK) {
+        log(std::string("  ✗ MTPZ download failed: ") + curl_easy_strerror(res));
+        return false;
+    }
+    if (http_code != 200 || response.empty()) {
+        log("  ✗ MTPZ download failed: HTTP " + std::to_string(http_code));
+        return false;
+    }
+
+    std::ofstream out(path, std::ios::binary);
+    if (!out) {
+        log("  ✗ Failed to write MTPZ data to " + path);
+        return false;
+    }
+    out.write(response.data(), response.size());
+    out.close();
+
+    log("  ✓ MTPZ data downloaded to " + path + " (" + std::to_string(response.size()) + " bytes)");
+    return true;
+}
 
 
 
@@ -146,8 +212,11 @@ bool ZuneDevice::ConnectUSB() {
         // The Windows Zune software does NOT call Operation1002 during initial connection
 
         Log("Initializing MTPZ authentication...");
+        if (!EnsureMtpzData([this](const std::string& msg) { this->Log(msg); })) {
+            Log("  ⚠ MTPZ keys unavailable — device may deny data read operations");
+        }
         cli_session_ = std::make_shared<cli::Session>(mtp_session_, false);
-        Log("  ✓ MTPZ authentication complete");
+        Log("  ✓ MTPZ session initialized");
 
         // Initialize NetworkManager
         network_manager_ = std::make_unique<NetworkManager>(mtp_session_, [this](const std::string& msg) {

@@ -176,6 +176,17 @@ add_library(zune_wireless SHARED
     lib/src/protocols/tcp/RTOManager.cpp
 )
 
+# On Linux, AFTL's raw kernel USB backend (Device.cpp) uses posix::FileHandler
+# and posix::Exception, but its CMakeLists.txt only compiles these source files
+# for the libusb and Darwin backends. Add them directly to the shared library
+# (not to a static archive) so they are always linked regardless of link order.
+if(UNIX AND NOT APPLE)
+    target_sources(zune_wireless PRIVATE
+        ${AFTL_ROOT}/mtp/backend/posix/FileHandler.cpp
+        ${AFTL_ROOT}/mtp/backend/posix/Exception.cpp
+    )
+endif()
+
 target_include_directories(zune_wireless PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${AFTL_INCLUDE_DIRS}
