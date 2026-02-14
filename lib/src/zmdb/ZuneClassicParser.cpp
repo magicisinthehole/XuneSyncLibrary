@@ -260,11 +260,6 @@ bool ZuneClassicParser::should_filter_record(
 
     // Note: GUID artists (ref0 == 0) are now included so albums can reference them
 
-    // Filter 2: 32-byte placeholder tracks (schema 0x01, size == 32)
-    if (schema_type == Schema::Music && record_data.size() == 32) {
-        return true;  // Placeholder/miscategorized track
-    }
-
     return false;
 }
 
@@ -281,7 +276,7 @@ std::optional<ZMDBTrack> ZuneClassicParser::parse_music_track(
     const std::vector<uint8_t>& record_data,
     uint32_t atom_id
 ) {
-    if (record_data.size() < 32) {
+    if (record_data.size() < 28) {
         return std::nullopt;
     }
 
@@ -295,12 +290,13 @@ std::optional<ZMDBTrack> ZuneClassicParser::parse_music_track(
     uint32_t album_filename_ref = read_uint32_le(record_data, 12);
 
     // Read fixed fields - ZuneClassic structure differs from ZuneHD
+    // Fixed fields occupy bytes 0-26, title starts at offset 28
     track.duration_ms = read_int32_le(record_data, 16);
-    
+
     // Bytes 20-23: track_number (byte 20) + metadata_count (byte 22)
     track.track_number = record_data[20];  // Just byte 20, not uint32
     uint8_t metadata_record_count = record_data[22];  // Number of 6-byte metadata records after title
-    
+
     track.codec_id = read_uint16_le(record_data, 24);
     track.rating = record_data[26];
     track.file_size_bytes = 0;  // Not stored in ZuneClassic fixed fields
@@ -864,8 +860,8 @@ std::optional<ZMDBAlbum> ZuneClassicParser::parse_album(
     std::cout << "[ZuneClassicParser::parse_album] Parsing album with atom_id=0x" << std::hex << atom_id << std::dec 
               << ", record_size=" << record_data.size() << std::endl;
 
-    if (record_data.size() < 20) {
-        std::cout << "[ZuneClassicParser::parse_album] ERROR: Record too small (" << record_data.size() << " < 20)" << std::endl;
+    if (record_data.size() < 12) {
+        std::cout << "[ZuneClassicParser::parse_album] ERROR: Record too small (" << record_data.size() << " < 12)" << std::endl;
         return std::nullopt;
     }
 

@@ -184,11 +184,6 @@ bool ZuneHDParser::should_filter_record(
 
     // Note: GUID artists (ref0 == 0) are now included so albums can reference them
 
-    // Filter 2: 32-byte placeholder tracks (schema 0x01, size == 32)
-    if (schema_type == Schema::Music && record_data.size() == 32) {
-        return true;  // Placeholder/miscategorized track
-    }
-
     return false;
 }
 
