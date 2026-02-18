@@ -179,9 +179,11 @@ void HybridModeHandler::CacheResponse(
     }
 
     std::string content_type = "application/octet-stream";
-    auto it = response.headers.find("Content-Type");
-    if (it != response.headers.end()) {
-        content_type = it->second;
+    for (const auto& [key, value] : response.headers) {
+        if (key == "Content-Type" || key == "content-type" || key == "Content-type") {
+            content_type = value;
+            break;
+        }
     }
 
     bool cached = cache_storage_callback_(
@@ -206,13 +208,19 @@ void HybridModeHandler::CacheResponse(
 }
 
 std::string HybridModeHandler::DetermineEndpointType(const std::string& path) {
-    // Keep custom mappings for C# callback compatibility
+    // Check specific sub-endpoints before the generic /music/artist/ match
     if (path.find("/biography") != std::string::npos) {
         return "biography";
-    } else if (path.find("/images") != std::string::npos) {
-        return "images";
     } else if (path.find("/deviceBackgroundImage") != std::string::npos) {
         return "devicebackgroundimage";
+    } else if (path.find("/similarArtists") != std::string::npos) {
+        return "similarartists";
+    } else if (path.find("/albums") != std::string::npos) {
+        return "albums";
+    } else if (path.find("/tracks") != std::string::npos) {
+        return "tracks";
+    } else if (path.find("/images") != std::string::npos) {
+        return "images";
     } else if (path.find("/music/artist/") != std::string::npos) {
         return "overview";
     } else if (path.find("/image/") != std::string::npos) {
