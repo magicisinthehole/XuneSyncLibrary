@@ -57,3 +57,5 @@ __pycache__/
 Thumbs.db
 library.json
 *.bak
+
+redocs/

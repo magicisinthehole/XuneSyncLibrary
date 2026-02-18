@@ -150,6 +150,7 @@ add_library(zune_wireless SHARED
     lib/src/ZuneDeviceIdentification.cpp
     lib/src/NetworkManager.cpp
     lib/src/LibraryManager.cpp
+    lib/src/ZuneUploadPrimitives.cpp
 
     lib/src/ZMDBLibraryExtractor.cpp
     lib/src/zmdb/ZMDBParserBase.cpp
