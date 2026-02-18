@@ -1,6 +1,7 @@
 #include "zune_wireless/zune_wireless_api.h"
 #include "ZuneDevice.h"
 #include "ZuneDeviceIdentification.h"
+#include "ZuneUploadPrimitives.h"
 #include "protocols/http/ZuneHTTPInterceptor.h"
 #include "ssdp_discovery.h"
 #include <vector>
@@ -1434,6 +1435,323 @@ ZUNE_WIRELESS_API int zune_mtp_operation_9802(
         std::cerr << "[zune_mtp_operation_9802] Exception: " << e.what() << std::endl;
         return -1;
     }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Upload Primitives — Pcap-verified Zune upload operations
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Helper: get session + determine if HD
+#define UPLOAD_SESSION_GUARD(handle) \
+    if (!handle) return -1; \
+    auto* _device = static_cast<ZuneDevice*>(handle); \
+    auto _session = _device->GetMtpSession(); \
+    if (!_session) return -2; \
+    bool _isHD = (_device->GetDeviceFamily() == zune::DeviceFamily::Pavo);
+
+#define UPLOAD_SESSION_GUARD_VAL(handle, fail_val) \
+    if (!handle) return fail_val; \
+    auto* _device = static_cast<ZuneDevice*>(handle); \
+    auto _session = _device->GetMtpSession(); \
+    if (!_session) return fail_val; \
+    bool _isHD = (_device->GetDeviceFamily() == zune::DeviceFamily::Pavo);
+
+// --- Pre-Upload ---
+
+ZUNE_WIRELESS_API int zune_upload_read_sync_status(zune_device_handle_t handle) {
+    UPLOAD_SESSION_GUARD(handle);
+    try { zune::UploadPrimitives::ReadDeviceSyncStatus(_session); return 0; }
+    catch (...) { return -1; }
+}
+
+ZUNE_WIRELESS_API int zune_upload_sync_device_db(zune_device_handle_t handle) {
+    UPLOAD_SESSION_GUARD(handle);
+    try { zune::UploadPrimitives::SyncDeviceDB(_session); return 0; }
+    catch (...) { return -1; }
+}
+
+ZUNE_WIRELESS_API ZuneRootDiscovery zune_upload_discover_root(zune_device_handle_t handle) {
+    ZuneRootDiscovery result = {};
+    if (!handle) return result;
+    auto* device = static_cast<ZuneDevice*>(handle);
+    auto session = device->GetMtpSession();
+    if (!session) return result;
+    try {
+        auto r = zune::UploadPrimitives::DiscoverRoot(session, device->GetDefaultStorageId());
+        result.music_folder = r.music_folder;
+        result.albums_folder = r.albums_folder;
+        result.artists_folder = r.artists_folder;
+        result.storage_id = r.storage_id;
+        result.root_object_count = r.root_object_count;
+    } catch (...) {}
+    return result;
+}
+
+ZUNE_WIRELESS_API int zune_upload_root_re_enum(zune_device_handle_t handle) {
+    UPLOAD_SESSION_GUARD(handle);
+    try { zune::UploadPrimitives::RootReEnum(_session); return 0; }
+    catch (...) { return -1; }
+}
+
+// --- Folder Discovery & Creation ---
+
+ZUNE_WIRELESS_API ZuneFolderDiscovery zune_upload_discover_folder(
+    zune_device_handle_t handle, uint32_t folder_id)
+{
+    ZuneFolderDiscovery result = {};
+    if (!handle) return result;
+    auto* device = static_cast<ZuneDevice*>(handle);
+    auto session = device->GetMtpSession();
+    if (!session) return result;
+    try {
+        auto children = zune::UploadPrimitives::DiscoverFolderChildren(
+            session, device->GetDefaultStorageId(), folder_id);
+        result.count = std::min(static_cast<int>(children.size()), 64);
+        for (int i = 0; i < result.count; ++i) {
+            result.children[i].handle = children[i].handle;
+            strncpy(result.children[i].name, children[i].name.c_str(), 255);
+            result.children[i].name[255] = '\0';
+        }
+    } catch (...) {}
+    return result;
+}
+
+ZUNE_WIRELESS_API uint32_t zune_upload_create_folder(
+    zune_device_handle_t handle, uint32_t parent_id, const char* name)
+{
+    UPLOAD_SESSION_GUARD_VAL(handle, 0);
+    try {
+        return zune::UploadPrimitives::CreateFolder(
+            _session, _device->GetDefaultStorageId(), parent_id, name ? name : "");
+    } catch (...) { return 0; }
+}
+
+ZUNE_WIRELESS_API int zune_upload_folder_readback(
+    zune_device_handle_t handle, uint32_t folder_id)
+{
+    UPLOAD_SESSION_GUARD(handle);
+    try {
+        zune::UploadPrimitives::FolderReadback(
+            _session, folder_id, _device->GetDefaultStorageId());
+        return 0;
+    } catch (...) { return -1; }
+}
+
+ZUNE_WIRELESS_API int zune_upload_first_folder_readback(
+    zune_device_handle_t handle, uint32_t folder_id)
+{
+    UPLOAD_SESSION_GUARD(handle);
+    try {
+        zune::UploadPrimitives::FirstFolderReadback(
+            _session, folder_id, _device->GetDefaultStorageId(), _isHD);
+        return 0;
+    } catch (...) { return -1; }
+}
+
+// --- Artist Metadata ---
+
+ZUNE_WIRELESS_API uint32_t zune_upload_create_artist_metadata(
+    zune_device_handle_t handle, uint32_t artists_folder,
+    const char* name, const uint8_t* guid_bytes, uint32_t guid_len)
+{
+    UPLOAD_SESSION_GUARD_VAL(handle, 0);
+    try {
+        return zune::UploadPrimitives::CreateArtistMetadata(
+            _session, _device->GetDefaultStorageId(), artists_folder,
+            name ? name : "", guid_bytes, guid_len);
+    } catch (...) { return 0; }
+}
+
+// --- Track Operations ---
+
+ZUNE_WIRELESS_API uint32_t zune_upload_create_track(
+    zune_device_handle_t handle, uint32_t album_folder,
+    const ZuneTrackProps* props, uint16_t format_code, uint64_t file_size)
+{
+    UPLOAD_SESSION_GUARD_VAL(handle, 0);
+    if (!props) return 0;
+    try {
+        zune::TrackProperties tp;
+        tp.filename = props->filename ? props->filename : "";
+        tp.title = props->title ? props->title : "";
+        tp.artist = props->artist ? props->artist : "";
+        tp.album_name = props->album_name ? props->album_name : "";
+        tp.album_artist = props->album_artist ? props->album_artist : "";
+        tp.genre = props->genre ? props->genre : "";
+        tp.date_authored = props->date_authored ? props->date_authored : "";
+        tp.duration_ms = props->duration_ms;
+        tp.track_number = props->track_number;
+        tp.rating = props->rating;
+        tp.artist_meta_id = props->artist_meta_id;
+        tp.is_hd = props->is_hd;
+        return zune::UploadPrimitives::CreateTrack(
+            _session, _device->GetDefaultStorageId(), album_folder,
+            tp, format_code, file_size);
+    } catch (...) { return 0; }
+}
+
+ZUNE_WIRELESS_API int zune_upload_send_audio(
+    zune_device_handle_t handle, const char* file_path)
+{
+    UPLOAD_SESSION_GUARD(handle);
+    if (!file_path) return -1;
+    try {
+        zune::UploadPrimitives::UploadAudioData(_session, file_path);
+        return 0;
+    } catch (...) { return -1; }
+}
+
+ZUNE_WIRELESS_API int zune_upload_verify_track(
+    zune_device_handle_t handle, uint32_t track_id)
+{
+    UPLOAD_SESSION_GUARD(handle);
+    try { zune::UploadPrimitives::VerifyTrack(_session, track_id); return 0; }
+    catch (...) { return -1; }
+}
+
+// --- Album Metadata ---
+
+ZUNE_WIRELESS_API uint32_t zune_upload_create_album(
+    zune_device_handle_t handle, uint32_t albums_folder,
+    const ZuneAlbumProps* props)
+{
+    UPLOAD_SESSION_GUARD_VAL(handle, 0);
+    if (!props) return 0;
+    try {
+        zune::AlbumProperties ap;
+        ap.artist = props->artist ? props->artist : "";
+        ap.album_name = props->album_name ? props->album_name : "";
+        ap.date_authored = props->date_authored ? props->date_authored : "";
+        ap.artist_meta_id = props->artist_meta_id;
+        ap.is_hd = props->is_hd;
+        return zune::UploadPrimitives::CreateAlbumMetadata(
+            _session, _device->GetDefaultStorageId(), albums_folder, ap);
+    } catch (...) { return 0; }
+}
+
+ZUNE_WIRELESS_API int zune_upload_set_artwork(
+    zune_device_handle_t handle, uint32_t album_id,
+    const uint8_t* data, uint32_t size)
+{
+    UPLOAD_SESSION_GUARD(handle);
+    if (!data || size == 0) return 0;
+    try {
+        zune::UploadPrimitives::SetAlbumArtwork(_session, album_id, data, size);
+        return 0;
+    } catch (...) { return -1; }
+}
+
+ZUNE_WIRELESS_API int zune_upload_set_album_refs(
+    zune_device_handle_t handle, uint32_t album_id,
+    const uint32_t* track_ids, uint32_t count)
+{
+    UPLOAD_SESSION_GUARD(handle);
+    if (!track_ids || count == 0) return 0;
+    try {
+        zune::UploadPrimitives::SetAlbumReferences(_session, album_id, track_ids, count);
+        return 0;
+    } catch (...) { return -1; }
+}
+
+ZUNE_WIRELESS_API int zune_upload_verify_album(
+    zune_device_handle_t handle, uint32_t album_id, bool include_parent_desc)
+{
+    UPLOAD_SESSION_GUARD(handle);
+    try {
+        zune::UploadPrimitives::VerifyAlbum(_session, album_id, include_parent_desc);
+        return 0;
+    } catch (...) { return -1; }
+}
+
+ZUNE_WIRELESS_API int zune_upload_read_album_subset(
+    zune_device_handle_t handle, uint32_t album_id)
+{
+    UPLOAD_SESSION_GUARD(handle);
+    try {
+        _session->GetObjectPropertyList(
+            mtp::ObjectId(album_id), mtp::ObjectFormat(0),
+            mtp::ObjectProperty(0), 2, 0);
+        return 0;
+    } catch (...) { return -1; }
+}
+
+// --- Finalization ---
+
+ZUNE_WIRELESS_API int zune_upload_disable_trusted_files(zune_device_handle_t handle) {
+    UPLOAD_SESSION_GUARD(handle);
+    try { zune::UploadPrimitives::DisableTrustedFiles(_session); return 0; }
+    catch (...) { return -1; }
+}
+
+ZUNE_WIRELESS_API int zune_upload_open_idle_session(zune_device_handle_t handle) {
+    UPLOAD_SESSION_GUARD(handle);
+    try { zune::UploadPrimitives::OpenIdleSession(_session); return 0; }
+    catch (...) { return -1; }
+}
+
+ZUNE_WIRELESS_API int zune_upload_close_session(zune_device_handle_t handle) {
+    UPLOAD_SESSION_GUARD(handle);
+    try { zune::UploadPrimitives::CloseSession(_session); return 0; }
+    catch (...) { return -1; }
+}
+
+ZUNE_WIRELESS_API int zune_upload_register_track_ctx(
+    zune_device_handle_t handle, const char* track_name)
+{
+    UPLOAD_SESSION_GUARD(handle);
+    if (!track_name) return -1;
+    try {
+        zune::UploadPrimitives::RegisterTrackContext(_session, track_name);
+        return 0;
+    } catch (...) { return -1; }
+}
+
+// --- Property Descriptor Queries ---
+
+ZUNE_WIRELESS_API int zune_upload_query_folder_descs(zune_device_handle_t handle) {
+    UPLOAD_SESSION_GUARD(handle);
+    try { zune::UploadPrimitives::QueryFolderDescriptors(_session); return 0; }
+    catch (...) { return -1; }
+}
+
+ZUNE_WIRELESS_API int zune_upload_query_batch_descs(
+    zune_device_handle_t handle, uint16_t prop_code)
+{
+    UPLOAD_SESSION_GUARD(handle);
+    try { zune::UploadPrimitives::QueryBatchDescriptors(_session, prop_code, _isHD); return 0; }
+    catch (...) { return -1; }
+}
+
+ZUNE_WIRELESS_API int zune_upload_query_object_format_descs(zune_device_handle_t handle) {
+    UPLOAD_SESSION_GUARD(handle);
+    try { zune::UploadPrimitives::QueryBatchDescriptors(_session, 0xDC02, _isHD); return 0; }
+    catch (...) { return -1; }
+}
+
+ZUNE_WIRELESS_API int zune_upload_query_track_descs(
+    zune_device_handle_t handle, uint16_t format_code)
+{
+    UPLOAD_SESSION_GUARD(handle);
+    try { zune::UploadPrimitives::QueryTrackDescriptors(_session, format_code, _isHD); return 0; }
+    catch (...) { return -1; }
+}
+
+ZUNE_WIRELESS_API int zune_upload_query_album_descs(zune_device_handle_t handle) {
+    UPLOAD_SESSION_GUARD(handle);
+    try { zune::UploadPrimitives::QueryAlbumDescriptors(_session, _isHD); return 0; }
+    catch (...) { return -1; }
+}
+
+ZUNE_WIRELESS_API int zune_upload_query_artist_descs(zune_device_handle_t handle) {
+    UPLOAD_SESSION_GUARD(handle);
+    try { zune::UploadPrimitives::QueryArtistDescriptors(_session); return 0; }
+    catch (...) { return -1; }
+}
+
+ZUNE_WIRELESS_API int zune_upload_query_artwork_descs(zune_device_handle_t handle) {
+    UPLOAD_SESSION_GUARD(handle);
+    try { zune::UploadPrimitives::QueryArtworkDescriptors(_session); return 0; }
+    catch (...) { return -1; }
 }
 
 } // extern "C"

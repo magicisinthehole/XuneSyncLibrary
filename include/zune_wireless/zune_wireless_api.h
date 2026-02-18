@@ -882,6 +882,176 @@ ZUNE_WIRELESS_API int zune_mtp_operation_9802(
     uint16_t format_type
 );
 
+// ═══════════════════════════════════════════════════════════════════════
+// Upload Primitives — Pcap-verified MTP operations for Zune uploads
+// See redocs/multi-album-upload-analysis.md for the verified sequence.
+// ═══════════════════════════════════════════════════════════════════════
+
+/// Result of root discovery
+struct ZuneRootDiscovery {
+    uint32_t music_folder;     ///< Music root folder handle (0 if missing)
+    uint32_t albums_folder;    ///< Albums root folder handle (0 if missing)
+    uint32_t artists_folder;   ///< Artists root folder handle (0 if missing, Classic always 0)
+    uint32_t storage_id;       ///< Default storage ID
+    int root_object_count;     ///< Number of root objects found
+};
+
+/// A discovered child of an existing folder
+struct ZuneFolderChild {
+    uint32_t handle;           ///< MTP ObjectId
+    char name[256];            ///< Folder/file name (null-terminated)
+};
+
+/// Result of folder children discovery
+struct ZuneFolderDiscovery {
+    ZuneFolderChild children[64]; ///< Up to 64 children
+    int count;                     ///< Actual number of children found
+};
+
+/// Track properties for upload
+struct ZuneTrackProps {
+    const char* filename;
+    const char* title;
+    const char* artist;
+    const char* album_name;
+    const char* album_artist;
+    const char* genre;
+    const char* date_authored;    ///< Format: "YYYYMMDDTHHMMSS.0"
+    uint32_t duration_ms;
+    uint16_t track_number;
+    int rating;                    ///< -1 = omit, 0+ = include as Uint16
+    uint32_t artist_meta_id;       ///< DAB9 reference (HD only, 0 for Classic)
+    bool is_hd;                    ///< true = HD (16 props), false = Classic (14 props)
+};
+
+/// Album properties for upload
+struct ZuneAlbumProps {
+    const char* artist;
+    const char* album_name;
+    const char* date_authored;     ///< Format: "YYYYMMDDTHHMMSS.0" (HD only, NULL for Classic)
+    uint32_t artist_meta_id;       ///< DAB9 reference (HD only, 0 for Classic)
+    bool is_hd;
+};
+
+// --- Pre-Upload ---
+
+/// Read device sync status (GetDevicePropValue 0xD217 x2)
+ZUNE_WIRELESS_API int zune_upload_read_sync_status(zune_device_handle_t handle);
+
+/// Pre-upload SyncDeviceDB (Operation 0x9217)
+ZUNE_WIRELESS_API int zune_upload_sync_device_db(zune_device_handle_t handle);
+
+/// Discover root folder structure
+ZUNE_WIRELESS_API ZuneRootDiscovery zune_upload_discover_root(zune_device_handle_t handle);
+
+/// Root re-enumeration (depth=1, between every major operation)
+ZUNE_WIRELESS_API int zune_upload_root_re_enum(zune_device_handle_t handle);
+
+// --- Folder Discovery & Creation ---
+
+/// Discover children of an existing folder (3-op pattern: grp=2, GetObjectHandles, ObjFileName depth=1)
+ZUNE_WIRELESS_API ZuneFolderDiscovery zune_upload_discover_folder(
+    zune_device_handle_t handle, uint32_t folder_id);
+
+/// Create a folder and return its handle
+ZUNE_WIRELESS_API uint32_t zune_upload_create_folder(
+    zune_device_handle_t handle, uint32_t parent_id, const char* name);
+
+/// Folder readback (PersistentUID read, grp=4 read, GetObjectHandles)
+ZUNE_WIRELESS_API int zune_upload_folder_readback(
+    zune_device_handle_t handle, uint32_t folder_id);
+
+/// First-folder readback with interleaved batch descriptors
+ZUNE_WIRELESS_API int zune_upload_first_folder_readback(
+    zune_device_handle_t handle, uint32_t folder_id);
+
+// --- Artist Metadata (HD Only) ---
+
+/// Create artist metadata object (0xB218). Returns MTP handle or 0 on error.
+ZUNE_WIRELESS_API uint32_t zune_upload_create_artist_metadata(
+    zune_device_handle_t handle, uint32_t artists_folder,
+    const char* name, const uint8_t* guid_bytes, uint32_t guid_len);
+
+// --- Track Operations ---
+
+/// Create track metadata object. Returns MTP handle or 0 on error.
+ZUNE_WIRELESS_API uint32_t zune_upload_create_track(
+    zune_device_handle_t handle, uint32_t album_folder,
+    const ZuneTrackProps* props, uint16_t format_code, uint64_t file_size);
+
+/// Upload audio data (must follow create_track immediately)
+ZUNE_WIRELESS_API int zune_upload_send_audio(
+    zune_device_handle_t handle, const char* file_path);
+
+/// Verify track (GetObjPropList ALL)
+ZUNE_WIRELESS_API int zune_upload_verify_track(
+    zune_device_handle_t handle, uint32_t track_id);
+
+// --- Album Metadata ---
+
+/// Create album metadata object. Returns MTP handle or 0 on error.
+ZUNE_WIRELESS_API uint32_t zune_upload_create_album(
+    zune_device_handle_t handle, uint32_t albums_folder,
+    const ZuneAlbumProps* props);
+
+/// Set album artwork (read current + set data + set JPEG format)
+ZUNE_WIRELESS_API int zune_upload_set_artwork(
+    zune_device_handle_t handle, uint32_t album_id,
+    const uint8_t* data, uint32_t size);
+
+/// Set album track references (cumulative — pass ALL track IDs)
+ZUNE_WIRELESS_API int zune_upload_set_album_refs(
+    zune_device_handle_t handle, uint32_t album_id,
+    const uint32_t* track_ids, uint32_t count);
+
+/// Verify album (subset + optional ParentObject desc + ALL)
+ZUNE_WIRELESS_API int zune_upload_verify_album(
+    zune_device_handle_t handle, uint32_t album_id, bool include_parent_desc);
+
+/// Read album subset properties (grp=2, for existing albums)
+ZUNE_WIRELESS_API int zune_upload_read_album_subset(
+    zune_device_handle_t handle, uint32_t album_id);
+
+// --- Finalization ---
+
+/// DisableTrustedFiles (Op9215) — signals upload completion
+ZUNE_WIRELESS_API int zune_upload_disable_trusted_files(zune_device_handle_t handle);
+
+/// Open idle session (Op922b 3,1,0)
+ZUNE_WIRELESS_API int zune_upload_open_idle_session(zune_device_handle_t handle);
+
+/// Close session (Op922b 3,2,0)
+ZUNE_WIRELESS_API int zune_upload_close_session(zune_device_handle_t handle);
+
+/// Register track context (Op922A)
+ZUNE_WIRELESS_API int zune_upload_register_track_ctx(
+    zune_device_handle_t handle, const char* track_name);
+
+// --- Property Descriptor Queries ---
+
+/// Query folder descriptors (GetObjPropsSupported + GetObjPropDesc ObjectFileName)
+ZUNE_WIRELESS_API int zune_upload_query_folder_descs(zune_device_handle_t handle);
+
+/// Query batch descriptors for a property across all formats
+ZUNE_WIRELESS_API int zune_upload_query_batch_descs(
+    zune_device_handle_t handle, uint16_t prop_code);
+
+/// Query ObjectFormat batch descriptors
+ZUNE_WIRELESS_API int zune_upload_query_object_format_descs(zune_device_handle_t handle);
+
+/// Query track property descriptors for a specific format
+ZUNE_WIRELESS_API int zune_upload_query_track_descs(
+    zune_device_handle_t handle, uint16_t format_code);
+
+/// Query album property descriptors
+ZUNE_WIRELESS_API int zune_upload_query_album_descs(zune_device_handle_t handle);
+
+/// Query artist property descriptors (HD only)
+ZUNE_WIRELESS_API int zune_upload_query_artist_descs(zune_device_handle_t handle);
+
+/// Query artwork property descriptors (RepSampleData + RepSampleFormat)
+ZUNE_WIRELESS_API int zune_upload_query_artwork_descs(zune_device_handle_t handle);
+
 
 #ifdef __cplusplus
 }
