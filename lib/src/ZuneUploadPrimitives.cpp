@@ -279,14 +279,14 @@ uint32_t UploadPrimitives::CreateTrack(
     WritePropString(os, MtpProp::AlbumName, props.album_name);
     WritePropString(os, MtpProp::Name, props.title);
     WritePropString(os, MtpProp::AlbumArtist, props.album_artist);
-    WritePropU16(os, MtpProp::DiscNumber, 0);
+    WritePropU16(os, MtpProp::DC9D, 0);  // Always 0 on Zune
     WritePropU8(os, MtpProp::ZuneCollectionId, 0);
     WritePropString(os, MtpProp::Artist, props.artist);
     WritePropString(os, MtpProp::DateAuthored, props.date_authored);
     WritePropU8(os, MtpProp::ZunePropDAB2, 0);
     if (props.is_hd) {
-        WritePropU32(os, MtpProp::DAB8, 1);
-        WritePropU32(os, MtpProp::DAB9, props.artist_meta_id);
+        WritePropU32(os, MtpProp::DiscNumber, props.disc_number > 0 ? props.disc_number : 1);
+        WritePropU32(os, MtpProp::ArtistId, props.artist_meta_id);
     }
     WritePropU32(os, MtpProp::Duration, props.duration_ms);
     if (hasRating)
@@ -331,7 +331,7 @@ uint32_t UploadPrimitives::CreateAlbumMetadata(
         WritePropU8(os, MtpProp::ZuneCollectionId, 0);
         WritePropString(os, MtpProp::ObjectFileName,
             props.artist + "--" + props.album_name + ".alb");
-        WritePropU32(os, MtpProp::DAB9, props.artist_meta_id);
+        WritePropU32(os, MtpProp::ArtistId, props.artist_meta_id);
         WritePropString(os, MtpProp::Name, props.album_name);
     } else {
         os.Write32(4);
@@ -458,16 +458,16 @@ void UploadPrimitives::QueryTrackDescriptors(
     // Exact order from pcap
     const uint16_t classic_props[] = {
         MtpProp::MetaGenre, MtpProp::ObjectFileName, MtpProp::AlbumName,
-        MtpProp::Name, MtpProp::AlbumArtist, MtpProp::DiscNumber,
+        MtpProp::Name, MtpProp::AlbumArtist, MtpProp::DC9D,
         MtpProp::ZuneCollectionId, MtpProp::Artist, MtpProp::DateAuthored,
         MtpProp::ZunePropDAB2, MtpProp::Duration, MtpProp::Rating,
         MtpProp::Track, MtpProp::Genre,
     };
     const uint16_t hd_props[] = {
         MtpProp::MetaGenre, MtpProp::ObjectFileName, MtpProp::AlbumName,
-        MtpProp::Name, MtpProp::AlbumArtist, MtpProp::DiscNumber,
+        MtpProp::Name, MtpProp::AlbumArtist, MtpProp::DC9D,
         MtpProp::ZuneCollectionId, MtpProp::Artist, MtpProp::DateAuthored,
-        MtpProp::ZunePropDAB2, MtpProp::DAB8, MtpProp::DAB9,
+        MtpProp::ZunePropDAB2, MtpProp::DiscNumber, MtpProp::ArtistId,
         MtpProp::Duration, MtpProp::Rating, MtpProp::Track, MtpProp::Genre,
     };
     const uint16_t* props = isHD ? hd_props : classic_props;
@@ -483,7 +483,7 @@ void UploadPrimitives::QueryAlbumDescriptors(const SessionPtr& session, bool isH
     if (isHD) {
         const uint16_t props[] = {
             MtpProp::Artist, MtpProp::DateAuthored, MtpProp::ZuneCollectionId,
-            MtpProp::ObjectFileName, MtpProp::DAB9, MtpProp::Name,
+            MtpProp::ObjectFileName, MtpProp::ArtistId, MtpProp::Name,
         };
         for (auto p : props) {
             try { session->GetObjectPropertyDesc(mtp::ObjectProperty(p), fmt); } catch (...) {}

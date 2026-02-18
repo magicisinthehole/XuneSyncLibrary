@@ -1582,6 +1582,7 @@ ZUNE_WIRELESS_API uint32_t zune_upload_create_track(
         tp.duration_ms = props->duration_ms;
         tp.track_number = props->track_number;
         tp.rating = props->rating;
+        tp.disc_number = props->disc_number;
         tp.artist_meta_id = props->artist_meta_id;
         tp.is_hd = props->is_hd;
         return zune::UploadPrimitives::CreateTrack(

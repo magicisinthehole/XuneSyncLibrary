@@ -920,8 +920,9 @@ struct ZuneTrackProps {
     uint32_t duration_ms;
     uint16_t track_number;
     int rating;                    ///< -1 = omit, 0+ = include as Uint16
-    uint32_t artist_meta_id;       ///< DAB9 reference (HD only, 0 for Classic)
-    bool is_hd;                    ///< true = HD (16 props), false = Classic (14 props)
+    uint32_t disc_number;          ///< 0xDAB8 disc number (HD only, Uint32: 1=disc1, 2=disc2)
+    uint32_t artist_meta_id;       ///< 0xDAB9 artist metadata reference (HD only, 0 for Classic)
+    bool is_hd;                    ///< true = HD (15-16 props), false = Classic (13-14 props)
 };
 
 /// Album properties for upload

@@ -50,6 +50,7 @@ struct TrackProperties {
     uint16_t track_number = 0;
     int rating = -1;             // -1 = omit, 0+ = include
     // HD-only
+    uint32_t disc_number = 0;    // 0xDAB8 disc number (HD only, Uint32: 1=disc1, 2=disc2)
     uint32_t artist_meta_id = 0; // 0xDAB9 reference
     bool is_hd = false;
 };
@@ -100,11 +101,11 @@ namespace MtpProp {
     constexpr uint16_t MetaGenre        = 0xDC95;
     constexpr uint16_t AlbumName        = 0xDC9A;
     constexpr uint16_t AlbumArtist      = 0xDC9B;
-    constexpr uint16_t DiscNumber       = 0xDC9D;
+    constexpr uint16_t DC9D             = 0xDC9D;  // MTP "DiscNumber" but always 0 on Zune
     constexpr uint16_t ZuneCollectionId = 0xDAB0;
     constexpr uint16_t ZunePropDAB2     = 0xDAB2;
-    constexpr uint16_t DAB8             = 0xDAB8;
-    constexpr uint16_t DAB9             = 0xDAB9;
+    constexpr uint16_t DiscNumber       = 0xDAB8;  // HD disc number (Uint32: 1, 2, ...)
+    constexpr uint16_t ArtistId        = 0xDAB9;  // HD artist metadata reference
     constexpr uint16_t DA97             = 0xDA97;
 }
 
