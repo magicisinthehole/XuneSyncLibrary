@@ -169,9 +169,10 @@ public:
     static std::string IPToString(uint32_t ip_addr);
 
     /**
-     * Convert string to IP address
-     * @param ip_str String representation (e.g., "192.168.55.101")
-     * @return IP address in network byte order
+     * Convert string to IPv4 address. Accepts dotted-quad format (e.g., "192.168.55.101")
+     * or a hostname (returns a placeholder 10.0.0.1 since device traffic is USB-intercepted).
+     * @param ip_str Dotted-quad IP or hostname
+     * @return IP address in host byte order
      */
     static uint32_t StringToIP(const std::string& ip_str);
 };

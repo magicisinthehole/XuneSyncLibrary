@@ -128,11 +128,11 @@ void ZuneHTTPInterceptor::Start(const InterceptorConfig& config) {
     uint32_t dns_target_ip;
     if (!config_.server_ip.empty()) {
         dns_target_ip = IPParser::StringToIP(config_.server_ip);
-        Log("DNS resolving to server IP: " + config_.server_ip);
+        Log("DNS target: " + IPParser::IPToString(dns_target_ip) +
+            " (from: " + config_.server_ip + ")");
     } else {
-        // Default to a standard server IP if not configured
         dns_target_ip = IPParser::StringToIP("192.168.0.30");
-        Log("DNS resolving to default server IP: 192.168.0.30");
+        Log("DNS target: 192.168.0.30 (default)");
     }
 
     InitializeDNSHostnameMap(dns_target_ip);

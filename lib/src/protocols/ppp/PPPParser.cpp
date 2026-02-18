@@ -518,10 +518,14 @@ std::string IPParser::IPToString(uint32_t ip_addr) {
 
 uint32_t IPParser::StringToIP(const std::string& ip_str) {
     uint32_t a, b, c, d;
-    if (sscanf(ip_str.c_str(), "%u.%u.%u.%u", &a, &b, &c, &d) != 4) {
-        throw std::runtime_error("Invalid IP address format");
+    if (sscanf(ip_str.c_str(), "%u.%u.%u.%u", &a, &b, &c, &d) == 4) {
+        return (a << 24) | (b << 16) | (c << 8) | d;
     }
-    return (a << 24) | (b << 16) | (c << 8) | d;
+
+    // Not a dotted-quad IP (e.g., hostname). Return a placeholder IPv4 address.
+    // The Zune device only speaks IPv4 over PPP, and all traffic is intercepted
+    // via USB regardless of the destination IP, so the actual value doesn't matter.
+    return (10 << 24) | (0 << 16) | (0 << 8) | 1;  // 10.0.0.1
 }
 
 // ============================================================================
