@@ -264,13 +264,9 @@ bool ZuneClassicParser::should_filter_record(
 }
 
 size_t ZuneClassicParser::get_entry_size_for_schema(uint8_t schema_type) const {
-    // Zune Classic uses the same entry sizes as documented in the wiki
     // These match what's in ZMDBUtils::get_entry_size_for_schema
     return ::zmdb::get_entry_size_for_schema(schema_type);
 }
-
-// All parsing methods are identical to ZuneHD since the record structures are the same
-// The only difference is which descriptors contain which schemas
 
 std::optional<ZMDBTrack> ZuneClassicParser::parse_music_track(
     const std::vector<uint8_t>& record_data,

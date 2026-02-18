@@ -804,6 +804,7 @@ target_link_libraries(device_info_dump_cli ${AFTL_LIBRARY} ${CMAKE_THREAD_LIBS_I
 add_executable(artist_images_tool_cli
     tools/artist_images_tool_cli.cpp
     lib/src/ZuneDevice.cpp
+    lib/src/ZuneDeviceIdentification.cpp
     lib/src/NetworkManager.cpp
     lib/src/LibraryManager.cpp
 
@@ -1090,6 +1091,7 @@ target_compile_options(erase_content_test_cli PRIVATE
 add_executable(upload_test_cli
     tools/upload_test_cli.cpp
     lib/src/ZuneDevice.cpp
+    lib/src/ZuneDeviceIdentification.cpp
     lib/src/NetworkManager.cpp
     lib/src/LibraryManager.cpp
 
