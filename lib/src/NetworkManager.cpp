@@ -41,12 +41,8 @@ bool NetworkManager::InitializeHTTPSubsystem() {
         // NOTE: 0x1002 already called in ConnectUSB() before MTPZ auth
         // Skip duplicate call here
 
-        // HTTP trigger command (called twice in capture)
-        Log("  → Sending 0x9231() - HTTP init trigger (1st)");
-        mtp_session_->Operation9231();
-        Log("  ✓ 0x9231 complete");
-
-        Log("  → Sending 0x9231() - HTTP init trigger (2nd)");
+        // HTTP trigger command (pcap shows single call with 258B data)
+        Log("  → Sending 0x9231() - HTTP init trigger");
         mtp_session_->Operation9231();
         Log("  ✓ 0x9231 complete");
 
@@ -85,11 +81,10 @@ bool NetworkManager::InitializeHTTPSubsystem() {
         mtp_session_->Operation9230(1);
         Log("  ✓ 0x9230 complete");
 
-        // NOTE: Windows Zune software does NOT send 0x922c during HTTP init
-        // The device will start PPP negotiation autonomously after 0x9230
+        // After this, the device will send "CLIENT" via Op922d when ready.
+        // TriggerNetworkMode() polls for this signal before sending "CLIENTSERVER".
 
         Log("✓ HTTP subsystem initialization complete");
-        Log("✓ Device ready for 0x922d HTTP polling");
         return true;
 
     } catch (const std::exception& e) {
@@ -167,19 +162,56 @@ void NetworkManager::TriggerNetworkMode() {
         return ss.str();
     };
 
-    // Step 1: Send "CLIENTSERVER" to trigger network mode (frame 2219/2221/2223)
-    Log("Sending CLIENTSERVER to trigger network mode...");
+    // Pcap-verified handshake:
+    //   After Op922b(3,1,0) + Op9230(1), the device signals readiness by sending
+    //   "CLIENT" (6 bytes: 43 4c 49 45 4e 54) via Op922d. The host then responds
+    //   with "CLIENTSERVER" (12 bytes) via Op922c. Only after this exchange does
+    //   the device begin LCP negotiation.
+    //
+    //   The device may also send PPP frames or other data before "CLIENT" —
+    //   these are ignored until we see the "CLIENT" string.
+
+    const mtp::ByteArray client_sig = {0x43, 0x4c, 0x49, 0x45, 0x4e, 0x54}; // "CLIENT"
+
+    // Step 1: Poll Op922d until device sends "CLIENT"
+    Log("Polling for device CLIENT readiness signal...");
+    int poll_count = 0;
+    const int max_polls = 200;
+    bool found_client = false;
+
+    while (!found_client && poll_count < max_polls) {
+        mtp::ByteArray response = mtp_session_->Operation922d(3, 3);
+        poll_count++;
+
+        if (response.size() == 6 && response == client_sig) {
+            Log("  ✓ Device sent CLIENT (poll " + std::to_string(poll_count) + ")");
+            found_client = true;
+        } else if (!response.empty()) {
+            VerboseLog("  → Poll " + std::to_string(poll_count) + ": " +
+                       std::to_string(response.size()) + "B (not CLIENT)");
+        }
+
+        if (!found_client) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(16));
+        }
+    }
+
+    if (!found_client) {
+        Log("  ✗ Device did not send CLIENT after " + std::to_string(max_polls) + " polls");
+        throw std::runtime_error("Device did not signal readiness for network mode");
+    }
+
+    // Step 2: Send "CLIENTSERVER" in response
+    Log("Sending CLIENTSERVER response...");
     const char* trigger_str = "CLIENTSERVER";
     mtp::ByteArray trigger_payload(trigger_str, trigger_str + 12);
     mtp_session_->Operation922c(trigger_payload, 3, 3);
-    Log("  ✓ Network mode trigger sent");
+    Log("  ✓ CLIENTSERVER sent");
 
-    // Step 2: Poll with 0x922d until device sends LCP Config-Request
-    // NOTE: Device first echoes back part of "CLIENTSERVER", then sends actual LCP
+    // Step 3: Poll for device LCP Config-Request (PPP negotiation begins)
     Log("Polling for device LCP Config-Request...");
     mtp::ByteArray device_lcp;
-    int poll_count = 0;
-    const int max_polls = 100;  // Safety limit
+    poll_count = 0;
     bool found_valid_lcp = false;
 
     while (!found_valid_lcp && poll_count < max_polls) {
@@ -192,11 +224,12 @@ void NetworkManager::TriggerNetworkMode() {
             device_lcp = response;
             found_valid_lcp = true;
         } else if (!response.empty()) {
-            Log("  → Ignoring non-PPP response: " + std::to_string(response.size()) + " bytes (echo)");
+            VerboseLog("  → Poll " + std::to_string(poll_count) + ": " +
+                       std::to_string(response.size()) + "B (not PPP)");
         }
 
         if (!found_valid_lcp) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(16));  // ~16ms between polls in capture
+            std::this_thread::sleep_for(std::chrono::milliseconds(16));
         }
     }
 

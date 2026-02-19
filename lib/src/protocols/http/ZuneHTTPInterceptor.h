@@ -128,8 +128,6 @@ public:
     InterceptorConfig GetConfig() const;
     void SetLogCallback(LogCallback callback);
     void SetVerboseLogging(bool enable);
-    bool InitializeHTTPSubsystem();
-
     // Public for testing
     void HandleIPCPPacket(const mtp::ByteArray& ipcp_data);
     void HandleDNSQuery(const mtp::ByteArray& ip_packet);

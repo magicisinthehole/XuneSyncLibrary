@@ -1247,13 +1247,21 @@ int main(int argc, char* argv[]) {
     try { session->Operation9215(); log_ok("Upload finalized"); }
     catch (const std::exception& e) { log_warn("DisableTrustedFiles failed: " + std::string(e.what())); }
 
-    // Open session (leave device in idle/ready state)
-    log_op("Op922b(3,1,0) — open session (idle state)");
+    // Open idle session (pcap: Op922b(3,1,0) + Op9230(1))
+    log_op("Op922b(3,1,0) — open idle session");
     try {
         session->Operation922b(3, 1, 0);
         log_ok("Session opened");
     } catch (const std::exception& e) {
         log_warn("Session open failed: " + std::string(e.what()));
+    }
+
+    log_op("Op9230(1) — begin idle monitoring");
+    try {
+        session->Operation9230(1);
+        log_ok("Idle monitoring started");
+    } catch (const std::exception& e) {
+        log_warn("Op9230 failed: " + std::string(e.what()));
     }
 
     // ═══════════════════════════════════════════════════════════════════
