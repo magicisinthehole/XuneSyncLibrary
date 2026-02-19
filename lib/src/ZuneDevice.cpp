@@ -26,6 +26,7 @@
 #include "zmdb/ZMDBParserFactory.h"
 #include "NetworkManager.h"
 #include "LibraryManager.h"
+#include <mtp/mtpz/TrustedApp.h>
 
 
 
@@ -1302,5 +1303,78 @@ ZuneDevice::FolderIds ZuneDevice::GetWellKnownFolders() {
     }
 
     return result;
+}
+
+bool ZuneDevice::ReadNetworkState(int32_t& active, int32_t& progress, int32_t& phase, int32_t& status) {
+    if (!IsConnected() || !mtp_session_) return false;
+
+    try {
+        ByteArray empty;
+        ByteArray response = mtp_session_->Operation922f(empty);
+        if (response.size() < 16) {
+            Log("ReadNetworkState: response too short (" + std::to_string(response.size()) + " bytes)");
+            return false;
+        }
+
+        // Extract 4 little-endian uint32 values at offsets 0, 4, 8, 12
+        auto read_le32 = [](const u8* p) -> int32_t {
+            return static_cast<int32_t>(p[0] | (p[1] << 8) | (p[2] << 16) | (p[3] << 24));
+        };
+        active   = read_le32(response.data());
+        progress = read_le32(response.data() + 4);
+        phase    = read_le32(response.data() + 8);
+        status   = read_le32(response.data() + 12);
+        return true;
+    } catch (const std::exception& e) {
+        Log("ReadNetworkState failed: " + std::string(e.what()));
+        return false;
+    }
+}
+
+bool ZuneDevice::TeardownNetworkSession() {
+    if (!IsConnected() || !mtp_session_) return false;
+
+    try {
+        mtp_session_->Operation9230(2);  // END
+        mtp_session_->Operation922b(3, 2, 0);  // Close session
+        return true;
+    } catch (const std::exception& e) {
+        Log("TeardownNetworkSession failed: " + std::string(e.what()));
+        return false;
+    }
+}
+
+bool ZuneDevice::EnableTrustedFiles() {
+    if (!IsConnected() || !cli_session_) return false;
+
+    try {
+        auto trustedApp = cli_session_->GetTrustedApp();
+        if (!trustedApp) {
+            Log("EnableTrustedFiles: TrustedApp not available");
+            return false;
+        }
+        trustedApp->EnableTrustedFiles();
+        return true;
+    } catch (const std::exception& e) {
+        Log("EnableTrustedFiles failed: " + std::string(e.what()));
+        return false;
+    }
+}
+
+bool ZuneDevice::DisableTrustedFiles() {
+    if (!IsConnected() || !cli_session_) return false;
+
+    try {
+        auto trustedApp = cli_session_->GetTrustedApp();
+        if (!trustedApp) {
+            Log("DisableTrustedFiles: TrustedApp not available");
+            return false;
+        }
+        trustedApp->DisableTrustedFiles();
+        return true;
+    } catch (const std::exception& e) {
+        Log("DisableTrustedFiles failed: " + std::string(e.what()));
+        return false;
+    }
 }
 

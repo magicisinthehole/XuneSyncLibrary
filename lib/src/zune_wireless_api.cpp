@@ -919,6 +919,51 @@ void zune_device_set_verbose_network_logging(zune_device_handle_t handle, bool e
 }
 
 // ============================================================================
+// Network Session State & Control
+// ============================================================================
+
+bool zune_device_read_network_state(
+    zune_device_handle_t handle,
+    int32_t* out_active,
+    int32_t* out_progress,
+    int32_t* out_phase,
+    int32_t* out_status)
+{
+    if (!handle || !out_active || !out_progress || !out_phase || !out_status) return false;
+
+    try {
+        auto* device = static_cast<ZuneDevice*>(handle);
+        return device->ReadNetworkState(*out_active, *out_progress, *out_phase, *out_status);
+    } catch (const std::exception& e) {
+        return false;
+    }
+}
+
+bool zune_device_teardown_network_session(zune_device_handle_t handle)
+{
+    if (!handle) return false;
+
+    try {
+        auto* device = static_cast<ZuneDevice*>(handle);
+        return device->TeardownNetworkSession();
+    } catch (const std::exception& e) {
+        return false;
+    }
+}
+
+bool zune_device_enable_trusted_files(zune_device_handle_t handle)
+{
+    if (!handle) return false;
+
+    try {
+        auto* device = static_cast<ZuneDevice*>(handle);
+        return device->EnableTrustedFiles();
+    } catch (const std::exception& e) {
+        return false;
+    }
+}
+
+// ============================================================================
 // Low-Level MTP Primitives Implementation
 // ============================================================================
 

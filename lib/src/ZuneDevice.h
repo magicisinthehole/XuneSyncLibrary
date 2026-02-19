@@ -269,6 +269,20 @@ public:
     // The handles and endpoints remain valid after MTP closes
     USBHandlesWithEndpoints ExtractUSBHandles();
 
+    // --- Network Session State & Control ---
+    // Reads device networking state via Op922f (ReadZmdbState).
+    // Returns 4 values from the 1,036-byte response.
+    bool ReadNetworkState(int32_t& active, int32_t& progress, int32_t& phase, int32_t& status);
+
+    // Tears down the active network session (Op9230(2) END + Op922b(3,2,0) close).
+    bool TeardownNetworkSession();
+
+    // Re-enables trusted files via TrustedApp (SetSessionGUID / Op9214).
+    bool EnableTrustedFiles();
+
+    // Disables trusted files via TrustedApp (Op9215).
+    bool DisableTrustedFiles();
+
     // --- Low-Level MTP Access (for C# orchestration) ---
     // Returns the underlying MTP session for direct MTP primitive operations.
     // Returns nullptr if not connected.

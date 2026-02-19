@@ -598,6 +598,45 @@ ZUNE_WIRELESS_API void zune_device_set_verbose_network_logging(
 );
 
 // ============================================================================
+// Network Session State & Control
+// ============================================================================
+
+/// Reads the device's networking state via Op922f (ReadZmdbState).
+/// Returns 4 integers from the first 16 bytes of the 1,036-byte response.
+/// Key values:
+///   [1,0,0,0] = idle (no networking activity)
+///   [1,0,1,1] = device has pending work (fetching metadata)
+///   [1,0,3,2] = done with current batch / HD steady-state
+///   [1,100,4,3] = definitive completion (both device types can produce this)
+/// @param handle Device handle
+/// @param out_active First uint32 (always 1 when connected)
+/// @param out_progress Second uint32 (0 or 100)
+/// @param out_phase Third uint32 (0, 1, 3, or 4)
+/// @param out_status Fourth uint32 (0, 1, 2, or 3)
+/// @return true on success, false on failure
+ZUNE_WIRELESS_API bool zune_device_read_network_state(
+    zune_device_handle_t handle,
+    int32_t* out_active,
+    int32_t* out_progress,
+    int32_t* out_phase,
+    int32_t* out_status);
+
+/// Tears down the active network session.
+/// Calls Op9230(2) END + Op922b(3,2,0) close.
+/// @param handle Device handle
+/// @return true on success, false on failure
+ZUNE_WIRELESS_API bool zune_device_teardown_network_session(
+    zune_device_handle_t handle);
+
+/// Re-enables secure file operations by calling SetSessionGUID (Op9214)
+/// with a new GUID. Can be called after DisableTrustedFiles to re-enter
+/// the authenticated state without re-doing the MTPZ handshake.
+/// @param handle Device handle
+/// @return true on success, false on failure
+ZUNE_WIRELESS_API bool zune_device_enable_trusted_files(
+    zune_device_handle_t handle);
+
+// ============================================================================
 // Low-Level MTP Primitives
 // ============================================================================
 // These primitives expose raw MTP operations for C# orchestration.
