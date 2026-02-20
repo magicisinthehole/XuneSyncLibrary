@@ -254,7 +254,8 @@ public:
     bool IsHTTPInterceptorRunning() const;
     InterceptorConfig GetHTTPInterceptorConfig() const;
     void TriggerNetworkMode();  // Send 0x922c(3,3) to initiate PPP/HTTP after track upload
-    void EnableNetworkPolling();  // Start 0x922d polling - call AFTER TriggerNetworkMode()
+    void EnableNetworkPolling();  // Enable polling flag - call AFTER TriggerNetworkMode()
+    int PollNetworkData(int timeout_ms);  // Single poll cycle - called from C# in a loop
     void SetVerboseNetworkLogging(bool enable);  // Enable/disable verbose TCP/IP packet logging
 
     // Callback registration for hybrid mode
@@ -277,7 +278,10 @@ public:
     // Tears down the active network session (Op9230(2) END + Op922b(3,2,0) close).
     bool TeardownNetworkSession();
 
-    // Re-enables trusted files via TrustedApp (SetSessionGUID / Op9214).
+    // Re-enables trusted files via full MTPZ re-handshake
+    // (Op9216 + Op9212/Op9213 + Op9214). The device invalidates
+    // CMAC key material after DisableTrustedFiles, so a bare
+    // SetSessionGUID won't work — full re-authentication is required.
     bool EnableTrustedFiles();
 
     // Disables trusted files via TrustedApp (Op9215).

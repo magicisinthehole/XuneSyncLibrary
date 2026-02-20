@@ -35,7 +35,8 @@ public:
     bool IsHTTPInterceptorRunning() const;
     InterceptorConfig GetHTTPInterceptorConfig() const;
     void TriggerNetworkMode();  // Send 0x922c(3,3) to initiate PPP/HTTP after track upload
-    void EnableNetworkPolling();  // Start 0x922d polling - call AFTER TriggerNetworkMode()
+    void EnableNetworkPolling();  // Enable polling flag - call AFTER TriggerNetworkMode()
+    int PollNetworkData(int timeout_ms);  // Single poll cycle - called from C# in a loop
     void SetVerboseNetworkLogging(bool enable);  // Enable/disable verbose TCP/IP packet logging
 
     // Callback registration for hybrid mode

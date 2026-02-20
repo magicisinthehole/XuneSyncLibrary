@@ -89,7 +89,7 @@ constexpr uint16_t ZUNE_TCP_WINDOW_SIZE = 33580;
  * to an HTTP server.
  *
  * Architecture (Clean Coordinator Pattern):
- * - Monitors USB endpoint 0x81 (IN) for device requests
+ * - Monitors USB bulk IN endpoint for device requests
  * - Routes PPP frames to appropriate handlers
  * - Delegates TCP state to TCPConnectionManager (SINGLE SOURCE OF TRUTH)
  * - Routes HTTP requests to mode handlers
@@ -112,8 +112,8 @@ public:
      * Constructor (via Raw USB with pre-discovered endpoints)
      * @param device Raw USB device
      * @param interface Raw USB interface
-     * @param endpoint_in HTTP IN endpoint (0x01)
-     * @param endpoint_out HTTP OUT endpoint (0x01)
+     * @param endpoint_in HTTP bulk IN endpoint
+     * @param endpoint_out HTTP bulk OUT endpoint
      * @param claim_interface If true, claim the interface (set false if MTP is still active)
      */
     ZuneHTTPInterceptor(mtp::usb::DevicePtr device, mtp::usb::InterfacePtr interface,
@@ -134,6 +134,12 @@ public:
     virtual bool SendVendorCommand(const mtp::ByteArray& data);
     void InitializeDNSForTesting(const std::string& server_ip);
     void EnableNetworkPolling();
+
+    /// Perform one polling cycle: PollEvent → Op922d → ProcessPacket → ProcessPendingSends.
+    /// Called from C# in a loop for clean cancellation (no native monitoring thread).
+    /// @param timeout_ms USB interrupt timeout in milliseconds (0 = non-blocking)
+    /// @return 1 = processed data, 0 = timeout (no data), -1 = not running, -2 = session unavailable
+    int PollOnce(int timeout_ms);
 
     // Hybrid mode callbacks (C# interop)
     using PathResolverCallback = const char* (*)(
@@ -157,7 +163,6 @@ public:
     void SetCacheStorageCallback(CacheStorageCallback callback, void* user_data);
 
 private:
-    void MonitorThread();
     void TimeoutCheckerThread();
     void CheckAllConnectionTimeouts();
     void RetransmitSegment(const std::string& conn_key, const SentSegment& segment);
@@ -212,8 +217,8 @@ private:
     mtp::usb::EndpointPtr endpoint_interrupt_;
     bool endpoints_discovered_ = false;
 
-    // Threads
-    std::unique_ptr<std::thread> monitor_thread_;
+    // Threads (worker threads for HTTP requests, timeout checker for RTO)
+    // No monitoring thread — C# drives polling via PollOnce()
     std::atomic<bool> running_{false};
     std::atomic<bool> network_polling_enabled_{false};
     std::unique_ptr<std::thread> timeout_checker_thread_;

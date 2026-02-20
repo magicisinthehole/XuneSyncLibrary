@@ -583,10 +583,21 @@ ZUNE_WIRELESS_API bool zune_device_trigger_network_mode(
     zune_device_handle_t handle
 );
 
-/// Enable network polling (continuous 0x922d at 15ms intervals)
+
+/// Enable network polling flag (must call before PollNetworkData)
 /// @param handle Device handle
 ZUNE_WIRELESS_API void zune_device_enable_network_polling(
     zune_device_handle_t handle
+);
+
+/// Perform one network polling cycle: PollEvent → Op922d → ProcessPacket → ProcessPendingSends.
+/// Called from C# in a loop for clean cancellation (no native monitoring thread).
+/// @param handle Device handle
+/// @param timeout_ms USB interrupt timeout in milliseconds (0 = non-blocking)
+/// @return 1 = processed data, 0 = timeout/no data, -1 = not running/error, -2 = no session
+ZUNE_WIRELESS_API int zune_device_poll_network_data(
+    zune_device_handle_t handle,
+    int timeout_ms
 );
 
 /// Enable or disable verbose network logging
@@ -628,12 +639,40 @@ ZUNE_WIRELESS_API bool zune_device_read_network_state(
 ZUNE_WIRELESS_API bool zune_device_teardown_network_session(
     zune_device_handle_t handle);
 
-/// Re-enables secure file operations by calling SetSessionGUID (Op9214)
-/// with a new GUID. Can be called after DisableTrustedFiles to re-enter
-/// the authenticated state without re-doing the MTPZ handshake.
+/// Re-enables secure file operations via full MTPZ re-handshake
+/// (Op9216 + Op9212/Op9213 + Op9214). The device invalidates CMAC key
+/// material after DisableTrustedFiles, so a bare SetSessionGUID won't
+/// work — full re-authentication is required.
 /// @param handle Device handle
 /// @return true on success, false on failure
 ZUNE_WIRELESS_API bool zune_device_enable_trusted_files(
+    zune_device_handle_t handle);
+
+/// Disables trusted file operations (Op9215).
+/// Signals the device that the current operation batch is complete.
+/// @param handle Device handle
+/// @return true on success, false on failure
+ZUNE_WIRELESS_API bool zune_device_disable_trusted_files(
+    zune_device_handle_t handle);
+
+/// Opens an idle session on the device (Op922b 3,1,0).
+/// Called after all operations complete to leave device in connected/idle state.
+/// @param handle Device handle
+/// @return true on success, false on failure
+ZUNE_WIRELESS_API bool zune_device_open_idle_session(
+    zune_device_handle_t handle);
+
+/// Reads device sync status (GetDevicePropValue 0xD217 x2).
+/// @param handle Device handle
+/// @return true on success, false on failure
+ZUNE_WIRELESS_API bool zune_device_read_sync_status(
+    zune_device_handle_t handle);
+
+/// Closes the device session (Op922b 3,2,0).
+/// Called on disconnect to cleanly end the session.
+/// @param handle Device handle
+/// @return true on success, false on failure
+ZUNE_WIRELESS_API bool zune_device_close_session(
     zune_device_handle_t handle);
 
 // ============================================================================
@@ -975,12 +1014,6 @@ struct ZuneAlbumProps {
 
 // --- Pre-Upload ---
 
-/// Read device sync status (GetDevicePropValue 0xD217 x2)
-ZUNE_WIRELESS_API int zune_upload_read_sync_status(zune_device_handle_t handle);
-
-/// Pre-upload SyncDeviceDB (Operation 0x9217)
-ZUNE_WIRELESS_API int zune_upload_sync_device_db(zune_device_handle_t handle);
-
 /// Discover root folder structure
 ZUNE_WIRELESS_API ZuneRootDiscovery zune_upload_discover_root(zune_device_handle_t handle);
 
@@ -1053,15 +1086,6 @@ ZUNE_WIRELESS_API int zune_upload_read_album_subset(
     zune_device_handle_t handle, uint32_t album_id);
 
 // --- Finalization ---
-
-/// DisableTrustedFiles (Op9215) — signals upload completion
-ZUNE_WIRELESS_API int zune_upload_disable_trusted_files(zune_device_handle_t handle);
-
-/// Open idle session (Op922b 3,1,0)
-ZUNE_WIRELESS_API int zune_upload_open_idle_session(zune_device_handle_t handle);
-
-/// Close session (Op922b 3,2,0)
-ZUNE_WIRELESS_API int zune_upload_close_session(zune_device_handle_t handle);
 
 /// Register track context (Op922A)
 ZUNE_WIRELESS_API int zune_upload_register_track_ctx(

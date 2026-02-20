@@ -131,8 +131,6 @@ public:
     using SessionPtr = std::shared_ptr<mtp::Session>;
 
     // ── Pre-Upload ───────────────────────────────────────────────
-    static void ReadDeviceSyncStatus(const SessionPtr& session);
-    static void SyncDeviceDB(const SessionPtr& session);
     static void QueryStorageInfo(const SessionPtr& session, uint32_t storageId);
     static RootDiscoveryResult DiscoverRoot(const SessionPtr& session, uint32_t storageId);
     static void RootReEnum(const SessionPtr& session);
@@ -177,9 +175,6 @@ public:
         const SessionPtr& session, uint32_t albumObjId, bool includeParentDesc);
 
     // ── Finalization ─────────────────────────────────────────────
-    static void DisableTrustedFiles(const SessionPtr& session);
-    static void OpenIdleSession(const SessionPtr& session);
-    static void CloseSession(const SessionPtr& session);
     static void RegisterTrackContext(const SessionPtr& session, const std::string& trackName);
 
     // ── Property Descriptor Queries ──────────────────────────────

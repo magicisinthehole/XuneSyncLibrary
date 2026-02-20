@@ -125,9 +125,16 @@ void NetworkManager::EnableNetworkPolling() {
         throw std::runtime_error("HTTP interceptor not running - call StartHTTPInterceptor() first");
     }
 
-    Log("Enabling network polling (0x922d continuous at 15ms intervals)...");
+    Log("Enabling network polling...");
     http_interceptor_->EnableNetworkPolling();
-    Log("  ✓ Network polling enabled");
+    Log("  ✓ Network polling enabled — C# drives via PollNetworkData()");
+}
+
+int NetworkManager::PollNetworkData(int timeout_ms) {
+    if (!http_interceptor_) {
+        return -1;
+    }
+    return http_interceptor_->PollOnce(timeout_ms);
 }
 
 bool NetworkManager::IsHTTPInterceptorRunning() const {

@@ -1172,6 +1172,13 @@ void ZuneDevice::EnableNetworkPolling() {
     }
 }
 
+int ZuneDevice::PollNetworkData(int timeout_ms) {
+    if (network_manager_) {
+        return network_manager_->PollNetworkData(timeout_ms);
+    }
+    return -1;
+}
+
 bool ZuneDevice::IsHTTPInterceptorRunning() const {
     if (network_manager_) {
         return network_manager_->IsHTTPInterceptorRunning();
@@ -1315,6 +1322,9 @@ bool ZuneDevice::ReadNetworkState(int32_t& active, int32_t& progress, int32_t& p
             Log("ReadNetworkState: response too short (" + std::to_string(response.size()) + " bytes)");
             return false;
         }
+        if (response.size() != 1036) {
+            Log("ReadNetworkState: unexpected response size (" + std::to_string(response.size()) + " bytes, expected 1036)");
+        }
 
         // Extract 4 little-endian uint32 values at offsets 0, 4, 8, 12
         auto read_le32 = [](const u8* p) -> int32_t {
@@ -1360,6 +1370,7 @@ bool ZuneDevice::EnableTrustedFiles() {
         return false;
     }
 }
+
 
 bool ZuneDevice::DisableTrustedFiles() {
     if (!IsConnected() || !cli_session_) return false;

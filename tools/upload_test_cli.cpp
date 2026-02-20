@@ -1288,8 +1288,159 @@ int main(int argc, char* argv[]) {
                   << "  album=" << hex(r.album_obj_id.Id) << std::endl;
     }
 
+    // ═══════════════════════════════════════════════════════════════════
+    // Re-enable Cycle Test
+    // ═══════════════════════════════════════════════════════════════════
+    // Device is now in idle state: trusted files disabled, Op922b+Op9230 active.
+    //
+    // Pcap evidence: in EVERY capture where Op9214 succeeds after Op9215,
+    // there is a full ZMDB session with actual data exchange between them:
+    //   - Op922b(3,1,0) open + Op9230(1) begin
+    //   - Op922d polling (device sends CLIENT, PPP frames)
+    //   - Op922f ReadZmdbState polling
+    //   - Op9230(2) end + Op922b(3,2,0) close
+    //   - Then: D217 x2, SyncDeviceDB, Op9214 (success)
+    //
+    // Our previous test opened and closed an idle session with NO data
+    // exchange and Op9214 failed. This test progressively adds operations
+    // to isolate what the device actually needs.
+
     std::cout << std::endl;
-    std::cout << "Device remains connected. Press Enter to disconnect..." << std::endl;
+    std::cout << "Press Enter to test re-enable cycle (or 'q' + Enter to disconnect)..." << std::endl;
+    std::string input;
+    std::getline(std::cin, input);
+    if (input == "q" || input == "Q") {
+        try { session->Operation922b(3, 2, 0); } catch (...) {}
+        device.Disconnect();
+        std::cout << "Disconnected." << std::endl;
+        return 0;
+    }
+
+    log_phase("Re-enable Cycle Test");
+    std::cout << "  State: trusted files DISABLED, idle session ACTIVE" << std::endl;
+    std::cout << std::endl;
+
+    // Teardown idle session first
+    log_op("Op9230(2) — END idle monitoring");
+    try {
+        session->Operation9230(2);
+        log_ok("Op9230(2) END success");
+    } catch (const std::exception& e) {
+        log_warn("Op9230(2) END failed: " + std::string(e.what()));
+    }
+
+    log_op("Op922b(3,2,0) — close idle session");
+    try {
+        session->Operation922b(3, 2, 0);
+        log_ok("Op922b(3,2,0) close success");
+    } catch (const std::exception& e) {
+        log_warn("Op922b(3,2,0) close failed: " + std::string(e.what()));
+    }
+
+    // ── Attempt 1: Bare Op9214 (baseline — expecting FAIL) ──
+    log_op("Attempt 1: bare Op9214");
+    if (device.EnableTrustedFiles()) {
+        log_ok("SUCCESS — bare Op9214 works after idle teardown");
+        goto re_enable_done;
+    }
+    log_warn("Failed (expected)");
+
+    // ── Attempt 2: ReadZmdbState (Op922f) then Op9214 ──
+    // Pcap: Op922f is ALWAYS called near successful re-enables
+    {
+        log_op("Attempt 2: Op922f (ReadZmdbState) then Op9214");
+        int32_t a, p, ph, s;
+        if (device.ReadNetworkState(a, p, ph, s)) {
+            std::cout << "    ReadZmdbState = [" << a << "," << p << "," << ph << "," << s << "]" << std::endl;
+        } else {
+            log_warn("ReadZmdbState failed");
+        }
+        if (device.EnableTrustedFiles()) {
+            log_ok("SUCCESS — Op922f + Op9214 works");
+            goto re_enable_done;
+        }
+        log_warn("Failed");
+    }
+
+    // ── Attempt 3: Open session + ReadZmdbState + poll Op922d + close → Op9214 ──
+    // Mimics the minimum viable networking session from pcap
+    {
+        log_op("Attempt 3: session cycle with Op922f + Op922d polling");
+
+        log_op("  Op922b(3,1,0) — open session");
+        try { session->Operation922b(3, 1, 0); log_ok("opened"); }
+        catch (const std::exception& e) { log_warn(std::string("open failed: ") + e.what()); }
+
+        log_op("  Op9230(1) — begin");
+        try { session->Operation9230(1); log_ok("begun"); }
+        catch (const std::exception& e) { log_warn(std::string("begin failed: ") + e.what()); }
+
+        // Poll Op922f (ReadZmdbState)
+        {
+            int32_t a, p, ph, s;
+            if (device.ReadNetworkState(a, p, ph, s)) {
+                std::cout << "    ReadZmdbState = [" << a << "," << p << "," << ph << "," << s << "]" << std::endl;
+            }
+        }
+
+        // Poll Op922d a few times (device may send CLIENT or PPP data)
+        for (int poll = 0; poll < 5; ++poll) {
+            try {
+                mtp::ByteArray resp = session->Operation922d(3, 3);
+                if (!resp.empty()) {
+                    std::cout << "    Op922d poll " << poll << ": " << resp.size() << " bytes";
+                    if (resp.size() <= 20) {
+                        std::cout << " = \"";
+                        for (auto b : resp) {
+                            if (b >= 0x20 && b < 0x7f) std::cout << (char)b;
+                            else std::cout << ".";
+                        }
+                        std::cout << "\"";
+                    }
+                    std::cout << std::endl;
+                } else {
+                    std::cout << "    Op922d poll " << poll << ": empty" << std::endl;
+                }
+            } catch (const std::exception& e) {
+                std::cout << "    Op922d poll " << poll << ": " << e.what() << std::endl;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+
+        // Teardown
+        log_op("  Op9230(2) — end");
+        try { session->Operation9230(2); log_ok("ended"); }
+        catch (const std::exception& e) { log_warn(std::string("end failed: ") + e.what()); }
+
+        log_op("  Op922b(3,2,0) — close");
+        try { session->Operation922b(3, 2, 0); log_ok("closed"); }
+        catch (const std::exception& e) { log_warn(std::string("close failed: ") + e.what()); }
+
+        // Pre-upload ops (matching pcap)
+        for (int i = 1; i <= 2; ++i) {
+            try { session->GetDeviceProperty(mtp::DeviceProperty(0xD217)); } catch (...) {}
+        }
+        try { session->Operation9217(1); } catch (...) {}
+
+        log_op("  Op9214 (EnableTrustedFiles)");
+        if (device.EnableTrustedFiles()) {
+            log_ok("SUCCESS — session cycle with data exchange works");
+            goto re_enable_done;
+        }
+        log_warn("Failed");
+    }
+
+    // ── Attempt 4: EnableTrustedFiles (full re-authenticate) ──
+    log_op("Attempt 4: EnableTrustedFiles (full re-authenticate)");
+    if (device.EnableTrustedFiles()) {
+        log_ok("Full re-authenticate SUCCESS (expected)");
+    } else {
+        log_warn("Full re-authenticate FAILED (unexpected!)");
+    }
+
+re_enable_done:
+    std::cout << std::endl;
+    std::cout << "Re-enable cycle test complete. Press Enter to disconnect..." << std::endl;
     std::cin.get();
 
     // Close session before disconnect

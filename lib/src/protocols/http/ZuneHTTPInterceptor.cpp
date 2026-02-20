@@ -186,8 +186,8 @@ void ZuneHTTPInterceptor::Start(const InterceptorConfig& config) {
         Log("Hybrid mode handler initialized with proxy server: " + config_.proxy_config.catalog_server);
     }
 
-    // Note: Monitoring thread will be started later by EnableNetworkPolling()
-    // This allows TriggerNetworkMode() to complete LCP negotiation without interference
+    // Note: C# drives polling via PollOnce() after EnableNetworkPolling() sets the flag.
+    // TriggerNetworkMode() must complete LCP negotiation before polling begins.
     running_.store(true);
 
     // Start request worker thread pool for concurrent HTTP request processing
@@ -209,6 +209,7 @@ void ZuneHTTPInterceptor::Stop() {
 
     Log("Stopping HTTP interceptor...");
     running_.store(false);
+    network_polling_enabled_.store(false);
 
     // Stop timeout checker thread (Phase 2: RTO integration)
     timeout_checker_running_.store(false);
@@ -227,10 +228,7 @@ void ZuneHTTPInterceptor::Stop() {
     }
     request_worker_threads_.clear();
 
-    // Wait for monitoring thread to finish
-    if (monitor_thread_ && monitor_thread_->joinable()) {
-        monitor_thread_->join();
-    }
+    // No monitoring thread to join — C# drives polling via PollOnce()
 
     // Clean up handlers
     static_handler_.reset();
@@ -347,28 +345,30 @@ bool ZuneHTTPInterceptor::DiscoverEndpoints() {
             Log("  Endpoint " + std::to_string(i) + ": address=0x" +
                 std::to_string(address) + " type=" + type_str + " dir=" + dir_str);
 
-            // Look for HTTP endpoints: address 0x01 with OUT and IN directions
-            if (address == 0x01 && type == mtp::usb::EndpointType::Bulk) {
+            // Match bulk endpoints by type and direction (address varies by device model)
+            // Zune HD (Pavo): OUT=0x01, IN=0x01 (0x81 on wire)
+            // Zune Classic (Keel/Scorpius/Draco): OUT=0x02, IN=0x01 (0x81 on wire)
+            if (type == mtp::usb::EndpointType::Bulk) {
                 if (direction == mtp::usb::EndpointDirection::Out) {
                     endpoint_out_ = ep;
-                    Log("  → Found HTTP OUT endpoint: 0x01");
+                    Log("  → Found HTTP OUT endpoint: 0x" + std::to_string(address));
                 }
                 else if (direction == mtp::usb::EndpointDirection::In) {
                     endpoint_in_ = ep;
-                    Log("  → Found HTTP IN endpoint: 0x01 (acts as 0x81)");
+                    Log("  → Found HTTP IN endpoint: 0x" + std::to_string(address));
                 }
             }
 
-            // Look for interrupt endpoint 0x02 (shows as 0x82 on wire) for event notifications
-            if (address == 0x02 && type == mtp::usb::EndpointType::Interrupt &&
+            // Look for interrupt endpoint (event notifications)
+            if (type == mtp::usb::EndpointType::Interrupt &&
                 direction == mtp::usb::EndpointDirection::In) {
                 endpoint_interrupt_ = ep;
-                Log("  → Found interrupt endpoint: 0x02 (0x82) for event notifications");
+                Log("  → Found interrupt endpoint: 0x" + std::to_string(address));
             }
         }
 
         if (!endpoint_in_ || !endpoint_out_) {
-            Log("Error: HTTP endpoints not found (need 0x01 OUT and 0x01 IN)");
+            Log("Error: HTTP endpoints not found (need one Bulk OUT and one Bulk IN)");
             return false;
         }
 
@@ -382,61 +382,54 @@ bool ZuneHTTPInterceptor::DiscoverEndpoints() {
     }
 }
 
-void ZuneHTTPInterceptor::MonitorThread() {
-    Log("Monitoring thread started - interrupt-driven mode");
-
-    int event_count = 0;
-
-    while (running_.load()) {
-        try {
-            if (!network_polling_enabled_.load()) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                continue;
-            }
-
-            if (!session_) {
-                Log("ERROR: Session not available");
-                std::this_thread::sleep_for(std::chrono::seconds(1));
-                continue;
-            }
-
-            // Wait for interrupt from device (blocks until data ready)
-            session_->PollEvent();
-
-            // Retrieve network data
-            mtp::ByteArray response_data = session_->Operation922d(3, 3);
-
-            if (response_data.empty()) {
-                continue;
-            }
-
-            // Skip "CLIENT" response (6 bytes: 43 4c 49 45 4e 54)
-            if (response_data.size() == 6 &&
-                response_data[0] == 0x43 && response_data[1] == 0x4c &&
-                response_data[2] == 0x49 && response_data[3] == 0x45 &&
-                response_data[4] == 0x4e && response_data[5] == 0x54) {
-                continue;
-            }
-
-            // Process network packet
-            event_count++;
-            VerboseLog("Event #" + std::to_string(event_count) + ": received " +
-                std::to_string(response_data.size()) + " bytes");
-
-            ProcessPacket(response_data);
-
-            // Process pending sends - ACKs may have opened up window for more data
-            // This is done here (not in ProcessPacket) to prevent recursive drain loops
-            ProcessPendingSends();
-
-        } catch (const std::exception& e) {
-            if (running_.load()) {
-                Log("Error: " + std::string(e.what()));
-            }
-        }
+int ZuneHTTPInterceptor::PollOnce(int timeout_ms) {
+    if (!running_.load()) {
+        return -1;
     }
 
-    Log("Monitoring thread stopped (" + std::to_string(event_count) + " events)");
+    if (!network_polling_enabled_.load()) {
+        return 0;
+    }
+
+    if (!session_) {
+        return -2;
+    }
+
+    try {
+        // Wait for interrupt from device (blocks up to timeout_ms)
+        session_->PollEvent(timeout_ms);
+
+        // Retrieve network data
+        mtp::ByteArray response_data = session_->Operation922d(3, 3);
+
+        if (response_data.empty()) {
+            return 0;
+        }
+
+        // Skip "CLIENT" response (6 bytes: 43 4c 49 45 4e 54)
+        if (response_data.size() == 6 &&
+            response_data[0] == 0x43 && response_data[1] == 0x4c &&
+            response_data[2] == 0x49 && response_data[3] == 0x45 &&
+            response_data[4] == 0x4e && response_data[5] == 0x54) {
+            return 0;
+        }
+
+        // Process network packet
+        VerboseLog("PollOnce: received " + std::to_string(response_data.size()) + " bytes");
+
+        ProcessPacket(response_data);
+
+        // Process pending sends - ACKs may have opened up window for more data
+        ProcessPendingSends();
+
+        return 1;
+
+    } catch (const std::exception& e) {
+        if (running_.load()) {
+            Log("PollOnce error: " + std::string(e.what()));
+        }
+        return -1;
+    }
 }
 
 void ZuneHTTPInterceptor::ProcessPacket(const mtp::ByteArray& usb_data) {
@@ -1277,13 +1270,6 @@ void ZuneHTTPInterceptor::InitializeDNSForTesting(const std::string& server_ip) 
 }
 
 void ZuneHTTPInterceptor::EnableNetworkPolling() {
-    // Start monitoring thread if not already started
-    if (!monitor_thread_) {
-        Log("Starting monitoring thread...");
-        monitor_thread_ = std::make_unique<std::thread>(&ZuneHTTPInterceptor::MonitorThread, this);
-        Log("Monitoring thread started");
-    }
-
     // Start timeout checker thread (Phase 2: RTO integration)
     if (!timeout_checker_thread_) {
         Log("Starting timeout checker thread...");
@@ -1292,7 +1278,8 @@ void ZuneHTTPInterceptor::EnableNetworkPolling() {
         Log("Timeout checker thread started");
     }
 
-    Log("Network polling enabled - monitoring thread will now poll with 0x922d");
+    // C# drives polling via PollOnce() — no native monitoring thread
+    Log("Network polling enabled — C# will drive via PollOnce()");
     network_polling_enabled_.store(true);
 }
 

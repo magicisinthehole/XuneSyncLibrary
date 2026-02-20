@@ -38,17 +38,6 @@ size_t UploadPrimitives::GetBatchFormatCount(bool isHD) {
 
 // ── Pre-Upload Operations ────────────────────────────────────────────────
 
-void UploadPrimitives::ReadDeviceSyncStatus(const SessionPtr& session) {
-    // Pcap: GetDevicePropValue(0xD217) x2
-    try { session->GetDeviceProperty(mtp::DeviceProperty(0xD217)); } catch (...) {}
-    try { session->GetDeviceProperty(mtp::DeviceProperty(0xD217)); } catch (...) {}
-}
-
-void UploadPrimitives::SyncDeviceDB(const SessionPtr& session) {
-    // Pcap: SyncDeviceDB (0x9217) — pre-upload database dump
-    session->Operation9217(1);
-}
-
 void UploadPrimitives::QueryStorageInfo(const SessionPtr& session, uint32_t storageId) {
     // Pcap: GetStorageInfo (non-fresh devices only)
     try { session->GetStorageInfo(mtp::StorageId(storageId)); } catch (...) {}
@@ -414,18 +403,6 @@ void UploadPrimitives::VerifyAlbum(
 }
 
 // ── Finalization ─────────────────────────────────────────────────────────
-
-void UploadPrimitives::DisableTrustedFiles(const SessionPtr& session) {
-    session->Operation9215();
-}
-
-void UploadPrimitives::OpenIdleSession(const SessionPtr& session) {
-    session->Operation922b(3, 1, 0);
-}
-
-void UploadPrimitives::CloseSession(const SessionPtr& session) {
-    try { session->Operation922b(3, 2, 0); } catch (...) {}
-}
 
 void UploadPrimitives::RegisterTrackContext(const SessionPtr& session, const std::string& trackName) {
     session->Operation922a(trackName);
