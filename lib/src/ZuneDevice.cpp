@@ -16,16 +16,14 @@
 #include <cctype>
 #include <regex>
 #include <random>
-#include <mtp/metadata/Metadata.h>
-#include <mtp/metadata/Library.h>
 #include <mtp/ptp/ObjectPropertyListParser.h>
 #include <cli/PosixStreams.h>
 #include <unordered_map>
 #include <curl/curl.h>
 #include <sys/stat.h>
-#include "zmdb/ZMDBParserFactory.h"
 #include "NetworkManager.h"
-#include "LibraryManager.h"
+#include "ZuneMtpReader.h"
+#include "ZuneMtpWriter.h"
 #include <mtp/mtpz/TrustedApp.h>
 
 
@@ -224,13 +222,6 @@ bool ZuneDevice::ConnectUSB() {
             this->Log(msg);
         });
 
-        // Initialize LibraryManager
-        library_manager_ = std::make_unique<LibraryManager>(mtp_session_, cli_session_, [this](const std::string& msg) {
-            this->Log(msg);
-        });
-
-
-
         // NOTE: Do NOT scan library here - Windows Zune doesn't do this during connect
         // Library scanning might interfere with the device's autonomous metadata fetching
         // Library will be initialized lazily when needed for uploads
@@ -251,14 +242,11 @@ bool ZuneDevice::ConnectWireless(const std::string& ip_address) {
 
 void ZuneDevice::Disconnect() {
     // Note: Don't call ClearTrackObjectIdCache() here - the cache is destroyed
-    // with library_manager_ anyway, and after USB disconnect the object state
-    // may be corrupted.
+    // Track cache is destroyed with the device anyway, and after USB disconnect
+    // the object state may be corrupted.
 
     if (network_manager_) {
         network_manager_.reset();
-    }
-    if (library_manager_) {
-        library_manager_.reset();
     }
     if (cli_session_) {
         cli_session_.reset();
@@ -644,14 +632,11 @@ int ZuneDevice::EraseAllContent() {
         
         Log("Device is rebooting. The device will be unavailable for a few seconds.");
         
-        // Clear cached data since device content has changed and device is rebooting
+        // Clear cached data since device content has been erased
         ClearTrackObjectIdCache();
-        library_manager_ = nullptr;
-        
-        // Mark as disconnected since device is rebooting
-        mtp_session_ = nullptr;
-        cli_session_ = nullptr;
-        device_ = nullptr;
+
+        // Full disconnect — device is rebooting
+        Disconnect();
         
         return 0;
     } catch (const std::exception& e) {
@@ -706,8 +691,9 @@ int ZuneDevice::SetDeviceName(const std::string& name) {
 }
 
 const char* ZuneDevice::GetSyncPartnerGuidCached() {
+    auto result = GetSyncPartnerGuid();
     std::lock_guard<std::mutex> lock(cache_mutex_);
-    cached_sync_partner_guid_ = GetSyncPartnerGuid();
+    cached_sync_partner_guid_ = std::move(result);
     return cached_sync_partner_guid_.c_str();
 }
 
@@ -814,14 +800,16 @@ bool ZuneDevice::SupportsNetworkMode() {
 // C API cached helpers - these cache results and return pointers that remain valid
 // until the next call to the same function or until the device object is destroyed
 const char* ZuneDevice::GetNameCached() {
+    auto result = GetName();
     std::lock_guard<std::mutex> lock(cache_mutex_);
-    cached_name_ = GetName();
+    cached_name_ = std::move(result);
     return cached_name_.c_str();
 }
 
 const char* ZuneDevice::GetSerialNumberCached() {
+    auto result = GetSerialNumber();
     std::lock_guard<std::mutex> lock(cache_mutex_);
-    cached_serial_number_ = GetSerialNumber();
+    cached_serial_number_ = std::move(result);
     return cached_serial_number_.c_str();
 }
 
@@ -897,189 +885,111 @@ std::string ZuneDevice::GetDeviceFamilyName() {
 }
 
 const char* ZuneDevice::GetDeviceFamilyNameCached() {
+    auto result = GetDeviceFamilyName();
     std::lock_guard<std::mutex> lock(cache_mutex_);
-    cached_family_name_ = GetDeviceFamilyName();
+    cached_family_name_ = std::move(result);
     return cached_family_name_.c_str();
 }
 
 const char* ZuneDevice::GetDeviceColorNameCached() {
+    auto result = GetDeviceColorName();
     std::lock_guard<std::mutex> lock(cache_mutex_);
-    cached_color_name_ = GetDeviceColorName();
+    cached_color_name_ = std::move(result);
     return cached_color_name_.c_str();
 }
 
 // ============================================================================
-// Library Manager Delegation
+// MTP Read Operations (via ZuneMtpReader primitives)
 // ============================================================================
 
-std::vector<ZuneObjectInfoInternal> ZuneDevice::ListStorage(uint32_t parent_handle) {
-    if (library_manager_) {
-        return library_manager_->ListStorage(parent_handle);
-    }
-    return {};
-}
-
 ZuneMusicLibrary* ZuneDevice::GetMusicLibrary() {
-    if (library_manager_) {
-        return library_manager_->GetMusicLibrary(GetDeviceFamily());
-    }
-    return nullptr;
-}
-
-ZuneMusicLibrary* ZuneDevice::GetMusicLibrarySlow() {
-    if (library_manager_) {
-        return library_manager_->GetMusicLibrarySlow();
-    }
-    return nullptr;
-}
-
-std::vector<ZunePlaylistInfo> ZuneDevice::GetPlaylists() {
-    if (library_manager_) {
-        return library_manager_->GetPlaylists();
-    }
-    return {};
+    if (!mtp_session_) return nullptr;
+    return zune::MtpReader::ReadMusicLibrary(mtp_session_, GetDeviceFamily());
 }
 
 int ZuneDevice::DownloadFile(uint32_t object_handle, const std::string& destination_path) {
-    if (library_manager_) {
-        return library_manager_->DownloadFile(object_handle, destination_path);
-    }
-    return -1;
-}
-
-int ZuneDevice::UploadFile(const std::string& source_path, const std::string& destination_folder) {
-    if (library_manager_) {
-        return library_manager_->UploadFile(source_path, destination_folder);
-    }
-    return -1;
+    if (!mtp_session_) return -1;
+    return zune::MtpReader::DownloadArtwork(mtp_session_, object_handle, destination_path);
 }
 
 int ZuneDevice::DeleteFile(uint32_t object_handle) {
-    if (library_manager_) {
-        return library_manager_->DeleteFile(object_handle);
-    }
-    return -1;
-}
-
-int ZuneDevice::UploadWithArtwork(const std::string& media_path, const std::string& artwork_path) {
-    if (library_manager_) {
-        return library_manager_->UploadWithArtwork(media_path, artwork_path);
-    }
-    return -1;
+    if (!mtp_session_) return -1;
+    return zune::MtpWriter::DeleteObject(mtp_session_, object_handle);
 }
 
 uint32_t ZuneDevice::CreatePlaylist(
     const std::string& name,
     const std::string& guid,
-    const std::vector<uint32_t>& track_mtp_ids
+    const std::vector<uint32_t>& track_mtp_ids,
+    uint32_t playlists_folder_id
 ) {
-    if (library_manager_) {
-        return library_manager_->CreatePlaylist(name, guid, track_mtp_ids);
-    }
-    return 0;
+    if (!mtp_session_) return 0;
+    return zune::MtpWriter::CreatePlaylist(
+        mtp_session_, GetDefaultStorageId(), playlists_folder_id,
+        name, guid, track_mtp_ids.data(), track_mtp_ids.size());
 }
 
 bool ZuneDevice::UpdatePlaylistTracks(
     uint32_t playlist_mtp_id,
     const std::vector<uint32_t>& track_mtp_ids
 ) {
-    if (library_manager_) {
-        return library_manager_->UpdatePlaylistTracks(playlist_mtp_id, track_mtp_ids);
-    }
-    return false;
+    if (!mtp_session_) return false;
+    return zune::MtpWriter::UpdatePlaylistTracks(
+        mtp_session_, playlist_mtp_id,
+        track_mtp_ids.data(), track_mtp_ids.size());
 }
 
 bool ZuneDevice::DeletePlaylist(uint32_t playlist_mtp_id) {
-    if (library_manager_) {
-        return library_manager_->DeletePlaylist(playlist_mtp_id);
-    }
-    return false;
-}
-
-int ZuneDevice::UploadTrackWithMetadata(
-    MediaType media_type,
-    const std::string& audio_file_path,
-    const std::string& artist_name,
-    const std::string& album_name,
-    int album_year,
-    const std::string& track_title,
-    const std::string& genre,
-    int track_number,
-    const uint8_t* artwork_data,
-    size_t artwork_size,
-    const std::string& artist_guid,
-    uint32_t duration_ms,
-    int rating,
-    uint32_t* out_track_id,
-    uint32_t* out_album_id,
-    uint32_t* out_artist_id
-) {
-    if (library_manager_) {
-        return library_manager_->UploadTrackWithMetadata(
-            media_type, audio_file_path, artist_name, album_name, album_year,
-            track_title, genre, track_number, artwork_data, artwork_size,
-            artist_guid, duration_ms, rating, out_track_id, out_album_id, out_artist_id
-        );
-    }
-    return -1;
-}
-
-int ZuneDevice::RetrofitArtistGuid(const std::string& artist_name, const std::string& guid) {
-    if (library_manager_) {
-        return library_manager_->RetrofitArtistGuid(artist_name, guid);
-    }
-    return -1;
-}
-
-ZuneDevice::BatchRetrofitResult ZuneDevice::RetrofitMultipleArtistGuids(
-    const std::vector<ArtistGuidMapping>& mappings)
-{
-    if (library_manager_) {
-        // Convert ZuneDevice::ArtistGuidMapping to LibraryManager::ArtistGuidMapping
-        std::vector<LibraryManager::ArtistGuidMapping> lib_mappings;
-        lib_mappings.reserve(mappings.size());
-        for (const auto& m : mappings) {
-            lib_mappings.push_back({m.artist_name, m.guid});
-        }
-
-        auto result = library_manager_->RetrofitMultipleArtistGuids(lib_mappings);
-        return {result.retrofitted_count, result.already_had_guid_count, result.not_found_count, result.error_count};
-    }
-    return {0, 0, 0, 0};
+    if (!mtp_session_) return false;
+    return zune::MtpWriter::DeletePlaylist(mtp_session_, playlist_mtp_id);
 }
 
 mtp::ByteArray ZuneDevice::GetPartialObject(uint32_t object_id, uint64_t offset, uint32_t size) {
-    if (library_manager_) {
-        return library_manager_->GetPartialObject(object_id, offset, size);
-    }
-    return mtp::ByteArray();
+    if (!mtp_session_) return mtp::ByteArray();
+    return zune::MtpReader::GetPartialObject(mtp_session_, object_id, offset, size);
 }
 
 uint64_t ZuneDevice::GetObjectSize(uint32_t object_id) {
-    if (library_manager_) {
-        return library_manager_->GetObjectSize(object_id);
-    }
-    return 0;
+    if (!mtp_session_) return 0;
+    return zune::MtpReader::GetObjectSize(mtp_session_, object_id);
 }
 
 std::string ZuneDevice::GetObjectFilename(uint32_t object_id) {
-    if (library_manager_) {
-        return library_manager_->GetObjectFilename(object_id);
-    }
-    return "";
+    if (!mtp_session_) return "";
+    return zune::MtpReader::GetObjectFilename(mtp_session_, object_id);
 }
 
 uint32_t ZuneDevice::GetAudioTrackObjectId(const std::string& track_title, uint32_t album_object_id) {
-    if (library_manager_) {
-        return library_manager_->GetAudioTrackObjectId(track_title, album_object_id);
+    if (!mtp_session_ || track_title.empty() || album_object_id == 0) return 0;
+
+    // Check cache first
+    std::string cache_key = std::to_string(album_object_id) + ":" + track_title;
+    {
+        std::lock_guard<std::mutex> lock(track_cache_mutex_);
+        auto it = track_objectid_cache_.find(cache_key);
+        if (it != track_objectid_cache_.end())
+            return it->second;
     }
-    return 0;
+
+    // Cache miss — query MTP and cache all siblings from the same album
+    std::vector<zune::TrackReference> siblings;
+    uint32_t found_id = zune::MtpReader::FindTrackObjectId(
+        mtp_session_, track_title, album_object_id, &siblings);
+
+    {
+        std::lock_guard<std::mutex> lock(track_cache_mutex_);
+        for (const auto& sibling : siblings) {
+            std::string key = std::to_string(album_object_id) + ":" + sibling.name;
+            track_objectid_cache_.emplace(key, sibling.object_id);
+        }
+    }
+
+    return found_id;
 }
 
 void ZuneDevice::ClearTrackObjectIdCache() {
-    if (library_manager_) {
-        library_manager_->ClearTrackObjectIdCache();
-    }
+    std::lock_guard<std::mutex> lock(track_cache_mutex_);
+    track_objectid_cache_.clear();
 }
 
 int ZuneDevice::SetTrackUserState(uint32_t zmdb_atom_id, int play_count, int skip_count, int rating) {
@@ -1137,8 +1047,8 @@ int ZuneDevice::SetTrackUserState(uint32_t zmdb_atom_id, int play_count, int ski
 }
 
 mtp::ByteArray ZuneDevice::GetZuneMetadata(const std::vector<uint8_t>& object_id) {
-    if (library_manager_) {
-        return library_manager_->GetZuneMetadata(object_id);
+    if (mtp_session_) {
+        return zune::MtpReader::ReadZuneMetadata(mtp_session_, object_id);
     }
     return mtp::ByteArray();
 }
@@ -1242,74 +1152,6 @@ uint32_t ZuneDevice::GetDefaultStorageId() {
         Log("GetDefaultStorageId failed: " + std::string(e.what()));
         return 0;
     }
-}
-
-ZuneDevice::FolderIds ZuneDevice::GetWellKnownFolders() {
-    FolderIds result = {};
-
-    if (!mtp_session_) {
-        return result;
-    }
-
-    try {
-        // Get default storage
-        auto storages = mtp_session_->GetStorageIDs();
-        if (storages.StorageIDs.empty()) {
-            return result;
-        }
-        result.storage_id = storages.StorageIDs[0].Id;
-
-        // Query root folder for well-known folders by name
-        mtp::ByteArray data = mtp_session_->GetObjectPropertyList(
-            mtp::Session::Root,
-            mtp::ObjectFormat::Association,
-            mtp::ObjectProperty::ObjectFilename,
-            0, 1);
-
-        mtp::ObjectStringPropertyListParser::Parse(data,
-            [&](mtp::ObjectId id, mtp::ObjectProperty property, const std::string& name) {
-                if (name == "Artists") {
-                    result.artists_folder = id.Id;
-                } else if (name == "Albums") {
-                    result.albums_folder = id.Id;
-                } else if (name == "Music") {
-                    result.music_folder = id.Id;
-                } else if (name == "Playlists") {
-                    result.playlists_folder = id.Id;
-                }
-            });
-
-        // Create missing essential folders
-        mtp::StorageId storage(result.storage_id);
-
-        if (result.albums_folder == 0) {
-            auto info = mtp_session_->CreateDirectory("Albums", mtp::Session::Root, storage);
-            result.albums_folder = info.ObjectId.Id;
-        }
-
-        if (result.music_folder == 0) {
-            auto info = mtp_session_->CreateDirectory("Music", mtp::Session::Root, storage);
-            result.music_folder = info.ObjectId.Id;
-        }
-
-        // Check if device supports Artist format (0xB218)
-        auto deviceInfo = mtp_session_->GetDeviceInfo();
-        result.artist_format_supported = deviceInfo.Supports(mtp::ObjectFormat::Artist);
-        Log("Device supports Artist format (0xB218): " + std::string(result.artist_format_supported ? "yes" : "no"));
-
-        // Artists folder only needed if device supports Artist format
-        if (result.artists_folder == 0 && result.artist_format_supported) {
-            auto info = mtp_session_->CreateDirectory("Artists", mtp::Session::Root, storage);
-            result.artists_folder = info.ObjectId.Id;
-        }
-
-        // Playlists folder is optional - don't create if not present
-
-    } catch (const std::exception& e) {
-        Log("GetWellKnownFolders failed: " + std::string(e.what()));
-    }
-
-    return result;
 }
 
 bool ZuneDevice::ReadNetworkState(int32_t& active, int32_t& progress, int32_t& phase, int32_t& status) {

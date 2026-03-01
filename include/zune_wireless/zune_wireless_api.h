@@ -117,15 +117,6 @@ struct ZunePlaylistInfo {
     uint32_t MtpObjectId;
 };
 
-// Result struct for upload operations
-struct ZuneUploadResult {
-    uint32_t track_object_id;   // MTP ObjectId of uploaded track
-    uint32_t album_object_id;   // MTP ObjectId of album metadata object
-    uint32_t artist_object_id;  // MTP ObjectId of artist metadata object
-    int status;                  // 0 = success, negative = error code
-};
-
-
 // API functions
 ZUNE_WIRELESS_API zune_device_handle_t zune_device_create();
 ZUNE_WIRELESS_API void zune_device_destroy(zune_device_handle_t handle);
@@ -147,6 +138,10 @@ ZUNE_WIRELESS_API int zune_device_disable_wireless(zune_device_handle_t handle);
 // Erase all content on the device (WARNING: This will delete all music, playlists, and other content)
 // Returns: 0 on success, -1 if not connected, -2 on MTP error
 ZUNE_WIRELESS_API int zune_device_erase_all_content(zune_device_handle_t handle);
+
+// Clears the cached track object ID lookup table.
+// Call at the start of upload sessions to prevent stale entries after track modifications.
+ZUNE_WIRELESS_API void zune_device_clear_track_cache(zune_device_handle_t handle);
 
 // Sync Partnership Functions
 // GUID returned when device has no sync partnership (unpaired or pairing incomplete)
@@ -196,54 +191,11 @@ ZUNE_WIRELESS_API const char* zune_device_get_family_name(zune_device_handle_t h
 // Classic devices (Zune 30/80/120/Flash) do not have the required hardware.
 ZUNE_WIRELESS_API bool zune_device_supports_network_mode(zune_device_handle_t handle);
 
-// File System Functions
-ZUNE_WIRELESS_API ZuneObjectInfo* zune_device_list_storage(zune_device_handle_t handle, uint32_t parent_handle, uint32_t* count);
-ZUNE_WIRELESS_API void zune_device_free_object_info_array(ZuneObjectInfo* array, uint32_t count);
+// Library & File Operations
 ZUNE_WIRELESS_API ZuneMusicLibrary* zune_device_get_music_library(zune_device_handle_t handle);
 ZUNE_WIRELESS_API void zune_device_free_music_library(ZuneMusicLibrary* library);
-ZUNE_WIRELESS_API ZunePlaylistInfo* zune_device_get_playlists(zune_device_handle_t handle, uint32_t* count);
-ZUNE_WIRELESS_API void zune_device_free_playlists(ZunePlaylistInfo* playlists, uint32_t count);
 ZUNE_WIRELESS_API int zune_device_download_file(zune_device_handle_t handle, uint32_t object_handle, const char* destination_path);
-ZUNE_WIRELESS_API int zune_device_upload_file(zune_device_handle_t handle, const char* source_path, const char* destination_folder);
 ZUNE_WIRELESS_API int zune_device_delete_file(zune_device_handle_t handle, uint32_t object_handle);
-
-// Artwork/Metadata
-// DEPRECATED: artwork_path parameter is not used. Use zune_device_upload_track instead.
-// This function currently ignores artwork_path and only uploads the media file.
-ZUNE_WIRELESS_API int zune_device_upload_with_artwork(zune_device_handle_t handle, const char* media_path, const char* artwork_path);
-
-// Upload music track with metadata (uses Library for proper MTP structure)
-// rating: -1 = unrated, 8 = liked, 3 = disliked (Zune format, set during upload)
-ZUNE_WIRELESS_API ZuneUploadResult zune_device_upload_track(
-    zune_device_handle_t handle,
-    const char* audio_file_path,
-    const char* artist_name,
-    const char* album_name,
-    int album_year,
-    const char* track_title,
-    const char* genre,
-    int track_number,
-    const uint8_t* artwork_data,
-    uint32_t artwork_size,
-    const char* artist_guid,
-    uint32_t duration_ms,
-    int rating
-);
-
-// Upload audiobook track with metadata
-// author_name maps to artist_name, audiobook_name maps to album_name
-ZUNE_WIRELESS_API ZuneUploadResult zune_device_upload_audiobook_track(
-    zune_device_handle_t handle,
-    const char* audio_file_path,
-    const char* author_name,
-    const char* audiobook_name,
-    int release_year,
-    const char* track_title,
-    int track_number,
-    const uint8_t* artwork_data,
-    uint32_t artwork_size,
-    uint32_t duration_ms
-);
 
 // Streaming/Partial Downloads
 ZUNE_WIRELESS_API int zune_device_get_partial_object(
@@ -288,13 +240,15 @@ ZUNE_WIRELESS_API uint32_t zune_device_get_audio_track_object_id(
 /// @param guid Playlist GUID as string (format: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx")
 /// @param track_ids Array of track MTP object IDs (atom_ids from zmdb)
 /// @param track_count Number of tracks in the array
+/// @param playlists_folder_id MTP object ID of the Playlists folder (from root discovery)
 /// @return New playlist MTP object ID, or 0 on failure
 ZUNE_WIRELESS_API uint32_t zune_device_create_playlist(
     zune_device_handle_t handle,
     const char* name,
     const char* guid,
     const uint32_t* track_ids,
-    size_t track_count
+    size_t track_count,
+    uint32_t playlists_folder_id
 );
 
 /// Update playlist tracks (replaces entire track list)
@@ -317,77 +271,6 @@ ZUNE_WIRELESS_API int zune_device_update_playlist_tracks(
 ZUNE_WIRELESS_API int zune_device_delete_playlist(
     zune_device_handle_t handle,
     uint32_t playlist_id
-);
-
-// Retrofit existing artist with MusicBrainz GUID
-// Updates an existing artist on the device to include a MusicBrainz GUID.
-// This operation:
-//   1. Creates a new artist object with the GUID
-//   2. Updates all albums and tracks to reference the new artist
-//   3. Deletes the old artist object
-//   4. Triggers device to auto-fetch metadata
-//
-// Parameters:
-//   handle - Device handle from zune_device_create()
-//   artist_name - Exact name of the artist to retrofit (must match existing artist)
-//   guid - MusicBrainz GUID in UUID format (e.g., "7fb57fba-a6ef-44c2-abab-2fa3bdee607e")
-// Returns:
-//   0 on success, negative error code on failure
-// Note:
-//   - If artist already has a GUID, this is a no-op (returns 0)
-//   - If artist doesn't exist on device, returns error
-//   - All album and track references are automatically updated
-ZUNE_WIRELESS_API int zune_device_retrofit_artist_guid(
-    zune_device_handle_t handle,
-    const char* artist_name,
-    const char* guid
-);
-
-// Artist GUID mapping structure for batch retrofit operations
-typedef struct {
-    const char* artist_name;  // Artist name (must match existing artist on device)
-    const char* guid;         // MusicBrainz GUID in UUID format
-} ZuneArtistGuidMapping;
-
-// Batch retrofit result structure
-typedef struct {
-    int retrofitted_count;       // Number of artists successfully retrofitted (modified)
-    int already_had_guid_count;  // Number of artists that already had GUIDs (no changes)
-    int not_found_count;         // Number of artists not found on device (will be created during upload)
-    int error_count;             // Number of errors encountered
-} ZuneBatchRetrofitResult;
-
-// Batch Artist GUID Retrofit
-//
-// Retrofits multiple artists with MusicBrainz GUIDs in a single optimized operation.
-// This is significantly faster than calling zune_device_retrofit_artist_guid() multiple
-// times because it parses the device library only once and syncs only once.
-//
-// Parameters:
-//   handle - Device handle from zune_device_create()
-//   mappings - Array of artist name/GUID pairs
-//   mapping_count - Number of mappings in the array
-//   result - Output structure with detailed statistics (caller allocated)
-//
-// Returns:
-//   0 on success (even if some artists fail - check result for details)
-//   negative error code on fatal failure
-//
-// Performance: For N artists, this is approximately N times faster than individual retrofits
-// because it performs only 1 library parse and 1 library sync instead of N of each.
-//
-// Example:
-//   ZuneArtistGuidMapping mappings[] = {
-//       {"Radiohead", "a74b1b7f-71a5-4011-9441-d0b5e4122711"},
-//       {"The Beatles", "b10bbbfc-cf9e-42e0-be17-e2c3e1d2600d"}
-//   };
-//   ZuneBatchRetrofitResult result;
-//   zune_device_retrofit_multiple_artist_guids(handle, mappings, 2, &result);
-ZUNE_WIRELESS_API int zune_device_retrofit_multiple_artist_guids(
-    zune_device_handle_t handle,
-    const ZuneArtistGuidMapping* mappings,
-    int mapping_count,
-    ZuneBatchRetrofitResult* result
 );
 
 // Track User State (Play Count, Skip Count, Rating)
@@ -508,11 +391,9 @@ ZUNE_WIRELESS_API void zune_artist_metadata_config_free(ZuneArtistMetadataConfig
 /// Path resolver callback - resolves MusicBrainz UUID to local file path
 ///
 /// MEMORY CONTRACT:
-/// - Returns: File path as C string (owned by C# caller), or NULL if not found
-/// - The returned string must remain valid until the callback returns
-/// - C++ will copy the string immediately during the callback
-/// - C# is responsible for managing the string's lifetime and freeing it
-/// - C++ will NOT call free() on the returned pointer
+/// - Returns: File path as malloc-allocated C string, or NULL if not found
+/// - C++ copies the string immediately and calls free() on the returned pointer
+/// - Caller must allocate with malloc/strdup (or CoTaskMemAlloc, which is malloc-compatible)
 ///
 /// @param artist_uuid MusicBrainz UUID from HTTP request
 /// @param endpoint_type Endpoint type (biography, images, overview, artwork, etc.)
@@ -751,15 +632,6 @@ typedef struct {
     int status;                 // 0 = success, negative = error code
 } ZuneMtpCreateResult;
 
-/// Well-known folder IDs on Zune device
-typedef struct {
-    uint32_t artists_folder;    // Artists metadata folder (0 if not supported)
-    uint32_t albums_folder;     // Albums metadata folder
-    uint32_t music_folder;      // Music content folder (parent for artist subfolders)
-    uint32_t playlists_folder;  // Playlists folder (may be 0 if not found)
-    uint32_t storage_id;        // Default storage ID
-    uint8_t artist_format_supported;  // 1 if device supports Artist format (0xB218), 0 otherwise
-} ZuneMtpFolderIds;
 
 // --- Core MTP Operations ---
 
@@ -907,16 +779,6 @@ ZUNE_WIRELESS_API uint32_t zune_mtp_get_default_storage(
     zune_device_handle_t handle
 );
 
-/// Get well-known folder IDs (Artists, Albums, Music, Playlists)
-/// Call this once per session to get folder ObjectIds for creating content.
-/// @param handle Device handle
-/// @param out_folders Output structure with folder IDs
-/// @return 0 on success, negative on error
-ZUNE_WIRELESS_API int zune_mtp_get_well_known_folders(
-    zune_device_handle_t handle,
-    ZuneMtpFolderIds* out_folders
-);
-
 /// Delete an MTP object
 /// @param handle Device handle
 /// @param object_id ObjectId to delete
@@ -967,9 +829,10 @@ ZUNE_WIRELESS_API int zune_mtp_operation_9802(
 
 /// Result of root discovery
 struct ZuneRootDiscovery {
-    uint32_t music_folder;     ///< Music root folder handle (0 if missing)
-    uint32_t albums_folder;    ///< Albums root folder handle (0 if missing)
-    uint32_t artists_folder;   ///< Artists root folder handle (0 if missing, Classic always 0)
+    uint32_t music_folder;     ///< Music root folder handle (created if missing)
+    uint32_t albums_folder;    ///< Albums root folder handle (created if missing)
+    uint32_t artists_folder;   ///< Artists root folder handle (HD: created if missing, Classic: always 0)
+    uint32_t playlists_folder; ///< Playlists folder handle (created if missing)
     uint32_t storage_id;       ///< Default storage ID
     int root_object_count;     ///< Number of root objects found
 };
@@ -1014,8 +877,10 @@ struct ZuneAlbumProps {
 
 // --- Pre-Upload ---
 
-/// Discover root folder structure
-ZUNE_WIRELESS_API ZuneRootDiscovery zune_upload_discover_root(zune_device_handle_t handle);
+/// Discover root folder structure and create missing essential folders.
+/// @param handle Device handle
+/// @param is_hd 1 for Zune HD (creates Artists folder if missing), 0 for Classic
+ZUNE_WIRELESS_API ZuneRootDiscovery zune_upload_discover_root(zune_device_handle_t handle, uint8_t is_hd);
 
 /// Root re-enumeration (depth=1, between every major operation)
 ZUNE_WIRELESS_API int zune_upload_root_re_enum(zune_device_handle_t handle);

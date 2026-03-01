@@ -1,7 +1,8 @@
 #include "zune_wireless/zune_wireless_api.h"
 #include "ZuneDevice.h"
 #include "ZuneDeviceIdentification.h"
-#include "ZuneUploadPrimitives.h"
+#include "ZuneMtpWriter.h"
+#include "ZuneMtpReader.h"
 #include "protocols/http/ZuneHTTPInterceptor.h"
 #include "ssdp_discovery.h"
 #include <vector>
@@ -161,6 +162,12 @@ ZUNE_WIRELESS_API int zune_device_erase_all_content(zune_device_handle_t handle)
     return -1;
 }
 
+ZUNE_WIRELESS_API void zune_device_clear_track_cache(zune_device_handle_t handle) {
+    if (handle) {
+        static_cast<ZuneDevice*>(handle)->ClearTrackObjectIdCache();
+    }
+}
+
 ZUNE_WIRELESS_API const char* zune_device_get_sync_partner_guid(zune_device_handle_t handle) {
     if (handle) {
         return static_cast<ZuneDevice*>(handle)->GetSyncPartnerGuidCached();
@@ -178,42 +185,9 @@ ZUNE_WIRELESS_API int zune_device_set_device_name(zune_device_handle_t handle, c
     return static_cast<ZuneDevice*>(handle)->SetDeviceName(std::string(name));
 }
 
-ZUNE_WIRELESS_API ZuneObjectInfo* zune_device_list_storage(zune_device_handle_t handle, uint32_t parent_handle, uint32_t* count) {
-    if (!handle) {
-        *count = 0;
-        return nullptr;
-    }
-    auto* device = static_cast<ZuneDevice*>(handle);
-    auto objects = device->ListStorage(parent_handle);
-    *count = objects.size();
-    auto* c_objects = new ZuneObjectInfo[objects.size()];
-    for (size_t i = 0; i < objects.size(); ++i) {
-        c_objects[i].handle = objects[i].handle;
-        c_objects[i].filename = strdup(objects[i].filename.c_str());
-        c_objects[i].size = objects[i].size;
-        c_objects[i].is_folder = objects[i].is_folder;
-    }
-    return c_objects;
-}
-
-ZUNE_WIRELESS_API void zune_device_free_object_info_array(ZuneObjectInfo* array, uint32_t count) {
-    if (!array) return;
-    for (uint32_t i = 0; i < count; ++i) {
-        free((void*)array[i].filename);
-    }
-    delete[] array;
-}
-
 ZUNE_WIRELESS_API int zune_device_download_file(zune_device_handle_t handle, uint32_t object_handle, const char* destination_path) {
     if (handle) {
         return static_cast<ZuneDevice*>(handle)->DownloadFile(object_handle, destination_path);
-    }
-    return -1;
-}
-
-ZUNE_WIRELESS_API int zune_device_upload_file(zune_device_handle_t handle, const char* source_path, const char* destination_folder) {
-    if (handle) {
-        return static_cast<ZuneDevice*>(handle)->UploadFile(source_path, destination_folder);
     }
     return -1;
 }
@@ -225,12 +199,7 @@ ZUNE_WIRELESS_API int zune_device_delete_file(zune_device_handle_t handle, uint3
     return -1;
 }
 
-ZUNE_WIRELESS_API int zune_device_upload_with_artwork(zune_device_handle_t handle, const char* media_path, const char* artwork_path) {
-    if (handle) {
-        return static_cast<ZuneDevice*>(handle)->UploadWithArtwork(media_path, artwork_path);
-    }
-    return -1;
-}
+
 
 ZUNE_WIRELESS_API ZuneMusicLibrary* zune_device_get_music_library(zune_device_handle_t handle) {
     if (!handle) {
@@ -241,167 +210,7 @@ ZUNE_WIRELESS_API ZuneMusicLibrary* zune_device_get_music_library(zune_device_ha
 }
 
 ZUNE_WIRELESS_API void zune_device_free_music_library(ZuneMusicLibrary* library) {
-    if (!library) return;
-
-    // Free tracks
-    for (uint32_t i = 0; i < library->track_count; ++i) {
-        free((void*)library->tracks[i].title);
-        free((void*)library->tracks[i].artist_name);
-        free((void*)library->tracks[i].artist_guid);
-        free((void*)library->tracks[i].album_name);
-        free((void*)library->tracks[i].album_artist_name);
-        free((void*)library->tracks[i].album_artist_guid);
-        free((void*)library->tracks[i].genre);
-        free((void*)library->tracks[i].filename);
-    }
-    delete[] library->tracks;
-
-    // Free albums
-    for (uint32_t i = 0; i < library->album_count; ++i) {
-        free((void*)library->albums[i].title);
-        free((void*)library->albums[i].artist_name);
-        free((void*)library->albums[i].artist_guid);
-        free((void*)library->albums[i].alb_reference);
-    }
-    delete[] library->albums;
-
-    // Free artists
-    for (uint32_t i = 0; i < library->artist_count; ++i) {
-        free((void*)library->artists[i].name);
-        free((void*)library->artists[i].filename);
-        free((void*)library->artists[i].guid);
-    }
-    delete[] library->artists;
-
-    // Free genres
-    for (uint32_t i = 0; i < library->genre_count; ++i) {
-        free((void*)library->genres[i].name);
-    }
-    delete[] library->genres;
-
-    // Free artworks
-    for (uint32_t i = 0; i < library->artwork_count; ++i) {
-        free((void*)library->artworks[i].alb_reference);
-    }
-    delete[] library->artworks;
-
-    // Free playlists
-    for (uint32_t i = 0; i < library->playlist_count; ++i) {
-        free((void*)library->playlists[i].name);
-        free((void*)library->playlists[i].filename);
-        free((void*)library->playlists[i].guid);
-        free((void*)library->playlists[i].folder);
-        delete[] library->playlists[i].track_atom_ids;
-    }
-    delete[] library->playlists;
-
-    delete library;
-}
-
-ZUNE_WIRELESS_API ZunePlaylistInfo* zune_device_get_playlists(zune_device_handle_t handle, uint32_t* count) {
-    if (!handle) {
-        *count = 0;
-        return nullptr;
-    }
-    auto* device = static_cast<ZuneDevice*>(handle);
-    auto playlists = device->GetPlaylists();
-    *count = playlists.size();
-    auto* c_playlists = new ZunePlaylistInfo[playlists.size()];
-    for (size_t i = 0; i < playlists.size(); ++i) {
-        c_playlists[i] = playlists[i];
-    }
-    return c_playlists;
-}
-
-ZUNE_WIRELESS_API void zune_device_free_playlists(ZunePlaylistInfo* playlists, uint32_t count) {
-    if (!playlists) return;
-    for (uint32_t i = 0; i < count; ++i) {
-        free((void*)playlists[i].Name);
-        for (uint32_t j = 0; j < playlists[i].TrackCount; ++j) {
-            free((void*)playlists[i].TrackPaths[j]);
-        }
-        delete[] playlists[i].TrackPaths;
-    }
-    delete[] playlists;
-}
-
-ZUNE_WIRELESS_API ZuneUploadResult zune_device_upload_track(
-    zune_device_handle_t handle,
-    const char* audio_file_path,
-    const char* artist_name,
-    const char* album_name,
-    int album_year,
-    const char* track_title,
-    const char* genre,
-    int track_number,
-    const uint8_t* artwork_data,
-    uint32_t artwork_size,
-    const char* artist_guid,
-    uint32_t duration_ms,
-    int rating
-) {
-    ZuneUploadResult result = {0, 0, 0, -1};  // Initialize with failure status
-
-    if (handle) {
-        result.status = static_cast<ZuneDevice*>(handle)->UploadTrackWithMetadata(
-            MediaType::Music,
-            audio_file_path ? audio_file_path : "",
-            artist_name ? artist_name : "",
-            album_name ? album_name : "",
-            album_year,
-            track_title ? track_title : "",
-            genre ? genre : "",
-            track_number,
-            artwork_data,
-            artwork_size,
-            artist_guid ? artist_guid : "",
-            duration_ms,
-            rating,
-            &result.track_object_id,
-            &result.album_object_id,
-            &result.artist_object_id
-        );
-    }
-
-    return result;
-}
-
-ZUNE_WIRELESS_API ZuneUploadResult zune_device_upload_audiobook_track(
-    zune_device_handle_t handle,
-    const char* audio_file_path,
-    const char* author_name,
-    const char* audiobook_name,
-    int release_year,
-    const char* track_title,
-    int track_number,
-    const uint8_t* artwork_data,
-    uint32_t artwork_size,
-    uint32_t duration_ms
-) {
-    ZuneUploadResult result = {0, 0, 0, -1};  // Initialize with failure status
-
-    if (handle) {
-        result.status = static_cast<ZuneDevice*>(handle)->UploadTrackWithMetadata(
-            MediaType::Audiobook,
-            audio_file_path ? audio_file_path : "",
-            author_name ? author_name : "",
-            audiobook_name ? audiobook_name : "",
-            release_year,
-            track_title ? track_title : "",
-            "",  // genre (not used for audiobooks)
-            track_number,
-            artwork_data,
-            artwork_size,
-            "",  // artist_guid (not used for audiobooks)
-            duration_ms,
-            -1,  // rating (not used for audiobooks)
-            &result.track_object_id,
-            &result.album_object_id,
-            &result.artist_object_id
-        );
-    }
-
-    return result;
+    zune::MtpReader::FreeLibrary(library);
 }
 
 ZUNE_WIRELESS_API int zune_device_get_partial_object(
@@ -474,9 +283,10 @@ ZUNE_WIRELESS_API uint32_t zune_device_create_playlist(
     const char* name,
     const char* guid,
     const uint32_t* track_ids,
-    size_t track_count
+    size_t track_count,
+    uint32_t playlists_folder_id
 ) {
-    if (!handle || !name || !guid) {
+    if (!handle || !name || !guid || playlists_folder_id == 0) {
         return 0;
     }
 
@@ -489,7 +299,8 @@ ZUNE_WIRELESS_API uint32_t zune_device_create_playlist(
         return static_cast<ZuneDevice*>(handle)->CreatePlaylist(
             std::string(name),
             std::string(guid),
-            track_vec
+            track_vec,
+            playlists_folder_id
         );
     } catch (const std::exception& e) {
         return 0;
@@ -556,90 +367,6 @@ ZUNE_WIRELESS_API int zune_device_set_track_user_state(
     }
 }
 
-ZUNE_WIRELESS_API int zune_device_retrofit_artist_guid(
-    zune_device_handle_t handle,
-    const char* artist_name,
-    const char* guid
-) {
-    if (!handle) {
-        return -1;
-    }
-
-    if (!artist_name || !guid) {
-        return -1;
-    }
-
-    try {
-        return static_cast<ZuneDevice*>(handle)->RetrofitArtistGuid(artist_name, guid);
-    } catch (const std::exception& e) {
-        // Log error if log callback is available
-        // For now, return error code
-        return -1;
-    }
-}
-
-ZUNE_WIRELESS_API int zune_device_retrofit_multiple_artist_guids(
-    zune_device_handle_t handle,
-    const ZuneArtistGuidMapping* mappings,
-    int mapping_count,
-    ZuneBatchRetrofitResult* result
-) {
-    // Initialize result
-    if (result) {
-        result->retrofitted_count = 0;
-        result->already_had_guid_count = 0;
-        result->not_found_count = 0;
-        result->error_count = 0;
-    }
-
-    if (!handle || !mappings || !result) {
-        if (result) {
-            result->error_count = mapping_count;
-        }
-        return -1;
-    }
-
-    if (mapping_count <= 0) {
-        return 0;  // No mappings, success
-    }
-
-    try {
-        // Convert C array to C++ vector
-        std::vector<ZuneDevice::ArtistGuidMapping> cpp_mappings;
-        cpp_mappings.reserve(mapping_count);
-
-        for (int i = 0; i < mapping_count; i++) {
-            if (mappings[i].artist_name && mappings[i].guid) {
-                cpp_mappings.push_back({
-                    std::string(mappings[i].artist_name),
-                    std::string(mappings[i].guid)
-                });
-            } else {
-                // Invalid mapping - count as error
-                result->error_count++;
-            }
-        }
-
-        // Call C++ batch retrofit method
-        auto cpp_result = static_cast<ZuneDevice*>(handle)->RetrofitMultipleArtistGuids(cpp_mappings);
-
-        // Copy results
-        result->retrofitted_count = cpp_result.retrofitted_count;
-        result->already_had_guid_count = cpp_result.already_had_guid_count;
-        result->not_found_count = cpp_result.not_found_count;
-        result->error_count += cpp_result.error_count;  // Add to existing errors from invalid mappings
-
-        return 0;
-
-    } catch (const std::exception& e) {
-        // Fatal error - mark all as errors
-        if (result) {
-            result->error_count = mapping_count;
-        }
-        return -1;
-    }
-}
-
 ZUNE_WIRELESS_API void zune_ssdp_start_discovery(device_discovered_callback_t callback) {
     if (!g_discovery) {
         g_discovery = std::make_unique<ssdp::SSDPDiscovery>();
@@ -699,7 +426,7 @@ ZUNE_WIRELESS_API bool zune_device_find_on_usb(const char** uuid, const char** d
 // Artist Metadata HTTP Interception API
 // ============================================================================
 
-int zune_device_start_artist_metadata_interceptor(
+ZUNE_WIRELESS_API int zune_device_start_artist_metadata_interceptor(
     zune_device_handle_t handle,
     const ZuneArtistMetadataConfig* config
 ) {
@@ -781,12 +508,11 @@ ZUNE_WIRELESS_API int zune_device_get_artist_metadata_config(
 
         config->mode = static_cast<ZuneArtistMetadataMode>(cpp_config.mode);
 
-        // Note: These are pointers to internal strings, valid until device reconfigured
-        config->static_data_directory = cpp_config.static_config.data_directory.c_str();
-        config->proxy_catalog_server = cpp_config.proxy_config.catalog_server.c_str();
-        config->proxy_image_server = cpp_config.proxy_config.image_server.c_str();
-        config->proxy_art_server = cpp_config.proxy_config.art_server.c_str();
-        config->proxy_mix_server = cpp_config.proxy_config.mix_server.c_str();
+        config->static_data_directory = strdup(cpp_config.static_config.data_directory.c_str());
+        config->proxy_catalog_server = strdup(cpp_config.proxy_config.catalog_server.c_str());
+        config->proxy_image_server = strdup(cpp_config.proxy_config.image_server.c_str());
+        config->proxy_art_server = strdup(cpp_config.proxy_config.art_server.c_str());
+        config->proxy_mix_server = strdup(cpp_config.proxy_config.mix_server.c_str());
         config->proxy_timeout_ms = cpp_config.proxy_config.timeout_ms;
 
         return 0;
@@ -1442,30 +1168,6 @@ ZUNE_WIRELESS_API uint32_t zune_mtp_get_default_storage(
     }
 }
 
-ZUNE_WIRELESS_API int zune_mtp_get_well_known_folders(
-    zune_device_handle_t handle,
-    ZuneMtpFolderIds* out_folders
-) {
-    if (!handle || !out_folders) return -1;
-
-    try {
-        auto* device = static_cast<ZuneDevice*>(handle);
-        auto folders = device->GetWellKnownFolders();
-
-        out_folders->artists_folder = folders.artists_folder;
-        out_folders->albums_folder = folders.albums_folder;
-        out_folders->music_folder = folders.music_folder;
-        out_folders->playlists_folder = folders.playlists_folder;
-        out_folders->storage_id = folders.storage_id;
-        out_folders->artist_format_supported = folders.artist_format_supported ? 1 : 0;
-
-        return 0;
-
-    } catch (const std::exception& e) {
-        return -1;
-    }
-}
-
 ZUNE_WIRELESS_API int zune_mtp_delete_object(
     zune_device_handle_t handle,
     uint32_t object_id
@@ -1563,29 +1265,28 @@ ZUNE_WIRELESS_API int zune_mtp_operation_9802(
     if (!handle) return -1; \
     auto* _device = static_cast<ZuneDevice*>(handle); \
     auto _session = _device->GetMtpSession(); \
-    if (!_session) return -2; \
-    bool _isHD = (_device->GetDeviceFamily() == zune::DeviceFamily::Pavo);
+    if (!_session) return -2;
 
 #define UPLOAD_SESSION_GUARD_VAL(handle, fail_val) \
     if (!handle) return fail_val; \
     auto* _device = static_cast<ZuneDevice*>(handle); \
     auto _session = _device->GetMtpSession(); \
-    if (!_session) return fail_val; \
-    bool _isHD = (_device->GetDeviceFamily() == zune::DeviceFamily::Pavo);
+    if (!_session) return fail_val;
 
 // --- Pre-Upload ---
 
-ZUNE_WIRELESS_API ZuneRootDiscovery zune_upload_discover_root(zune_device_handle_t handle) {
+ZUNE_WIRELESS_API ZuneRootDiscovery zune_upload_discover_root(zune_device_handle_t handle, uint8_t is_hd) {
     ZuneRootDiscovery result = {};
     if (!handle) return result;
     auto* device = static_cast<ZuneDevice*>(handle);
     auto session = device->GetMtpSession();
     if (!session) return result;
     try {
-        auto r = zune::UploadPrimitives::DiscoverRoot(session, device->GetDefaultStorageId());
+        auto r = zune::MtpWriter::DiscoverRoot(session, device->GetDefaultStorageId(), is_hd != 0);
         result.music_folder = r.music_folder;
         result.albums_folder = r.albums_folder;
         result.artists_folder = r.artists_folder;
+        result.playlists_folder = r.playlists_folder;
         result.storage_id = r.storage_id;
         result.root_object_count = r.root_object_count;
     } catch (...) {}
@@ -1594,7 +1295,7 @@ ZUNE_WIRELESS_API ZuneRootDiscovery zune_upload_discover_root(zune_device_handle
 
 ZUNE_WIRELESS_API int zune_upload_root_re_enum(zune_device_handle_t handle) {
     UPLOAD_SESSION_GUARD(handle);
-    try { zune::UploadPrimitives::RootReEnum(_session); return 0; }
+    try { zune::MtpWriter::RootReEnum(_session); return 0; }
     catch (...) { return -1; }
 }
 
@@ -1609,7 +1310,7 @@ ZUNE_WIRELESS_API ZuneFolderDiscovery zune_upload_discover_folder(
     auto session = device->GetMtpSession();
     if (!session) return result;
     try {
-        auto children = zune::UploadPrimitives::DiscoverFolderChildren(
+        auto children = zune::MtpWriter::DiscoverFolderChildren(
             session, device->GetDefaultStorageId(), folder_id);
         result.count = std::min(static_cast<int>(children.size()), 64);
         for (int i = 0; i < result.count; ++i) {
@@ -1626,7 +1327,7 @@ ZUNE_WIRELESS_API uint32_t zune_upload_create_folder(
 {
     UPLOAD_SESSION_GUARD_VAL(handle, 0);
     try {
-        return zune::UploadPrimitives::CreateFolder(
+        return zune::MtpWriter::CreateFolder(
             _session, _device->GetDefaultStorageId(), parent_id, name ? name : "");
     } catch (...) { return 0; }
 }
@@ -1636,7 +1337,7 @@ ZUNE_WIRELESS_API int zune_upload_folder_readback(
 {
     UPLOAD_SESSION_GUARD(handle);
     try {
-        zune::UploadPrimitives::FolderReadback(
+        zune::MtpWriter::FolderReadback(
             _session, folder_id, _device->GetDefaultStorageId());
         return 0;
     } catch (...) { return -1; }
@@ -1646,9 +1347,10 @@ ZUNE_WIRELESS_API int zune_upload_first_folder_readback(
     zune_device_handle_t handle, uint32_t folder_id)
 {
     UPLOAD_SESSION_GUARD(handle);
+    bool isHD = (_device->GetDeviceFamily() == zune::DeviceFamily::Pavo);
     try {
-        zune::UploadPrimitives::FirstFolderReadback(
-            _session, folder_id, _device->GetDefaultStorageId(), _isHD);
+        zune::MtpWriter::FirstFolderReadback(
+            _session, folder_id, _device->GetDefaultStorageId(), isHD);
         return 0;
     } catch (...) { return -1; }
 }
@@ -1661,7 +1363,7 @@ ZUNE_WIRELESS_API uint32_t zune_upload_create_artist_metadata(
 {
     UPLOAD_SESSION_GUARD_VAL(handle, 0);
     try {
-        return zune::UploadPrimitives::CreateArtistMetadata(
+        return zune::MtpWriter::CreateArtistMetadata(
             _session, _device->GetDefaultStorageId(), artists_folder,
             name ? name : "", guid_bytes, guid_len);
     } catch (...) { return 0; }
@@ -1690,7 +1392,7 @@ ZUNE_WIRELESS_API uint32_t zune_upload_create_track(
         tp.disc_number = props->disc_number;
         tp.artist_meta_id = props->artist_meta_id;
         tp.is_hd = props->is_hd;
-        return zune::UploadPrimitives::CreateTrack(
+        return zune::MtpWriter::CreateTrack(
             _session, _device->GetDefaultStorageId(), album_folder,
             tp, format_code, file_size);
     } catch (...) { return 0; }
@@ -1702,7 +1404,7 @@ ZUNE_WIRELESS_API int zune_upload_send_audio(
     UPLOAD_SESSION_GUARD(handle);
     if (!file_path) return -1;
     try {
-        zune::UploadPrimitives::UploadAudioData(_session, file_path);
+        zune::MtpWriter::UploadAudioData(_session, file_path);
         return 0;
     } catch (...) { return -1; }
 }
@@ -1711,7 +1413,7 @@ ZUNE_WIRELESS_API int zune_upload_verify_track(
     zune_device_handle_t handle, uint32_t track_id)
 {
     UPLOAD_SESSION_GUARD(handle);
-    try { zune::UploadPrimitives::VerifyTrack(_session, track_id); return 0; }
+    try { zune::MtpWriter::VerifyTrack(_session, track_id); return 0; }
     catch (...) { return -1; }
 }
 
@@ -1730,7 +1432,7 @@ ZUNE_WIRELESS_API uint32_t zune_upload_create_album(
         ap.date_authored = props->date_authored ? props->date_authored : "";
         ap.artist_meta_id = props->artist_meta_id;
         ap.is_hd = props->is_hd;
-        return zune::UploadPrimitives::CreateAlbumMetadata(
+        return zune::MtpWriter::CreateAlbumMetadata(
             _session, _device->GetDefaultStorageId(), albums_folder, ap);
     } catch (...) { return 0; }
 }
@@ -1742,7 +1444,7 @@ ZUNE_WIRELESS_API int zune_upload_set_artwork(
     UPLOAD_SESSION_GUARD(handle);
     if (!data || size == 0) return 0;
     try {
-        zune::UploadPrimitives::SetAlbumArtwork(_session, album_id, data, size);
+        zune::MtpWriter::SetAlbumArtwork(_session, album_id, data, size);
         return 0;
     } catch (...) { return -1; }
 }
@@ -1754,7 +1456,7 @@ ZUNE_WIRELESS_API int zune_upload_set_album_refs(
     UPLOAD_SESSION_GUARD(handle);
     if (!track_ids || count == 0) return 0;
     try {
-        zune::UploadPrimitives::SetAlbumReferences(_session, album_id, track_ids, count);
+        zune::MtpWriter::SetAlbumReferences(_session, album_id, track_ids, count);
         return 0;
     } catch (...) { return -1; }
 }
@@ -1764,7 +1466,7 @@ ZUNE_WIRELESS_API int zune_upload_verify_album(
 {
     UPLOAD_SESSION_GUARD(handle);
     try {
-        zune::UploadPrimitives::VerifyAlbum(_session, album_id, include_parent_desc);
+        zune::MtpWriter::VerifyAlbum(_session, album_id, include_parent_desc);
         return 0;
     } catch (...) { return -1; }
 }
@@ -1789,7 +1491,7 @@ ZUNE_WIRELESS_API int zune_upload_register_track_ctx(
     UPLOAD_SESSION_GUARD(handle);
     if (!track_name) return -1;
     try {
-        zune::UploadPrimitives::RegisterTrackContext(_session, track_name);
+        zune::MtpWriter::RegisterTrackContext(_session, track_name);
         return 0;
     } catch (...) { return -1; }
 }
@@ -1798,7 +1500,7 @@ ZUNE_WIRELESS_API int zune_upload_register_track_ctx(
 
 ZUNE_WIRELESS_API int zune_upload_query_folder_descs(zune_device_handle_t handle) {
     UPLOAD_SESSION_GUARD(handle);
-    try { zune::UploadPrimitives::QueryFolderDescriptors(_session); return 0; }
+    try { zune::MtpWriter::QueryFolderDescriptors(_session); return 0; }
     catch (...) { return -1; }
 }
 
@@ -1806,13 +1508,15 @@ ZUNE_WIRELESS_API int zune_upload_query_batch_descs(
     zune_device_handle_t handle, uint16_t prop_code)
 {
     UPLOAD_SESSION_GUARD(handle);
-    try { zune::UploadPrimitives::QueryBatchDescriptors(_session, prop_code, _isHD); return 0; }
+    bool isHD = (_device->GetDeviceFamily() == zune::DeviceFamily::Pavo);
+    try { zune::MtpWriter::QueryBatchDescriptors(_session, prop_code, isHD); return 0; }
     catch (...) { return -1; }
 }
 
 ZUNE_WIRELESS_API int zune_upload_query_object_format_descs(zune_device_handle_t handle) {
     UPLOAD_SESSION_GUARD(handle);
-    try { zune::UploadPrimitives::QueryBatchDescriptors(_session, 0xDC02, _isHD); return 0; }
+    bool isHD = (_device->GetDeviceFamily() == zune::DeviceFamily::Pavo);
+    try { zune::MtpWriter::QueryBatchDescriptors(_session, 0xDC02, isHD); return 0; }
     catch (...) { return -1; }
 }
 
@@ -1820,25 +1524,27 @@ ZUNE_WIRELESS_API int zune_upload_query_track_descs(
     zune_device_handle_t handle, uint16_t format_code)
 {
     UPLOAD_SESSION_GUARD(handle);
-    try { zune::UploadPrimitives::QueryTrackDescriptors(_session, format_code, _isHD); return 0; }
+    bool isHD = (_device->GetDeviceFamily() == zune::DeviceFamily::Pavo);
+    try { zune::MtpWriter::QueryTrackDescriptors(_session, format_code, isHD); return 0; }
     catch (...) { return -1; }
 }
 
 ZUNE_WIRELESS_API int zune_upload_query_album_descs(zune_device_handle_t handle) {
     UPLOAD_SESSION_GUARD(handle);
-    try { zune::UploadPrimitives::QueryAlbumDescriptors(_session, _isHD); return 0; }
+    bool isHD = (_device->GetDeviceFamily() == zune::DeviceFamily::Pavo);
+    try { zune::MtpWriter::QueryAlbumDescriptors(_session, isHD); return 0; }
     catch (...) { return -1; }
 }
 
 ZUNE_WIRELESS_API int zune_upload_query_artist_descs(zune_device_handle_t handle) {
     UPLOAD_SESSION_GUARD(handle);
-    try { zune::UploadPrimitives::QueryArtistDescriptors(_session); return 0; }
+    try { zune::MtpWriter::QueryArtistDescriptors(_session); return 0; }
     catch (...) { return -1; }
 }
 
 ZUNE_WIRELESS_API int zune_upload_query_artwork_descs(zune_device_handle_t handle) {
     UPLOAD_SESSION_GUARD(handle);
-    try { zune::UploadPrimitives::QueryArtworkDescriptors(_session); return 0; }
+    try { zune::MtpWriter::QueryArtworkDescriptors(_session); return 0; }
     catch (...) { return -1; }
 }
 

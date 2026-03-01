@@ -1,14 +1,14 @@
 #pragma once
 
 /**
- * ZuneUploadPrimitives — Pcap-verified MTP operations for Zune uploads.
+ * ZuneMtpWriter — Stateless MTP write operations for Zune devices.
  *
  * Each method corresponds to an exact operation pattern observed in Zune Desktop
  * USB captures. See redocs/multi-album-upload-analysis.md for the complete
  * verified sequence.
  *
- * This class is STATELESS — it executes operations on the MTP session without
- * caching. The caller (C# DeviceSyncSession) owns sequencing and state.
+ * Follows the same pattern as ZuneMtpReader: all-static, SessionPtr as first
+ * parameter, no cached state. The caller (C# DeviceSyncSession) owns sequencing.
  */
 
 #include <mtp/ptp/Session.h>
@@ -29,6 +29,7 @@ struct RootDiscoveryResult {
     uint32_t music_folder = 0;
     uint32_t albums_folder = 0;
     uint32_t artists_folder = 0;
+    uint32_t playlists_folder = 0;
     uint32_t storage_id = 0;
     int root_object_count = 0;
 };
@@ -126,13 +127,13 @@ namespace MtpType {
 
 // ── Upload Primitives Class ──────────────────────────────────────────────
 
-class UploadPrimitives {
+class MtpWriter {
 public:
     using SessionPtr = std::shared_ptr<mtp::Session>;
 
     // ── Pre-Upload ───────────────────────────────────────────────
     static void QueryStorageInfo(const SessionPtr& session, uint32_t storageId);
-    static RootDiscoveryResult DiscoverRoot(const SessionPtr& session, uint32_t storageId);
+    static RootDiscoveryResult DiscoverRoot(const SessionPtr& session, uint32_t storageId, bool isHD);
     static void RootReEnum(const SessionPtr& session);
 
     // ── Folder Discovery & Creation ──────────────────────────────
@@ -177,6 +178,25 @@ public:
     // ── Finalization ─────────────────────────────────────────────
     static void RegisterTrackContext(const SessionPtr& session, const std::string& trackName);
 
+    // ── Playlist Operations ──────────────────────────────────────
+    // Create a playlist (.pla object) on the device.
+    // Returns new playlist MTP object ID, or 0 on failure.
+    static uint32_t CreatePlaylist(
+        const SessionPtr& session, uint32_t storageId, uint32_t playlistsFolderId,
+        const std::string& name, const std::string& guid,
+        const uint32_t* trackIds, size_t trackCount);
+
+    // Replace all track references on an existing playlist.
+    static bool UpdatePlaylistTracks(
+        const SessionPtr& session, uint32_t playlistMtpId,
+        const uint32_t* trackIds, size_t trackCount);
+
+    // Delete a playlist from the device.
+    static bool DeletePlaylist(const SessionPtr& session, uint32_t playlistMtpId);
+
+    // ── Object Deletion ─────────────────────────────────────────
+    static int DeleteObject(const SessionPtr& session, uint32_t objectHandle);
+
     // ── Property Descriptor Queries ──────────────────────────────
     static void QueryFolderDescriptors(const SessionPtr& session);
     static void QueryBatchDescriptors(
@@ -198,6 +218,13 @@ private:
     // Batch format helpers
     static const uint16_t* GetBatchFormats(bool isHD);
     static size_t GetBatchFormatCount(bool isHD);
+
+    // Parse MTP ObjectPropertyList response into (handle, name) pairs
+    static std::vector<std::pair<uint32_t, std::string>> ParsePropertyListNames(
+        const mtp::ByteArray& data);
+
+    // GUID conversion (mixed-endian Windows format)
+    static mtp::ByteArray GuidStringToBytes(const std::string& guid_str);
 };
 
 } // namespace zune

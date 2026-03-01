@@ -8,29 +8,15 @@
 #include <unordered_map>
 
 #include <mtp/ptp/Device.h>
-#include <mtp/metadata/Library.h>
 #include <usb/Context.h>
 #include <cli/Session.h>
 #include "zune_wireless/zune_wireless_api.h"
 #include "ZuneTypes.h"
 #include "ZuneDeviceIdentification.h"
 
-
-// Forward declare Library for optional usage
-namespace mtp {
-    class Library;
-    DECLARE_PTR(Library);
-}
-
-// Forward declarations
-namespace zmdb {
-    struct ZMDBAlbum;
-}
-
 class ZuneHTTPInterceptor;
 struct InterceptorConfig;
 class NetworkManager;
-class LibraryManager;
 
 
 
@@ -123,18 +109,10 @@ public:
     // --- Discovery ---
     std::vector<std::string> ScanWiFiNetworks();
 
-    // --- File System Operations ---
-    std::vector<ZuneObjectInfoInternal> ListStorage(uint32_t parent_handle = 0);
+    // --- Library & File Operations ---
     ZuneMusicLibrary* GetMusicLibrary();  // Fast: Returns flat data (tracks, albums, artworks) using zmdb
-    ZuneMusicLibrary* GetMusicLibrarySlow();  // Slow: For testing only (uses AFTL enumeration)
-    std::vector<ZunePlaylistInfo> GetPlaylists();
     int DownloadFile(uint32_t object_handle, const std::string& destination_path);
-    int UploadFile(const std::string& source_path, const std::string& destination_folder);
     int DeleteFile(uint32_t object_handle);
-
-    // DEPRECATED: artwork_path parameter is not used. Use UploadTrackWithMetadata instead.
-    // This function currently ignores artwork_path and only uploads the media file.
-    int UploadWithArtwork(const std::string& media_path, const std::string& artwork_path);
 
     // --- Playlist Management ---
     // Create a playlist on the device
@@ -142,7 +120,8 @@ public:
     uint32_t CreatePlaylist(
         const std::string& name,
         const std::string& guid,  // GUID as string "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-        const std::vector<uint32_t>& track_mtp_ids
+        const std::vector<uint32_t>& track_mtp_ids,
+        uint32_t playlists_folder_id
     );
 
     // Update playlist track list (replaces all tracks)
@@ -153,59 +132,6 @@ public:
 
     // Delete a playlist from the device
     bool DeletePlaylist(uint32_t playlist_mtp_id);
-
-    // --- Upload with Metadata (uses Library for proper MTP structure) ---
-    // For Music: artist_name = artist, album_name = album
-    // For Audiobook: artist_name = author, album_name = audiobook title
-    // rating: -1 = unrated, 8 = liked, 3 = disliked (Zune format, set during upload)
-    int UploadTrackWithMetadata(
-        MediaType media_type,
-        const std::string& audio_file_path,
-        const std::string& artist_name,
-        const std::string& album_name,
-        int album_year,
-        const std::string& track_title,
-        const std::string& genre,
-        int track_number,
-        const uint8_t* artwork_data,
-        size_t artwork_size,
-        const std::string& artist_guid = "",
-        uint32_t duration_ms = 0,
-        int rating = -1,
-        uint32_t* out_track_id = nullptr,
-        uint32_t* out_album_id = nullptr,
-        uint32_t* out_artist_id = nullptr
-    );
-
-    // --- Artist GUID Retrofit (for existing artists without GUID) ---
-    // Deletes existing artist and recreates with GUID, updating all album/track references
-    // Device will automatically trigger metadata fetch after artist is recreated
-    // Returns 0 on success, -1 on failure
-    int RetrofitArtistGuid(
-        const std::string& artist_name,
-        const std::string& guid
-    );
-
-    // Batch retrofit result structure
-    struct BatchRetrofitResult {
-        int retrofitted_count;       // Artists actually modified (recreated with GUID)
-        int already_had_guid_count;  // Artists that already had GUIDs (no changes)
-        int not_found_count;         // Artists that don't exist on device yet
-        int error_count;             // Actual errors during retrofit
-    };
-
-    // Artist GUID mapping structure for batch operations
-    struct ArtistGuidMapping {
-        std::string artist_name;
-        std::string guid;
-    };
-
-    // Batch retrofit multiple artists efficiently (single library parse, single sync)
-    // Processes multiple artists in one call - optimal for batch uploads
-    // Returns detailed statistics about the retrofit operation
-    BatchRetrofitResult RetrofitMultipleArtistGuids(
-        const std::vector<ArtistGuidMapping>& mappings
-    );
 
     // --- Streaming/Partial Downloads ---
     mtp::ByteArray GetPartialObject(uint32_t object_id, uint64_t offset, uint32_t size);
@@ -295,17 +221,6 @@ public:
     // Get default storage ID (first storage or cached value)
     uint32_t GetDefaultStorageId();
 
-    // Get well-known folder IDs for device content organization
-    struct FolderIds {
-        uint32_t artists_folder = 0;
-        uint32_t albums_folder = 0;
-        uint32_t music_folder = 0;
-        uint32_t playlists_folder = 0;
-        uint32_t storage_id = 0;
-        bool artist_format_supported = false;
-    };
-    FolderIds GetWellKnownFolders();
-
 private:
     // --- Internal Helper Methods ---
     bool LoadMacGuid();
@@ -352,8 +267,7 @@ private:
     // Network Manager
     std::unique_ptr<NetworkManager> network_manager_;
 
-    // Library Manager
-    std::unique_ptr<LibraryManager> library_manager_;
-
-
+    // Track ObjectId cache: key = "album_id:track_title", value = track_object_id
+    std::unordered_map<std::string, uint32_t> track_objectid_cache_;
+    mutable std::mutex track_cache_mutex_;
 };

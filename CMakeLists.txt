@@ -149,8 +149,9 @@ add_library(zune_wireless SHARED
     lib/src/ZuneDevice.cpp
     lib/src/ZuneDeviceIdentification.cpp
     lib/src/NetworkManager.cpp
-    lib/src/LibraryManager.cpp
-    lib/src/ZuneUploadPrimitives.cpp
+
+    lib/src/ZuneMtpReader.cpp
+    lib/src/ZuneMtpWriter.cpp
 
     lib/src/ZMDBLibraryExtractor.cpp
     lib/src/zmdb/ZMDBParserBase.cpp
@@ -258,8 +259,9 @@ add_executable(test_library_json
     lib/src/ZuneDevice.cpp
     lib/src/ZuneDeviceIdentification.cpp
     lib/src/NetworkManager.cpp
-    lib/src/LibraryManager.cpp
-    lib/src/ZuneUploadPrimitives.cpp
+
+    lib/src/ZuneMtpReader.cpp
+    lib/src/ZuneMtpWriter.cpp
 
     lib/src/ZMDBLibraryExtractor.cpp
     lib/src/zmdb/ZMDBParserBase.cpp
@@ -316,8 +318,9 @@ add_executable(test_zmdb_fast
     lib/src/ZuneDevice.cpp
     lib/src/ZuneDeviceIdentification.cpp
     lib/src/NetworkManager.cpp
-    lib/src/LibraryManager.cpp
-    lib/src/ZuneUploadPrimitives.cpp
+
+    lib/src/ZuneMtpReader.cpp
+    lib/src/ZuneMtpWriter.cpp
 
     lib/src/ZMDBLibraryExtractor.cpp
     lib/src/zmdb/ZMDBParserBase.cpp
@@ -374,8 +377,9 @@ add_executable(test_zmdb_extractor
     lib/src/ZuneDevice.cpp
     lib/src/ZuneDeviceIdentification.cpp
     lib/src/NetworkManager.cpp
-    lib/src/LibraryManager.cpp
-    lib/src/ZuneUploadPrimitives.cpp
+
+    lib/src/ZuneMtpReader.cpp
+    lib/src/ZuneMtpWriter.cpp
 
     lib/src/ZMDBLibraryExtractor.cpp
     lib/src/zmdb/ZMDBParserBase.cpp
@@ -432,8 +436,9 @@ add_executable(test_http_interceptor
     lib/src/ZuneDevice.cpp
     lib/src/ZuneDeviceIdentification.cpp
     lib/src/NetworkManager.cpp
-    lib/src/LibraryManager.cpp
-    lib/src/ZuneUploadPrimitives.cpp
+
+    lib/src/ZuneMtpReader.cpp
+    lib/src/ZuneMtpWriter.cpp
 
     lib/src/ZMDBLibraryExtractor.cpp
     lib/src/zmdb/ZMDBParserBase.cpp
@@ -600,8 +605,9 @@ add_executable(test_http_monitor_boot
     tests/test_http_monitor_boot.cpp
     lib/src/ZuneDevice.cpp
     lib/src/NetworkManager.cpp
-    lib/src/LibraryManager.cpp
-    lib/src/ZuneUploadPrimitives.cpp
+
+    lib/src/ZuneMtpReader.cpp
+    lib/src/ZuneMtpWriter.cpp
 
     lib/src/ZMDBLibraryExtractor.cpp
     lib/src/zmdb/ZMDBParserBase.cpp
@@ -658,8 +664,9 @@ add_executable(test_rating
     tests/test_rating.cpp
     lib/src/ZuneDevice.cpp
     lib/src/NetworkManager.cpp
-    lib/src/LibraryManager.cpp
-    lib/src/ZuneUploadPrimitives.cpp
+
+    lib/src/ZuneMtpReader.cpp
+    lib/src/ZuneMtpWriter.cpp
 
     lib/src/ZMDBLibraryExtractor.cpp
     lib/src/zmdb/ZMDBParserBase.cpp
@@ -813,8 +820,9 @@ add_executable(artist_images_tool_cli
     lib/src/ZuneDevice.cpp
     lib/src/ZuneDeviceIdentification.cpp
     lib/src/NetworkManager.cpp
-    lib/src/LibraryManager.cpp
-    lib/src/ZuneUploadPrimitives.cpp
+
+    lib/src/ZuneMtpReader.cpp
+    lib/src/ZuneMtpWriter.cpp
 
     lib/src/ZMDBLibraryExtractor.cpp
     lib/src/zmdb/ZMDBParserBase.cpp
@@ -871,8 +879,9 @@ add_executable(playlist_test_cli
     tools/playlist_test_cli.cpp
     lib/src/ZuneDevice.cpp
     lib/src/NetworkManager.cpp
-    lib/src/LibraryManager.cpp
-    lib/src/ZuneUploadPrimitives.cpp
+
+    lib/src/ZuneMtpReader.cpp
+    lib/src/ZuneMtpWriter.cpp
 
     lib/src/ZMDBLibraryExtractor.cpp
     lib/src/zmdb/ZMDBParserBase.cpp
@@ -928,8 +937,9 @@ add_executable(audiobook_test_cli
     tools/audiobook_test_cli.cpp
     lib/src/ZuneDevice.cpp
     lib/src/NetworkManager.cpp
-    lib/src/LibraryManager.cpp
-    lib/src/ZuneUploadPrimitives.cpp
+
+    lib/src/ZuneMtpReader.cpp
+    lib/src/ZuneMtpWriter.cpp
 
     lib/src/ZMDBLibraryExtractor.cpp
     lib/src/zmdb/ZMDBParserBase.cpp
@@ -986,8 +996,9 @@ add_executable(sync_partnership_test_cli
     tools/sync_partnership_test_cli.cpp
     lib/src/ZuneDevice.cpp
     lib/src/NetworkManager.cpp
-    lib/src/LibraryManager.cpp
-    lib/src/ZuneUploadPrimitives.cpp
+
+    lib/src/ZuneMtpReader.cpp
+    lib/src/ZuneMtpWriter.cpp
 
     lib/src/ZMDBLibraryExtractor.cpp
     lib/src/zmdb/ZMDBParserBase.cpp
@@ -1045,8 +1056,9 @@ add_executable(erase_content_test_cli
     tools/erase_content_test_cli.cpp
     lib/src/ZuneDevice.cpp
     lib/src/NetworkManager.cpp
-    lib/src/LibraryManager.cpp
-    lib/src/ZuneUploadPrimitives.cpp
+
+    lib/src/ZuneMtpReader.cpp
+    lib/src/ZuneMtpWriter.cpp
 
     lib/src/ZMDBLibraryExtractor.cpp
     lib/src/zmdb/ZMDBParserBase.cpp
@@ -1105,8 +1117,9 @@ add_executable(upload_test_cli
     lib/src/ZuneDevice.cpp
     lib/src/ZuneDeviceIdentification.cpp
     lib/src/NetworkManager.cpp
-    lib/src/LibraryManager.cpp
-    lib/src/ZuneUploadPrimitives.cpp
+
+    lib/src/ZuneMtpReader.cpp
+    lib/src/ZuneMtpWriter.cpp
 
     lib/src/ZMDBLibraryExtractor.cpp
     lib/src/zmdb/ZMDBParserBase.cpp

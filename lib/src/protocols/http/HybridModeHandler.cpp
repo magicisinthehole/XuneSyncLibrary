@@ -129,6 +129,7 @@ HTTPParser::HTTPResponse HybridModeHandler::TryServeFromLocal(
     }
 
     std::string path_str(file_path);
+    free(const_cast<char*>(file_path));
     auto file_data = ReadFile(path_str);
     if (file_data.empty()) {
         Log("File exists in path but couldn't be read: " + path_str);

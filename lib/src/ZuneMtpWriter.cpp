@@ -1,49 +1,55 @@
-#include "ZuneUploadPrimitives.h"
+#include "ZuneMtpWriter.h"
 #include <cli/PosixStreams.h>
 #include <mtp/ptp/ObjectFormat.h>
 
 namespace zune {
 
+// Well-known Zune device folder names
+static constexpr const char* kFolderMusic     = "Music";
+static constexpr const char* kFolderAlbums    = "Albums";
+static constexpr const char* kFolderArtists   = "Artists";
+static constexpr const char* kFolderPlaylists = "Playlists";
+
 // ── Property List Writing Helpers ────────────────────────────────────────
 
-void UploadPrimitives::WritePropString(mtp::OutputStream& os, uint16_t prop, const std::string& value) {
+void MtpWriter::WritePropString(mtp::OutputStream& os, uint16_t prop, const std::string& value) {
     os.Write32(0); os.Write16(prop); os.Write16(MtpType::String); os.WriteString(value);
 }
 
-void UploadPrimitives::WritePropU8(mtp::OutputStream& os, uint16_t prop, uint8_t value) {
+void MtpWriter::WritePropU8(mtp::OutputStream& os, uint16_t prop, uint8_t value) {
     os.Write32(0); os.Write16(prop); os.Write16(MtpType::Uint8); os.Write8(value);
 }
 
-void UploadPrimitives::WritePropU16(mtp::OutputStream& os, uint16_t prop, uint16_t value) {
+void MtpWriter::WritePropU16(mtp::OutputStream& os, uint16_t prop, uint16_t value) {
     os.Write32(0); os.Write16(prop); os.Write16(MtpType::Uint16); os.Write16(value);
 }
 
-void UploadPrimitives::WritePropU32(mtp::OutputStream& os, uint16_t prop, uint32_t value) {
+void MtpWriter::WritePropU32(mtp::OutputStream& os, uint16_t prop, uint32_t value) {
     os.Write32(0); os.Write16(prop); os.Write16(MtpType::Uint32); os.Write32(value);
 }
 
-void UploadPrimitives::WritePropU128(mtp::OutputStream& os, uint16_t prop, const uint8_t* bytes, size_t len) {
+void MtpWriter::WritePropU128(mtp::OutputStream& os, uint16_t prop, const uint8_t* bytes, size_t len) {
     os.Write32(0); os.Write16(prop); os.Write16(MtpType::Uint128);
     for (size_t i = 0; i < len && i < 16; ++i) os.Write8(bytes[i]);
     for (size_t i = len; i < 16; ++i) os.Write8(0);
 }
 
-const uint16_t* UploadPrimitives::GetBatchFormats(bool isHD) {
+const uint16_t* MtpWriter::GetBatchFormats(bool isHD) {
     return isHD ? HD_BATCH_FORMATS : CLASSIC_BATCH_FORMATS;
 }
 
-size_t UploadPrimitives::GetBatchFormatCount(bool isHD) {
+size_t MtpWriter::GetBatchFormatCount(bool isHD) {
     return isHD ? HD_BATCH_FORMAT_COUNT : CLASSIC_BATCH_FORMAT_COUNT;
 }
 
 // ── Pre-Upload Operations ────────────────────────────────────────────────
 
-void UploadPrimitives::QueryStorageInfo(const SessionPtr& session, uint32_t storageId) {
+void MtpWriter::QueryStorageInfo(const SessionPtr& session, uint32_t storageId) {
     // Pcap: GetStorageInfo (non-fresh devices only)
     try { session->GetStorageInfo(mtp::StorageId(storageId)); } catch (...) {}
 }
 
-RootDiscoveryResult UploadPrimitives::DiscoverRoot(const SessionPtr& session, uint32_t storageId) {
+RootDiscoveryResult MtpWriter::DiscoverRoot(const SessionPtr& session, uint32_t storageId, bool isHD) {
     RootDiscoveryResult result;
     result.storage_id = storageId;
 
@@ -62,36 +68,29 @@ RootDiscoveryResult UploadPrimitives::DiscoverRoot(const SessionPtr& session, ui
                 mtp::Session::Device, mtp::ObjectFormat(0),
                 mtp::ObjectProperty(MtpProp::ObjectFileName), 0, 1);
 
-            if (name_data.size() >= 4) {
-                uint32_t n = *reinterpret_cast<const uint32_t*>(name_data.data());
-                size_t off = 4;
-                for (uint32_t i = 0; i < n && off + 8 <= name_data.size(); ++i) {
-                    uint32_t handle = *reinterpret_cast<const uint32_t*>(name_data.data() + off);
-                    off += 4 + 2 + 2; // handle + prop + type
-                    std::string name;
-                    if (off < name_data.size()) {
-                        uint8_t nchars = name_data[off++];
-                        if (nchars > 0 && off + nchars * 2 <= name_data.size()) {
-                            for (uint8_t c = 0; c < nchars; ++c) {
-                                uint16_t ch = *reinterpret_cast<const uint16_t*>(name_data.data() + off + c * 2);
-                                if (ch == 0) break;
-                                if (ch < 128) name += static_cast<char>(ch);
-                            }
-                            off += nchars * 2;
-                        }
-                    }
-                    if (name == "Music") result.music_folder = handle;
-                    else if (name == "Albums") result.albums_folder = handle;
-                    else if (name == "Artists") result.artists_folder = handle;
-                }
+            for (const auto& [handle, name] : ParsePropertyListNames(name_data)) {
+                if (name == kFolderMusic) result.music_folder = handle;
+                else if (name == kFolderAlbums) result.albums_folder = handle;
+                else if (name == kFolderArtists) result.artists_folder = handle;
+                else if (name == kFolderPlaylists) result.playlists_folder = handle;
             }
         } catch (...) {}
     }
 
+    // Create missing essential folders (CreateFolder returns 0 on failure)
+    if (result.music_folder == 0)
+        result.music_folder = CreateFolder(session, storageId, 0, kFolderMusic);
+    if (result.albums_folder == 0)
+        result.albums_folder = CreateFolder(session, storageId, 0, kFolderAlbums);
+    if (isHD && result.artists_folder == 0)
+        result.artists_folder = CreateFolder(session, storageId, 0, kFolderArtists);
+    if (result.playlists_folder == 0)
+        result.playlists_folder = CreateFolder(session, storageId, 0, kFolderPlaylists);
+
     return result;
 }
 
-void UploadPrimitives::RootReEnum(const SessionPtr& session) {
+void MtpWriter::RootReEnum(const SessionPtr& session) {
     // Pcap: GetObjPropList(Device, prop=StorageID, depth=1) + GetObjPropList(Device, prop=ObjFileName, depth=1)
     // depth=1 is critical — includes immediate children of root
     try {
@@ -108,7 +107,7 @@ void UploadPrimitives::RootReEnum(const SessionPtr& session) {
 
 // ── Folder Discovery & Creation ──────────────────────────────────────────
 
-std::vector<FolderChild> UploadPrimitives::DiscoverFolderChildren(
+std::vector<FolderChild> MtpWriter::DiscoverFolderChildren(
     const SessionPtr& session, uint32_t storageId, uint32_t folderId)
 {
     std::vector<FolderChild> children;
@@ -133,28 +132,10 @@ std::vector<FolderChild> UploadPrimitives::DiscoverFolderChildren(
             folderObj, mtp::ObjectFormat(0),
             mtp::ObjectProperty(MtpProp::ObjectFileName), 0, 1);
 
-        if (data.size() >= 4) {
-            uint32_t n = *reinterpret_cast<const uint32_t*>(data.data());
-            size_t off = 4;
-            for (uint32_t i = 0; i < n && off + 8 <= data.size(); ++i) {
-                uint32_t handle = *reinterpret_cast<const uint32_t*>(data.data() + off);
-                off += 4 + 2 + 2;
-                std::string name;
-                if (off < data.size()) {
-                    uint8_t nchars = data[off++];
-                    if (nchars > 0 && off + nchars * 2 <= data.size()) {
-                        for (uint8_t c = 0; c < nchars; ++c) {
-                            uint16_t ch = *reinterpret_cast<const uint16_t*>(data.data() + off + c * 2);
-                            if (ch == 0) break;
-                            if (ch < 128) name += static_cast<char>(ch);
-                        }
-                        off += nchars * 2;
-                    }
-                }
-                // First entry is the folder itself; rest are children
-                if (handle != folderId && !name.empty()) {
-                    children.push_back({name, handle});
-                }
+        for (const auto& [handle, name] : ParsePropertyListNames(data)) {
+            // First entry is the folder itself; rest are children
+            if (handle != folderId && !name.empty()) {
+                children.push_back({name, handle});
             }
         }
     } catch (...) {}
@@ -162,23 +143,27 @@ std::vector<FolderChild> UploadPrimitives::DiscoverFolderChildren(
     return children;
 }
 
-uint32_t UploadPrimitives::CreateFolder(
+uint32_t MtpWriter::CreateFolder(
     const SessionPtr& session, uint32_t storageId, uint32_t parentId,
     const std::string& name)
 {
-    mtp::ByteArray propList;
-    mtp::OutputStream os(propList);
-    os.Write32(1);
-    WritePropString(os, MtpProp::ObjectFileName, name);
+    try {
+        mtp::ByteArray propList;
+        mtp::OutputStream os(propList);
+        os.Write32(1);
+        WritePropString(os, MtpProp::ObjectFileName, name);
 
-    auto resp = session->SendObjectPropList(
-        mtp::StorageId(storageId),
-        mtp::ObjectId(parentId),
-        mtp::ObjectFormat::Association, 0, propList);
-    return resp.ObjectId.Id;
+        auto resp = session->SendObjectPropList(
+            mtp::StorageId(storageId),
+            mtp::ObjectId(parentId),
+            mtp::ObjectFormat::Association, 0, propList);
+        return resp.ObjectId.Id;
+    } catch (...) {
+        return 0;
+    }
 }
 
-void UploadPrimitives::FolderReadback(
+void MtpWriter::FolderReadback(
     const SessionPtr& session, uint32_t folderId, uint32_t storageId)
 {
     auto obj = mtp::ObjectId(folderId);
@@ -195,7 +180,7 @@ void UploadPrimitives::FolderReadback(
         mtp::StorageId(storageId), mtp::ObjectFormat::Any, obj); } catch (...) {}
 }
 
-void UploadPrimitives::FirstFolderReadback(
+void MtpWriter::FirstFolderReadback(
     const SessionPtr& session, uint32_t folderId, uint32_t storageId, bool isHD)
 {
     auto obj = mtp::ObjectId(folderId);
@@ -214,7 +199,7 @@ void UploadPrimitives::FirstFolderReadback(
 
 // ── Artist Metadata (HD Only) ────────────────────────────────────────────
 
-uint32_t UploadPrimitives::CreateArtistMetadata(
+uint32_t MtpWriter::CreateArtistMetadata(
     const SessionPtr& session, uint32_t storageId, uint32_t artistsFolderId,
     const std::string& name, const uint8_t* guidBytes, size_t guidLen)
 {
@@ -248,7 +233,7 @@ uint32_t UploadPrimitives::CreateArtistMetadata(
 
 // ── Track Operations ─────────────────────────────────────────────────────
 
-uint32_t UploadPrimitives::CreateTrack(
+uint32_t MtpWriter::CreateTrack(
     const SessionPtr& session, uint32_t storageId, uint32_t albumFolderId,
     const TrackProperties& props, uint16_t formatCode, uint64_t fileSize)
 {
@@ -292,13 +277,13 @@ uint32_t UploadPrimitives::CreateTrack(
     return resp.ObjectId.Id;
 }
 
-void UploadPrimitives::UploadAudioData(const SessionPtr& session, const std::string& filePath) {
+void MtpWriter::UploadAudioData(const SessionPtr& session, const std::string& filePath) {
     auto stream = std::make_shared<cli::ObjectInputStream>(filePath);
     stream->SetTotal(stream->GetSize());
     session->SendObject(stream);
 }
 
-void UploadPrimitives::VerifyTrack(const SessionPtr& session, uint32_t trackId) {
+void MtpWriter::VerifyTrack(const SessionPtr& session, uint32_t trackId) {
     try { session->GetObjectPropertyList(
         mtp::ObjectId(trackId), mtp::ObjectFormat(0),
         mtp::ObjectProperty(0xFFFFFFFF), 0, 0); } catch (...) {}
@@ -306,7 +291,7 @@ void UploadPrimitives::VerifyTrack(const SessionPtr& session, uint32_t trackId) 
 
 // ── Album Metadata Operations ────────────────────────────────────────────
 
-uint32_t UploadPrimitives::CreateAlbumMetadata(
+uint32_t MtpWriter::CreateAlbumMetadata(
     const SessionPtr& session, uint32_t storageId, uint32_t albumsFolderId,
     const AlbumProperties& props)
 {
@@ -348,7 +333,7 @@ uint32_t UploadPrimitives::CreateAlbumMetadata(
     return resp.ObjectId.Id;
 }
 
-void UploadPrimitives::SetAlbumArtwork(
+void MtpWriter::SetAlbumArtwork(
     const SessionPtr& session, uint32_t albumObjId,
     const uint8_t* data, size_t size)
 {
@@ -368,12 +353,12 @@ void UploadPrimitives::SetAlbumArtwork(
     session->SetObjectProperty(obj, mtp::ObjectProperty(MtpProp::RepSampleFormat), fmtVal);
 }
 
-void UploadPrimitives::ReadAlbumArtworkCurrent(const SessionPtr& session, uint32_t albumObjId) {
+void MtpWriter::ReadAlbumArtworkCurrent(const SessionPtr& session, uint32_t albumObjId) {
     try { session->GetObjectProperty(
         mtp::ObjectId(albumObjId), mtp::ObjectProperty(MtpProp::RepSampleData)); } catch (...) {}
 }
 
-void UploadPrimitives::SetAlbumReferences(
+void MtpWriter::SetAlbumReferences(
     const SessionPtr& session, uint32_t albumObjId,
     const uint32_t* trackIds, size_t count)
 {
@@ -383,7 +368,7 @@ void UploadPrimitives::SetAlbumReferences(
     session->SetObjectReferences(mtp::ObjectId(albumObjId), refs);
 }
 
-void UploadPrimitives::VerifyAlbum(
+void MtpWriter::VerifyAlbum(
     const SessionPtr& session, uint32_t albumObjId, bool includeParentDesc)
 {
     auto obj = mtp::ObjectId(albumObjId);
@@ -404,20 +389,20 @@ void UploadPrimitives::VerifyAlbum(
 
 // ── Finalization ─────────────────────────────────────────────────────────
 
-void UploadPrimitives::RegisterTrackContext(const SessionPtr& session, const std::string& trackName) {
+void MtpWriter::RegisterTrackContext(const SessionPtr& session, const std::string& trackName) {
     session->Operation922a(trackName);
 }
 
 // ── Property Descriptor Queries ──────────────────────────────────────────
 
-void UploadPrimitives::QueryFolderDescriptors(const SessionPtr& session) {
+void MtpWriter::QueryFolderDescriptors(const SessionPtr& session) {
     try { session->GetObjectPropertiesSupported(mtp::ObjectFormat(MtpFmt::Folder)); } catch (...) {}
     try { session->GetObjectPropertyDesc(
         mtp::ObjectProperty(MtpProp::ObjectFileName),
         mtp::ObjectFormat(MtpFmt::Folder)); } catch (...) {}
 }
 
-void UploadPrimitives::QueryBatchDescriptors(
+void MtpWriter::QueryBatchDescriptors(
     const SessionPtr& session, uint16_t propCode, bool isHD)
 {
     const uint16_t* formats = GetBatchFormats(isHD);
@@ -429,7 +414,7 @@ void UploadPrimitives::QueryBatchDescriptors(
     }
 }
 
-void UploadPrimitives::QueryTrackDescriptors(
+void MtpWriter::QueryTrackDescriptors(
     const SessionPtr& session, uint16_t formatCode, bool isHD)
 {
     // Exact order from pcap
@@ -455,7 +440,7 @@ void UploadPrimitives::QueryTrackDescriptors(
     }
 }
 
-void UploadPrimitives::QueryAlbumDescriptors(const SessionPtr& session, bool isHD) {
+void MtpWriter::QueryAlbumDescriptors(const SessionPtr& session, bool isHD) {
     auto fmt = mtp::ObjectFormat(MtpFmt::AbstractAlbum);
     if (isHD) {
         const uint16_t props[] = {
@@ -476,7 +461,7 @@ void UploadPrimitives::QueryAlbumDescriptors(const SessionPtr& session, bool isH
     }
 }
 
-void UploadPrimitives::QueryArtistDescriptors(const SessionPtr& session) {
+void MtpWriter::QueryArtistDescriptors(const SessionPtr& session) {
     auto fmt = mtp::ObjectFormat(MtpFmt::ArtistMeta);
     const uint16_t props[] = {
         MtpProp::ZuneCollectionId, MtpProp::ObjectFileName,
@@ -487,12 +472,164 @@ void UploadPrimitives::QueryArtistDescriptors(const SessionPtr& session) {
     }
 }
 
-void UploadPrimitives::QueryArtworkDescriptors(const SessionPtr& session) {
+void MtpWriter::QueryArtworkDescriptors(const SessionPtr& session) {
     auto fmt = mtp::ObjectFormat(MtpFmt::AbstractAlbum);
     try { session->GetObjectPropertyDesc(
         mtp::ObjectProperty(MtpProp::RepSampleData), fmt); } catch (...) {}
     try { session->GetObjectPropertyDesc(
         mtp::ObjectProperty(MtpProp::RepSampleFormat), fmt); } catch (...) {}
+}
+
+// ── Property List Parsing ────────────────────────────────────────────────
+
+std::vector<std::pair<uint32_t, std::string>> MtpWriter::ParsePropertyListNames(
+    const mtp::ByteArray& data)
+{
+    std::vector<std::pair<uint32_t, std::string>> entries;
+    if (data.size() < 4) return entries;
+
+    uint32_t n;
+    std::memcpy(&n, data.data(), sizeof(n));
+    size_t off = 4;
+
+    for (uint32_t i = 0; i < n && off + 8 <= data.size(); ++i) {
+        uint32_t handle;
+        std::memcpy(&handle, data.data() + off, sizeof(handle));
+        off += 4 + 2 + 2; // handle + prop code + data type
+
+        std::string name;
+        if (off < data.size()) {
+            uint8_t nchars = data[off++];
+            if (nchars > 0 && off + nchars * 2 <= data.size()) {
+                for (uint8_t c = 0; c < nchars; ++c) {
+                    uint16_t ch;
+                    std::memcpy(&ch, data.data() + off + c * 2, sizeof(ch));
+                    if (ch == 0) break;
+                    if (ch < 128) name += static_cast<char>(ch);
+                }
+                off += nchars * 2;
+            }
+        }
+        entries.emplace_back(handle, std::move(name));
+    }
+    return entries;
+}
+
+// ── Playlist Operations ──────────────────────────────────────────────────
+
+mtp::ByteArray MtpWriter::GuidStringToBytes(const std::string& guid_str) {
+    // Convert GUID string "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" to 16-byte array
+    // Uses mixed-endian format (same as Windows GUID):
+    // - First 3 components: little-endian
+    // - Last 2 components (8 bytes): big-endian
+    mtp::ByteArray guid(16, 0);
+
+    std::string hex;
+    for (char c : guid_str) {
+        if (c != '-') hex += c;
+    }
+    if (hex.length() != 32)
+        return guid;
+
+    // Component 1: 4 bytes (32-bit) - little-endian
+    for (int i = 3; i >= 0; --i)
+        guid[3 - i] = static_cast<mtp::u8>(std::stoul(hex.substr(i * 2, 2), nullptr, 16));
+
+    // Component 2: 2 bytes (16-bit) - little-endian
+    for (int i = 1; i >= 0; --i)
+        guid[4 + (1 - i)] = static_cast<mtp::u8>(std::stoul(hex.substr(8 + i * 2, 2), nullptr, 16));
+
+    // Component 3: 2 bytes (16-bit) - little-endian
+    for (int i = 1; i >= 0; --i)
+        guid[6 + (1 - i)] = static_cast<mtp::u8>(std::stoul(hex.substr(12 + i * 2, 2), nullptr, 16));
+
+    // Component 4: 8 bytes - big-endian (as-is)
+    for (size_t i = 0; i < 8; ++i)
+        guid[8 + i] = static_cast<mtp::u8>(std::stoul(hex.substr(16 + i * 2, 2), nullptr, 16));
+
+    return guid;
+}
+
+uint32_t MtpWriter::CreatePlaylist(
+    const SessionPtr& session, uint32_t storageId, uint32_t playlistsFolderId,
+    const std::string& name, const std::string& guid,
+    const uint32_t* trackIds, size_t trackCount)
+{
+    try {
+        auto guidBytes = GuidStringToBytes(guid);
+
+        // Build property list (4 properties)
+        mtp::ByteArray propList;
+        mtp::OutputStream os(propList);
+        os.Write32(4);
+
+        // 0xDAB0 (Zune_CollectionID) = 0
+        WritePropU8(os, MtpProp::ZuneCollectionId, 0);
+        // ObjectFilename = "{name}.pla"
+        WritePropString(os, MtpProp::ObjectFileName, name + ".pla");
+        // ContentTypeUUID (0xDA97) = GUID bytes
+        WritePropU128(os, MtpProp::DA97, guidBytes.data(), guidBytes.size());
+        // Name = "{name}"
+        WritePropString(os, MtpProp::Name, name);
+
+        auto response = session->SendObjectPropList(
+            mtp::StorageId(storageId),
+            mtp::ObjectId(playlistsFolderId),
+            mtp::ObjectFormat::AbstractAVPlaylist,
+            0, propList);
+        auto playlistId = response.ObjectId;
+
+        // Send empty object data (required by MTP protocol)
+        mtp::ByteArray empty;
+        session->SendObject(std::make_shared<mtp::ByteArrayObjectInputStream>(empty));
+
+        // Set object references (track IDs)
+        if (trackIds && trackCount > 0) {
+            mtp::msg::ObjectHandles handles;
+            for (size_t i = 0; i < trackCount; ++i)
+                handles.ObjectHandles.push_back(mtp::ObjectId(trackIds[i]));
+            session->SetObjectReferences(playlistId, handles);
+        }
+
+        return playlistId.Id;
+    } catch (...) {
+        return 0;
+    }
+}
+
+bool MtpWriter::UpdatePlaylistTracks(
+    const SessionPtr& session, uint32_t playlistMtpId,
+    const uint32_t* trackIds, size_t trackCount)
+{
+    try {
+        mtp::msg::ObjectHandles handles;
+        if (trackIds) {
+            for (size_t i = 0; i < trackCount; ++i)
+                handles.ObjectHandles.push_back(mtp::ObjectId(trackIds[i]));
+        }
+        session->SetObjectReferences(mtp::ObjectId(playlistMtpId), handles);
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+bool MtpWriter::DeletePlaylist(const SessionPtr& session, uint32_t playlistMtpId) {
+    try {
+        session->DeleteObject(mtp::ObjectId(playlistMtpId));
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+int MtpWriter::DeleteObject(const SessionPtr& session, uint32_t objectHandle) {
+    try {
+        session->DeleteObject(mtp::ObjectId(objectHandle));
+        return 0;
+    } catch (...) {
+        return -1;
+    }
 }
 
 } // namespace zune
