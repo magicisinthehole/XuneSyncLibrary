@@ -46,6 +46,9 @@ public:
     ZuneDevice();
     ~ZuneDevice();
 
+    // --- Configuration ---
+    void SetMtpzDataPath(const std::string& path);
+
     // --- Connection Management ---
     bool ConnectUSB();
     bool ConnectWireless(const std::string& ip_address);
@@ -235,6 +238,7 @@ private:
 
 
     // --- Member Variables ---
+    std::string mtpz_data_path_;
     std::string guid_file_;
     std::string device_guid_file_;
     std::string mac_guid_;

@@ -67,6 +67,12 @@ ZUNE_WIRELESS_API void zune_device_set_log_callback(zune_device_handle_t handle,
     }
 }
 
+ZUNE_WIRELESS_API void zune_device_set_mtpz_data_path(zune_device_handle_t handle, const char* path) {
+    if (handle && path) {
+        static_cast<ZuneDevice*>(handle)->SetMtpzDataPath(path);
+    }
+}
+
 ZUNE_WIRELESS_API int zune_device_establish_sync_pairing(zune_device_handle_t handle, const char* device_name) {
     if (handle) {
         return static_cast<ZuneDevice*>(handle)->EstablishSyncPairing(device_name ? device_name : "");

@@ -130,6 +130,11 @@ ZUNE_WIRELESS_API bool zune_device_validate_connection(zune_device_handle_t hand
 
 ZUNE_WIRELESS_API void zune_device_set_log_callback(zune_device_handle_t handle, log_callback_t callback);
 
+// Set the path to the MTPZ authentication data file.
+// Must be called before zune_device_connect_usb().
+// If not set, falls back to $HOME/.mtpz-data.
+ZUNE_WIRELESS_API void zune_device_set_mtpz_data_path(zune_device_handle_t handle, const char* path);
+
 ZUNE_WIRELESS_API int zune_device_establish_sync_pairing(zune_device_handle_t handle, const char* device_name);
 ZUNE_WIRELESS_API const char* zune_device_establish_wireless_pairing(zune_device_handle_t handle, const char* ssid, const char* password);
 ZUNE_WIRELESS_API int zune_device_disable_wireless(zune_device_handle_t handle);
