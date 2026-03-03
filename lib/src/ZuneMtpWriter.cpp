@@ -1,6 +1,7 @@
 #include "ZuneMtpWriter.h"
 #include <cli/PosixStreams.h>
 #include <mtp/ptp/ObjectFormat.h>
+#include <cstring>
 
 namespace zune {
 
