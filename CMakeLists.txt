@@ -213,6 +213,12 @@ if(APPLE)
         MACOSX_RPATH OFF
         INSTALL_NAME_DIR "@loader_path"
     )
+elseif(UNIX)
+    # RPATH $ORIGIN so bundled deps (TagLib) are found next to the .so
+    set_target_properties(zune_wireless PROPERTIES
+        BUILD_RPATH "$ORIGIN"
+        INSTALL_RPATH "$ORIGIN"
+    )
 endif()
 
 # Compiler flags
@@ -253,8 +259,17 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../src/Xune.Infrastructure.Devices")
         VERBATIM
     )
 
-    # macOS: bundle Homebrew dependencies and fix install names for hardened runtime
-    if(APPLE)
+    # Bundle non-system dependencies into the runtime directory
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        find_library(TAGLIB_SO_PATH NAMES tag REQUIRED)
+        get_filename_component(TAGLIB_SO_REALPATH "${TAGLIB_SO_PATH}" REALPATH)
+        get_filename_component(TAGLIB_SO_FILENAME "${TAGLIB_SO_REALPATH}" NAME)
+        add_custom_command(TARGET zune_wireless POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy "${TAGLIB_SO_REALPATH}" "${ZW_RUNTIME_NATIVE}/${TAGLIB_SO_FILENAME}"
+            COMMAND ${CMAKE_COMMAND} -E create_symlink "${TAGLIB_SO_FILENAME}" "${ZW_RUNTIME_NATIVE}/libtag.so.1"
+            COMMENT "Bundling TagLib for Flatpak/AppImage compatibility"
+        )
+    elseif(APPLE)
         # Resolve actual dylib paths (pkg-config TAGLIB_LIBRARIES may be just "tag")
         find_library(TAGLIB_DYLIB_PATH NAMES tag PATHS /opt/homebrew/lib /usr/local/lib NO_DEFAULT_PATH)
         if(NOT TAGLIB_DYLIB_PATH)
