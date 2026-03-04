@@ -307,6 +307,10 @@ ZUNE_WIRELESS_API int zune_device_set_track_user_state(
 // USB Discovery functions
 ZUNE_WIRELESS_API bool zune_device_find_on_usb(const char** uuid, const char** device_name);
 
+// Lightweight USB detection — checks sysfs/IOKit for Zune VID/PID only.
+// Does NOT open the device or claim any USB interfaces.
+ZUNE_WIRELESS_API bool zune_device_detect_on_usb();
+
 // SSDP Discovery functions
 ZUNE_WIRELESS_API void zune_ssdp_start_discovery(device_discovered_callback_t callback);
 ZUNE_WIRELESS_API void zune_ssdp_stop_discovery();

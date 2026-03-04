@@ -392,15 +392,19 @@ ZUNE_WIRELESS_API void zune_ssdp_stop_discovery() {
 }
 
 ZUNE_WIRELESS_API bool zune_device_find_on_usb(const char** uuid, const char** device_name) {
+    // Log state transitions only (not every poll) to avoid log spam
+    static bool last_found = false;
+    static std::string last_error;
+
     try {
         mtp::usb::ContextPtr ctx = std::make_shared<mtp::usb::Context>();
 
-        // Find Zune device on USB (Microsoft vendor ID)
-        // This is a lightweight discovery check - actual model detection
-        // happens after full connection via ZuneDevice::GetModel()
         auto devices = ctx->GetDevices();
+        int ms_device_count = 0;
+
         for (auto desc : devices) {
-            if (desc->GetVendorId() == 0x045E) {  // Microsoft vendor ID
+            if (desc->GetVendorId() == 0x045E) {
+                ms_device_count++;
                 try {
                     auto device = mtp::Device::Open(ctx, desc, true, false);
                     if (device) {
@@ -410,20 +414,75 @@ ZUNE_WIRELESS_API bool zune_device_find_on_usb(const char** uuid, const char** d
                         thread_local std::string name;
 
                         serial = info.SerialNumber;
-                        name = "Zune";  // Generic name for discovery
+                        name = "Zune";
 
                         *uuid = serial.c_str();
                         *device_name = name.c_str();
 
+                        if (!last_found) {
+                            fprintf(stderr, "[zune_usb_discovery] Device found: %s\n", serial.c_str());
+                            last_found = true;
+                            last_error.clear();
+                        }
                         return true;
+                    } else {
+                        std::string err = "Device::Open returned null";
+                        if (err != last_error) {
+                            fprintf(stderr, "[zune_usb_discovery] VID 045E device: %s\n", err.c_str());
+                            last_error = err;
+                        }
                     }
-                } catch (const std::exception&) {
-                    // Try next device
+                } catch (const std::exception& e) {
+                    std::string err = e.what();
+                    if (err != last_error) {
+                        fprintf(stderr, "[zune_usb_discovery] VID 045E device error: %s\n", err.c_str());
+                        last_error = err;
+                    }
                 }
             }
         }
-    } catch (const std::exception&) {
-        // Discovery failed
+
+        if (last_found) {
+            fprintf(stderr, "[zune_usb_discovery] Device lost (total USB: %zu, VID 045E: %d)\n",
+                    devices.size(), ms_device_count);
+            last_found = false;
+        }
+    } catch (const std::exception& e) {
+        std::string err = std::string("Context error: ") + e.what();
+        if (err != last_error) {
+            fprintf(stderr, "[zune_usb_discovery] %s\n", err.c_str());
+            last_error = err;
+        }
+    }
+    return false;
+}
+
+ZUNE_WIRELESS_API bool zune_device_detect_on_usb() {
+    static bool last_detected = false;
+
+    try {
+        mtp::usb::ContextPtr ctx = std::make_shared<mtp::usb::Context>();
+        auto devices = ctx->GetDevices();
+
+        for (auto desc : devices) {
+            if (desc->GetVendorId() == 0x045E) {
+                auto pid = desc->GetProductId();
+                if (pid == 0x0710 || pid == 0x063e) {
+                    if (!last_detected) {
+                        fprintf(stderr, "[zune_usb_discovery] Zune detected (PID=0x%04x)\n", pid);
+                        last_detected = true;
+                    }
+                    return true;
+                }
+            }
+        }
+
+        if (last_detected) {
+            fprintf(stderr, "[zune_usb_discovery] Zune no longer detected\n");
+            last_detected = false;
+        }
+    } catch (const std::exception& e) {
+        fprintf(stderr, "[zune_usb_discovery] Detection error: %s\n", e.what());
     }
     return false;
 }
