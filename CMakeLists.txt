@@ -286,6 +286,10 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../src/Xune.Infrastructure.Devices")
             # Fix zune_wireless own install name
             COMMAND install_name_tool -id "@loader_path/libzune_wireless.dylib"
                 "${ZW_RUNTIME_NATIVE}/$<TARGET_FILE_NAME:zune_wireless>"
+            # Re-sign ad-hoc (install_name_tool invalidates signatures)
+            COMMAND codesign --force --sign - "${ZW_RUNTIME_NATIVE}/libtag.2.dylib"
+            COMMAND codesign --force --sign - "${ZW_RUNTIME_NATIVE}/libcrypto.3.dylib"
+            COMMAND codesign --force --sign - "${ZW_RUNTIME_NATIVE}/$<TARGET_FILE_NAME:zune_wireless>"
             COMMENT "Bundling taglib/openssl and fixing install names for hardened runtime"
         )
     endif()
