@@ -207,6 +207,14 @@ target_link_libraries(zune_wireless
     ${PLATFORM_LIBRARIES}
 )
 
+# macOS: use @loader_path for hardened runtime compatibility
+if(APPLE)
+    set_target_properties(zune_wireless PROPERTIES
+        MACOSX_RPATH OFF
+        INSTALL_NAME_DIR "@loader_path"
+    )
+endif()
+
 # Compiler flags
 target_compile_options(zune_wireless PRIVATE
     -Wall
@@ -237,12 +245,50 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../src/Xune.Infrastructure.Devices")
         endif()
     endif()
 
+    set(ZW_RUNTIME_NATIVE "${XUNE_DEVICES_RUNTIME_DIR}/${RUNTIME_ID}/native")
     add_custom_command(TARGET zune_wireless POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${XUNE_DEVICES_RUNTIME_DIR}/${RUNTIME_ID}/native"
-        COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:zune_wireless>" "${XUNE_DEVICES_RUNTIME_DIR}/${RUNTIME_ID}/native/$<TARGET_FILE_NAME:zune_wireless>"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${ZW_RUNTIME_NATIVE}"
+        COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:zune_wireless>" "${ZW_RUNTIME_NATIVE}/$<TARGET_FILE_NAME:zune_wireless>"
         COMMENT "Copying $<TARGET_FILE_NAME:zune_wireless> to Xune.Infrastructure.Devices/runtimes/${RUNTIME_ID}/native/"
         VERBATIM
     )
+
+    # macOS: bundle Homebrew dependencies and fix install names for hardened runtime
+    if(APPLE)
+        # Resolve actual dylib paths (pkg-config TAGLIB_LIBRARIES may be just "tag")
+        find_library(TAGLIB_DYLIB_PATH NAMES tag PATHS /opt/homebrew/lib /usr/local/lib NO_DEFAULT_PATH)
+        if(NOT TAGLIB_DYLIB_PATH)
+            set(TAGLIB_DYLIB_PATH "${TAGLIB_LIBRARIES}")
+        endif()
+        # Get the original install name from the dylib for the -change command
+        execute_process(
+            COMMAND otool -D "${TAGLIB_DYLIB_PATH}"
+            OUTPUT_VARIABLE TAGLIB_INSTALL_NAME_OUTPUT OUTPUT_STRIP_TRAILING_WHITESPACE
+        )
+        string(REGEX REPLACE ".*\n" "" TAGLIB_ORIG_ID "${TAGLIB_INSTALL_NAME_OUTPUT}")
+        execute_process(
+            COMMAND otool -D "${OPENSSL_CRYPTO_LIBRARY}"
+            OUTPUT_VARIABLE OPENSSL_INSTALL_NAME_OUTPUT OUTPUT_STRIP_TRAILING_WHITESPACE
+        )
+        string(REGEX REPLACE ".*\n" "" OPENSSL_ORIG_ID "${OPENSSL_INSTALL_NAME_OUTPUT}")
+        message(STATUS "Bundling TagLib: ${TAGLIB_DYLIB_PATH} (id: ${TAGLIB_ORIG_ID})")
+        message(STATUS "Bundling OpenSSL: ${OPENSSL_CRYPTO_LIBRARY} (id: ${OPENSSL_ORIG_ID})")
+
+        add_custom_command(TARGET zune_wireless POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy "${TAGLIB_DYLIB_PATH}" "${ZW_RUNTIME_NATIVE}/libtag.2.dylib"
+            COMMAND ${CMAKE_COMMAND} -E copy "${OPENSSL_CRYPTO_LIBRARY}" "${ZW_RUNTIME_NATIVE}/libcrypto.3.dylib"
+            COMMAND install_name_tool -id "@loader_path/libtag.2.dylib" "${ZW_RUNTIME_NATIVE}/libtag.2.dylib"
+            COMMAND install_name_tool -id "@loader_path/libcrypto.3.dylib" "${ZW_RUNTIME_NATIVE}/libcrypto.3.dylib"
+            COMMAND install_name_tool -change "${TAGLIB_ORIG_ID}" "@loader_path/libtag.2.dylib"
+                "${ZW_RUNTIME_NATIVE}/$<TARGET_FILE_NAME:zune_wireless>"
+            COMMAND install_name_tool -change "${OPENSSL_ORIG_ID}" "@loader_path/libcrypto.3.dylib"
+                "${ZW_RUNTIME_NATIVE}/$<TARGET_FILE_NAME:zune_wireless>"
+            # Fix zune_wireless own install name
+            COMMAND install_name_tool -id "@loader_path/libzune_wireless.dylib"
+                "${ZW_RUNTIME_NATIVE}/$<TARGET_FILE_NAME:zune_wireless>"
+            COMMENT "Bundling taglib/openssl and fixing install names for hardened runtime"
+        )
+    endif()
     message(STATUS "Xune parent project detected - will auto-copy library to Xune.Infrastructure.Devices/runtimes/${RUNTIME_ID}/native/")
 else()
     message(STATUS "Standalone build - library will not be auto-copied to parent project")
