@@ -23,6 +23,13 @@ set(AFTL_ROOT "${CMAKE_SOURCE_DIR}/vendor/android-file-transfer-linux")
 set(AFTL_BUILD_DIR "${CMAKE_BINARY_DIR}/vendor/android-file-transfer-linux-build")
 set(AFTL_LIBRARY "${AFTL_BUILD_DIR}/libmtp-ng-static.a")
 
+# On Linux, use libusb backend for IOKit parity (synchronous blocking transfers)
+if(UNIX AND NOT APPLE)
+    if(EXISTS "/opt/libusb/lib/pkgconfig")
+        set(ENV{PKG_CONFIG_PATH} "/opt/libusb/lib/pkgconfig:$ENV{PKG_CONFIG_PATH}")
+    endif()
+endif()
+
 # Check if AFTL is already built
 if(NOT EXISTS "${AFTL_LIBRARY}")
     message(STATUS "AFTL library not found, building it first...")
@@ -31,17 +38,24 @@ if(NOT EXISTS "${AFTL_LIBRARY}")
     file(MAKE_DIRECTORY ${AFTL_BUILD_DIR})
 
     # Configure AFTL
+    set(AFTL_CMAKE_ARGS
+        -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
+        -DCMAKE_POSITION_INDEPENDENT_CODE=ON
+        -DBUILD_SHARED_LIB=OFF
+        -DBUILD_QT_UI=OFF
+        -DBUILD_PYTHON=OFF
+        -DBUILD_FUSE=OFF
+        -DBUILD_MTPZ=ON
+    )
+    if(UNIX AND NOT APPLE)
+        list(APPEND AFTL_CMAKE_ARGS -DUSB_BACKEND_LIBUSB=ON)
+    endif()
+
     execute_process(
         COMMAND ${CMAKE_COMMAND}
             -S ${AFTL_ROOT}
             -B ${AFTL_BUILD_DIR}
-            -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
-            -DCMAKE_POSITION_INDEPENDENT_CODE=ON
-            -DBUILD_SHARED_LIB=OFF
-            -DBUILD_QT_UI=OFF
-            -DBUILD_PYTHON=OFF
-            -DBUILD_FUSE=OFF
-            -DBUILD_MTPZ=ON
+            ${AFTL_CMAKE_ARGS}
         RESULT_VARIABLE AFTL_CMAKE_RESULT
     )
 
@@ -118,8 +132,10 @@ set(AFTL_INCLUDE_DIRS
 
 if(APPLE)
     list(APPEND AFTL_INCLUDE_DIRS ${AFTL_ROOT}/mtp/backend/darwin)
-else()
-    list(APPEND AFTL_INCLUDE_DIRS ${AFTL_ROOT}/mtp/backend/linux)
+elseif(UNIX)
+    list(APPEND AFTL_INCLUDE_DIRS ${AFTL_ROOT}/mtp/backend/libusb)
+    pkg_check_modules(LIBUSB REQUIRED libusb-1.0)
+    list(APPEND AFTL_INCLUDE_DIRS ${LIBUSB_INCLUDE_DIRS})
 endif()
 
 # CLI library sources (needed for cli::Session)
@@ -178,17 +194,6 @@ add_library(zune_wireless SHARED
     lib/src/protocols/tcp/RTOManager.cpp
 )
 
-# On Linux, AFTL's raw kernel USB backend (Device.cpp) uses posix::FileHandler
-# and posix::Exception, but its CMakeLists.txt only compiles these source files
-# for the libusb and Darwin backends. Add them directly to the shared library
-# (not to a static archive) so they are always linked regardless of link order.
-if(UNIX AND NOT APPLE)
-    target_sources(zune_wireless PRIVATE
-        ${AFTL_ROOT}/mtp/backend/posix/FileHandler.cpp
-        ${AFTL_ROOT}/mtp/backend/posix/Exception.cpp
-    )
-endif()
-
 target_include_directories(zune_wireless PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${AFTL_INCLUDE_DIRS}
@@ -206,6 +211,21 @@ target_link_libraries(zune_wireless
     ${CMAKE_THREAD_LIBS_INIT}
     ${PLATFORM_LIBRARIES}
 )
+
+# Link libusb for Linux USB backend (static in Docker, dynamic for local dev)
+if(UNIX AND NOT APPLE)
+    find_library(LIBUSB_STATIC NAMES libusb-1.0.a
+        PATHS /opt/libusb/lib NO_DEFAULT_PATH)
+    if(LIBUSB_STATIC)
+        target_link_libraries(zune_wireless ${LIBUSB_STATIC})
+        find_library(UDEV_LIBRARY udev)
+        if(UDEV_LIBRARY)
+            target_link_libraries(zune_wireless ${UDEV_LIBRARY})
+        endif()
+    else()
+        target_link_libraries(zune_wireless ${LIBUSB_LIBRARIES})
+    endif()
+endif()
 
 # macOS: use @loader_path for hardened runtime compatibility
 if(APPLE)

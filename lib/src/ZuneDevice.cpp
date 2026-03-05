@@ -127,7 +127,7 @@ bool ZuneDevice::ConnectUSB() {
         for (auto desc : devices) {
             if (desc->GetVendorId() == 0x045E) {  // Microsoft vendor ID
                 try {
-                    device_ = Device::Open(usb_context_, desc, true, true);
+                    device_ = Device::Open(usb_context_, desc, true, false);
                     if (device_) {
                         usb_descriptor_ = desc;
                         break;
