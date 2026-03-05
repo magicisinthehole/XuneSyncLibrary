@@ -106,7 +106,7 @@ if(NOT TAGLIB_FOUND)
     if(APPLE)
         message(FATAL_ERROR "TagLib not found. Install with: brew install taglib")
     else()
-        message(FATAL_ERROR "TagLib not found. Install with: sudo apt install libtag1-dev")
+        message(FATAL_ERROR "TagLib not found. Build TagLib 2 from source: https://taglib.org/releases/")
     endif()
 endif()
 
@@ -284,10 +284,16 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../src/Xune.Infrastructure.Devices")
         find_library(TAGLIB_SO_PATH NAMES tag REQUIRED)
         get_filename_component(TAGLIB_SO_REALPATH "${TAGLIB_SO_PATH}" REALPATH)
         get_filename_component(TAGLIB_SO_FILENAME "${TAGLIB_SO_REALPATH}" NAME)
+        # Derive SONAME (e.g. libtag.so.2 from libtag.so.2.0.2)
+        string(REGEX MATCH "libtag\\.so\\.[0-9]+" TAGLIB_SONAME "${TAGLIB_SO_FILENAME}")
+        if(NOT TAGLIB_SONAME)
+            set(TAGLIB_SONAME "libtag.so.2")
+        endif()
+        message(STATUS "Bundling TagLib: ${TAGLIB_SO_REALPATH} (SONAME: ${TAGLIB_SONAME})")
         add_custom_command(TARGET zune_wireless POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy "${TAGLIB_SO_REALPATH}" "${ZW_RUNTIME_NATIVE}/${TAGLIB_SO_FILENAME}"
-            COMMAND ${CMAKE_COMMAND} -E create_symlink "${TAGLIB_SO_FILENAME}" "${ZW_RUNTIME_NATIVE}/libtag.so.1"
-            COMMENT "Bundling TagLib for Flatpak/AppImage compatibility"
+            COMMAND ${CMAKE_COMMAND} -E create_symlink "${TAGLIB_SO_FILENAME}" "${ZW_RUNTIME_NATIVE}/${TAGLIB_SONAME}"
+            COMMENT "Bundling TagLib (${TAGLIB_SONAME}) for Flatpak/AppImage compatibility"
         )
     elseif(APPLE)
         # Resolve actual dylib paths (pkg-config TAGLIB_LIBRARIES may be just "tag")
