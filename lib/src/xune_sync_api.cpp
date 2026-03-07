@@ -1,4 +1,4 @@
-#include "zune_wireless/zune_wireless_api.h"
+#include "xune_sync/xune_sync_api.h"
 #include "ZuneDevice.h"
 #include "ZuneDeviceIdentification.h"
 #include "ZuneMtpWriter.h"
@@ -19,42 +19,42 @@ static std::unique_ptr<ssdp::SSDPDiscovery> g_discovery;
 
 extern "C" {
 
-ZUNE_WIRELESS_API zune_device_handle_t zune_device_create() {
+XUNE_SYNC_API zune_device_handle_t zune_device_create() {
     return new ZuneDevice();
 }
 
-ZUNE_WIRELESS_API void zune_device_destroy(zune_device_handle_t handle) {
+XUNE_SYNC_API void zune_device_destroy(zune_device_handle_t handle) {
     delete static_cast<ZuneDevice*>(handle);
 }
 
-ZUNE_WIRELESS_API bool zune_device_connect_usb(zune_device_handle_t handle) {
+XUNE_SYNC_API bool zune_device_connect_usb(zune_device_handle_t handle) {
     if (handle) {
         return static_cast<ZuneDevice*>(handle)->ConnectUSB();
     }
     return false;
 }
 
-ZUNE_WIRELESS_API void zune_device_disconnect(zune_device_handle_t handle) {
+XUNE_SYNC_API void zune_device_disconnect(zune_device_handle_t handle) {
     if (handle) {
         static_cast<ZuneDevice*>(handle)->Disconnect();
     }
 }
 
-ZUNE_WIRELESS_API bool zune_device_is_connected(zune_device_handle_t handle) {
+XUNE_SYNC_API bool zune_device_is_connected(zune_device_handle_t handle) {
     if (handle) {
         return static_cast<ZuneDevice*>(handle)->IsConnected();
     }
     return false;
 }
 
-ZUNE_WIRELESS_API bool zune_device_validate_connection(zune_device_handle_t handle) {
+XUNE_SYNC_API bool zune_device_validate_connection(zune_device_handle_t handle) {
     if (handle) {
         return static_cast<ZuneDevice*>(handle)->ValidateConnection();
     }
     return false;
 }
 
-ZUNE_WIRELESS_API void zune_device_set_log_callback(zune_device_handle_t handle, log_callback_t callback) {
+XUNE_SYNC_API void zune_device_set_log_callback(zune_device_handle_t handle, log_callback_t callback) {
     if (handle) {
         if (callback) {
             static_cast<ZuneDevice*>(handle)->SetLogCallback([callback](const std::string& message) {
@@ -67,83 +67,83 @@ ZUNE_WIRELESS_API void zune_device_set_log_callback(zune_device_handle_t handle,
     }
 }
 
-ZUNE_WIRELESS_API void zune_device_set_mtpz_data_path(zune_device_handle_t handle, const char* path) {
+XUNE_SYNC_API void zune_device_set_mtpz_data_path(zune_device_handle_t handle, const char* path) {
     if (handle && path) {
         static_cast<ZuneDevice*>(handle)->SetMtpzDataPath(path);
     }
 }
 
-ZUNE_WIRELESS_API int zune_device_establish_sync_pairing(zune_device_handle_t handle, const char* device_name) {
+XUNE_SYNC_API int zune_device_establish_sync_pairing(zune_device_handle_t handle, const char* device_name) {
     if (handle) {
         return static_cast<ZuneDevice*>(handle)->EstablishSyncPairing(device_name ? device_name : "");
     }
     return -1;
 }
 
-ZUNE_WIRELESS_API const char* zune_device_get_name(zune_device_handle_t handle) {
+XUNE_SYNC_API const char* zune_device_get_name(zune_device_handle_t handle) {
     if (handle) {
         return static_cast<ZuneDevice*>(handle)->GetNameCached();
     }
     return nullptr;
 }
 
-ZUNE_WIRELESS_API const char* zune_device_get_serial_number(zune_device_handle_t handle) {
+XUNE_SYNC_API const char* zune_device_get_serial_number(zune_device_handle_t handle) {
     if (handle) {
         return static_cast<ZuneDevice*>(handle)->GetSerialNumberCached();
     }
     return nullptr;
 }
 
-ZUNE_WIRELESS_API uint64_t zune_device_get_storage_capacity_bytes(zune_device_handle_t handle) {
+XUNE_SYNC_API uint64_t zune_device_get_storage_capacity_bytes(zune_device_handle_t handle) {
     if (handle) {
         return static_cast<ZuneDevice*>(handle)->GetStorageCapacityBytes();
     }
     return 0;
 }
 
-ZUNE_WIRELESS_API uint64_t zune_device_get_storage_free_bytes(zune_device_handle_t handle) {
+XUNE_SYNC_API uint64_t zune_device_get_storage_free_bytes(zune_device_handle_t handle) {
     if (handle) {
         return static_cast<ZuneDevice*>(handle)->GetStorageFreeBytes();
     }
     return 0;
 }
 
-ZUNE_WIRELESS_API bool zune_device_supports_network_mode(zune_device_handle_t handle) {
+XUNE_SYNC_API bool zune_device_supports_network_mode(zune_device_handle_t handle) {
     if (handle) {
         return static_cast<ZuneDevice*>(handle)->SupportsNetworkMode();
     }
     return false;
 }
 
-ZUNE_WIRELESS_API zune_device_family_t zune_device_get_family(zune_device_handle_t handle) {
+XUNE_SYNC_API zune_device_family_t zune_device_get_family(zune_device_handle_t handle) {
     if (handle) {
         return static_cast<zune_device_family_t>(static_cast<ZuneDevice*>(handle)->GetDeviceFamily());
     }
     return ZUNE_FAMILY_UNKNOWN;
 }
 
-ZUNE_WIRELESS_API uint8_t zune_device_get_color_id(zune_device_handle_t handle) {
+XUNE_SYNC_API uint8_t zune_device_get_color_id(zune_device_handle_t handle) {
     if (handle) {
         return static_cast<ZuneDevice*>(handle)->GetDeviceColorId();
     }
     return 0xFF;
 }
 
-ZUNE_WIRELESS_API const char* zune_device_get_color_name(zune_device_handle_t handle) {
+XUNE_SYNC_API const char* zune_device_get_color_name(zune_device_handle_t handle) {
     if (handle) {
         return static_cast<ZuneDevice*>(handle)->GetDeviceColorNameCached();
     }
     return nullptr;
 }
 
-ZUNE_WIRELESS_API const char* zune_device_get_family_name(zune_device_handle_t handle) {
+XUNE_SYNC_API const char* zune_device_get_family_name(zune_device_handle_t handle) {
     if (handle) {
         return static_cast<ZuneDevice*>(handle)->GetDeviceFamilyNameCached();
     }
     return nullptr;
 }
 
-ZUNE_WIRELESS_API const char* zune_device_establish_wireless_pairing(zune_device_handle_t handle, const char* ssid, const char* password) {
+XUNE_SYNC_API const char* zune_device_establish_wireless_pairing(zune_device_handle_t handle, const char* ssid, const char* password) {
     if (handle) {
         auto* device = static_cast<ZuneDevice*>(handle);
         // EstablishWirelessPairing returns a std::string, cache it and return pointer
@@ -154,34 +154,34 @@ ZUNE_WIRELESS_API const char* zune_device_establish_wireless_pairing(zune_device
     return nullptr;
 }
 
-ZUNE_WIRELESS_API int zune_device_disable_wireless(zune_device_handle_t handle) {
+XUNE_SYNC_API int zune_device_disable_wireless(zune_device_handle_t handle) {
     if (handle) {
         return static_cast<ZuneDevice*>(handle)->DisableWireless();
     }
     return -1;
 }
 
-ZUNE_WIRELESS_API int zune_device_erase_all_content(zune_device_handle_t handle) {
+XUNE_SYNC_API int zune_device_erase_all_content(zune_device_handle_t handle) {
     if (handle) {
         return static_cast<ZuneDevice*>(handle)->EraseAllContent();
     }
     return -1;
 }
 
-ZUNE_WIRELESS_API void zune_device_clear_track_cache(zune_device_handle_t handle) {
+XUNE_SYNC_API void zune_device_clear_track_cache(zune_device_handle_t handle) {
     if (handle) {
         static_cast<ZuneDevice*>(handle)->ClearTrackObjectIdCache();
     }
 }
 
-ZUNE_WIRELESS_API const char* zune_device_get_sync_partner_guid(zune_device_handle_t handle) {
+XUNE_SYNC_API const char* zune_device_get_sync_partner_guid(zune_device_handle_t handle) {
     if (handle) {
         return static_cast<ZuneDevice*>(handle)->GetSyncPartnerGuidCached();
     }
     return nullptr;
 }
 
-ZUNE_WIRELESS_API int zune_device_set_device_name(zune_device_handle_t handle, const char* name) {
+XUNE_SYNC_API int zune_device_set_device_name(zune_device_handle_t handle, const char* name) {
     if (!handle) {
         return -2;
     }
@@ -191,14 +191,14 @@ ZUNE_WIRELESS_API int zune_device_set_device_name(zune_device_handle_t handle, c
     return static_cast<ZuneDevice*>(handle)->SetDeviceName(std::string(name));
 }
 
-ZUNE_WIRELESS_API int zune_device_download_file(zune_device_handle_t handle, uint32_t object_handle, const char* destination_path) {
+XUNE_SYNC_API int zune_device_download_file(zune_device_handle_t handle, uint32_t object_handle, const char* destination_path) {
     if (handle) {
         return static_cast<ZuneDevice*>(handle)->DownloadFile(object_handle, destination_path);
     }
     return -1;
 }
 
-ZUNE_WIRELESS_API int zune_device_delete_file(zune_device_handle_t handle, uint32_t object_handle) {
+XUNE_SYNC_API int zune_device_delete_file(zune_device_handle_t handle, uint32_t object_handle) {
     if (handle) {
         return static_cast<ZuneDevice*>(handle)->DeleteFile(object_handle);
     }
@@ -207,7 +207,7 @@ ZUNE_WIRELESS_API int zune_device_delete_file(zune_device_handle_t handle, uint3
 
 
 
-ZUNE_WIRELESS_API ZuneMusicLibrary* zune_device_get_music_library(zune_device_handle_t handle) {
+XUNE_SYNC_API ZuneMusicLibrary* zune_device_get_music_library(zune_device_handle_t handle) {
     if (!handle) {
         return nullptr;
     }
@@ -215,11 +215,11 @@ ZUNE_WIRELESS_API ZuneMusicLibrary* zune_device_get_music_library(zune_device_ha
     return device->GetMusicLibrary();
 }
 
-ZUNE_WIRELESS_API void zune_device_free_music_library(ZuneMusicLibrary* library) {
+XUNE_SYNC_API void zune_device_free_music_library(ZuneMusicLibrary* library) {
     zune::MtpReader::FreeLibrary(library);
 }
 
-ZUNE_WIRELESS_API int zune_device_get_partial_object(
+XUNE_SYNC_API int zune_device_get_partial_object(
     zune_device_handle_t handle,
     uint32_t object_id,
     uint64_t offset,
@@ -251,20 +251,20 @@ ZUNE_WIRELESS_API int zune_device_get_partial_object(
     }
 }
 
-ZUNE_WIRELESS_API void zune_device_free_partial_data(uint8_t* data) {
+XUNE_SYNC_API void zune_device_free_partial_data(uint8_t* data) {
     if (data) {
         delete[] data;
     }
 }
 
-ZUNE_WIRELESS_API uint64_t zune_device_get_object_size(zune_device_handle_t handle, uint32_t object_id) {
+XUNE_SYNC_API uint64_t zune_device_get_object_size(zune_device_handle_t handle, uint32_t object_id) {
     if (handle) {
         return static_cast<ZuneDevice*>(handle)->GetObjectSize(object_id);
     }
     return 0;
 }
 
-ZUNE_WIRELESS_API const char* zune_device_get_object_filename(zune_device_handle_t handle, uint32_t object_id) {
+XUNE_SYNC_API const char* zune_device_get_object_filename(zune_device_handle_t handle, uint32_t object_id) {
     if (handle) {
         static thread_local std::string filename;
         filename = static_cast<ZuneDevice*>(handle)->GetObjectFilename(object_id);
@@ -273,7 +273,7 @@ ZUNE_WIRELESS_API const char* zune_device_get_object_filename(zune_device_handle
     return "";
 }
 
-ZUNE_WIRELESS_API uint32_t zune_device_get_audio_track_object_id(zune_device_handle_t handle, const char* track_title, uint32_t album_object_id) {
+XUNE_SYNC_API uint32_t zune_device_get_audio_track_object_id(zune_device_handle_t handle, const char* track_title, uint32_t album_object_id) {
     if (handle && track_title) {
         return static_cast<ZuneDevice*>(handle)->GetAudioTrackObjectId(track_title, album_object_id);
     }
@@ -284,7 +284,7 @@ ZUNE_WIRELESS_API uint32_t zune_device_get_audio_track_object_id(zune_device_han
 // Playlist Management API
 // ============================================================================
 
-ZUNE_WIRELESS_API uint32_t zune_device_create_playlist(
+XUNE_SYNC_API uint32_t zune_device_create_playlist(
     zune_device_handle_t handle,
     const char* name,
     const char* guid,
@@ -313,7 +313,7 @@ ZUNE_WIRELESS_API uint32_t zune_device_create_playlist(
     }
 }
 
-ZUNE_WIRELESS_API int zune_device_update_playlist_tracks(
+XUNE_SYNC_API int zune_device_update_playlist_tracks(
     zune_device_handle_t handle,
     uint32_t playlist_id,
     const uint32_t* track_ids,
@@ -339,7 +339,7 @@ ZUNE_WIRELESS_API int zune_device_update_playlist_tracks(
     }
 }
 
-ZUNE_WIRELESS_API int zune_device_delete_playlist(
+XUNE_SYNC_API int zune_device_delete_playlist(
     zune_device_handle_t handle,
     uint32_t playlist_id
 ) {
@@ -355,7 +355,7 @@ ZUNE_WIRELESS_API int zune_device_delete_playlist(
     }
 }
 
-ZUNE_WIRELESS_API int zune_device_set_track_user_state(
+XUNE_SYNC_API int zune_device_set_track_user_state(
     zune_device_handle_t handle,
     uint32_t zmdb_atom_id,
     int play_count,
@@ -373,7 +373,7 @@ ZUNE_WIRELESS_API int zune_device_set_track_user_state(
     }
 }
 
-ZUNE_WIRELESS_API void zune_ssdp_start_discovery(device_discovered_callback_t callback) {
+XUNE_SYNC_API void zune_ssdp_start_discovery(device_discovered_callback_t callback) {
     if (!g_discovery) {
         g_discovery = std::make_unique<ssdp::SSDPDiscovery>();
     }
@@ -384,14 +384,14 @@ ZUNE_WIRELESS_API void zune_ssdp_start_discovery(device_discovered_callback_t ca
     });
 }
 
-ZUNE_WIRELESS_API void zune_ssdp_stop_discovery() {
+XUNE_SYNC_API void zune_ssdp_stop_discovery() {
     if (g_discovery) {
         g_discovery->stop();
         g_discovery.reset();
     }
 }
 
-ZUNE_WIRELESS_API bool zune_device_find_on_usb(const char** uuid, const char** device_name) {
+XUNE_SYNC_API bool zune_device_find_on_usb(const char** uuid, const char** device_name) {
     // Log state transitions only (not every poll) to avoid log spam
     static bool last_found = false;
     static std::string last_error;
@@ -457,7 +457,7 @@ ZUNE_WIRELESS_API bool zune_device_find_on_usb(const char** uuid, const char** d
     return false;
 }
 
-ZUNE_WIRELESS_API bool zune_device_detect_on_usb() {
+XUNE_SYNC_API bool zune_device_detect_on_usb() {
     static bool last_detected = false;
 
     try {
@@ -491,7 +491,7 @@ ZUNE_WIRELESS_API bool zune_device_detect_on_usb() {
 // Artist Metadata HTTP Interception API
 // ============================================================================
 
-ZUNE_WIRELESS_API int zune_device_start_artist_metadata_interceptor(
+XUNE_SYNC_API int zune_device_start_artist_metadata_interceptor(
     zune_device_handle_t handle,
     const ZuneArtistMetadataConfig* config
 ) {
@@ -548,19 +548,19 @@ ZUNE_WIRELESS_API int zune_device_start_artist_metadata_interceptor(
     }
 }
 
-ZUNE_WIRELESS_API void zune_device_stop_artist_metadata_interceptor(zune_device_handle_t handle) {
+XUNE_SYNC_API void zune_device_stop_artist_metadata_interceptor(zune_device_handle_t handle) {
     if (!handle) return;
     auto* device = static_cast<ZuneDevice*>(handle);
     device->StopHTTPInterceptor();
 }
 
-ZUNE_WIRELESS_API bool zune_device_is_artist_metadata_interceptor_running(zune_device_handle_t handle) {
+XUNE_SYNC_API bool zune_device_is_artist_metadata_interceptor_running(zune_device_handle_t handle) {
     if (!handle) return false;
     auto* device = static_cast<ZuneDevice*>(handle);
     return device->IsHTTPInterceptorRunning();
 }
 
-ZUNE_WIRELESS_API int zune_device_get_artist_metadata_config(
+XUNE_SYNC_API int zune_device_get_artist_metadata_config(
     zune_device_handle_t handle,
     ZuneArtistMetadataConfig* config
 ) {
@@ -587,14 +587,14 @@ ZUNE_WIRELESS_API int zune_device_get_artist_metadata_config(
     }
 }
 
-ZUNE_WIRELESS_API ZuneArtistMetadataConfig zune_artist_metadata_config_static(const char* data_directory) {
+XUNE_SYNC_API ZuneArtistMetadataConfig zune_artist_metadata_config_static(const char* data_directory) {
     ZuneArtistMetadataConfig config = {};
     config.mode = ZUNE_ARTIST_METADATA_MODE_STATIC;
     config.static_data_directory = strdup(data_directory);
     return config;
 }
 
-ZUNE_WIRELESS_API ZuneArtistMetadataConfig zune_artist_metadata_config_proxy(const char* server_base_url) {
+XUNE_SYNC_API ZuneArtistMetadataConfig zune_artist_metadata_config_proxy(const char* server_base_url) {
     ZuneArtistMetadataConfig config = {};
     config.mode = ZUNE_ARTIST_METADATA_MODE_PROXY;
     config.proxy_catalog_server = strdup(server_base_url);
@@ -602,7 +602,7 @@ ZUNE_WIRELESS_API ZuneArtistMetadataConfig zune_artist_metadata_config_proxy(con
     return config;
 }
 
-ZUNE_WIRELESS_API void zune_artist_metadata_config_free(ZuneArtistMetadataConfig* config) {
+XUNE_SYNC_API void zune_artist_metadata_config_free(ZuneArtistMetadataConfig* config) {
     if (!config) return;
 
     if (config->static_data_directory) {
@@ -627,7 +627,7 @@ ZUNE_WIRELESS_API void zune_artist_metadata_config_free(ZuneArtistMetadataConfig
     }
 }
 
-ZUNE_WIRELESS_API void zune_device_set_path_resolver_callback(
+XUNE_SYNC_API void zune_device_set_path_resolver_callback(
     zune_device_handle_t handle,
     zune_path_resolver_callback_t callback,
     void* user_data)
@@ -643,7 +643,7 @@ ZUNE_WIRELESS_API void zune_device_set_path_resolver_callback(
     }
 }
 
-ZUNE_WIRELESS_API void zune_device_set_cache_storage_callback(
+XUNE_SYNC_API void zune_device_set_cache_storage_callback(
     zune_device_handle_t handle,
     zune_cache_storage_callback_t callback,
     void* user_data)
@@ -659,7 +659,7 @@ ZUNE_WIRELESS_API void zune_device_set_cache_storage_callback(
     }
 }
 
-ZUNE_WIRELESS_API bool zune_device_initialize_http_subsystem(zune_device_handle_t handle)
+XUNE_SYNC_API bool zune_device_initialize_http_subsystem(zune_device_handle_t handle)
 {
     if (!handle) return false;
 
@@ -671,7 +671,7 @@ ZUNE_WIRELESS_API bool zune_device_initialize_http_subsystem(zune_device_handle_
     }
 }
 
-ZUNE_WIRELESS_API bool zune_device_trigger_network_mode(zune_device_handle_t handle)
+XUNE_SYNC_API bool zune_device_trigger_network_mode(zune_device_handle_t handle)
 {
     if (!handle) return false;
 
@@ -685,7 +685,7 @@ ZUNE_WIRELESS_API bool zune_device_trigger_network_mode(zune_device_handle_t han
     }
 }
 
-ZUNE_WIRELESS_API void zune_device_enable_network_polling(zune_device_handle_t handle)
+XUNE_SYNC_API void zune_device_enable_network_polling(zune_device_handle_t handle)
 {
     if (!handle) return;
 
@@ -697,7 +697,7 @@ ZUNE_WIRELESS_API void zune_device_enable_network_polling(zune_device_handle_t h
     }
 }
 
-ZUNE_WIRELESS_API int zune_device_poll_network_data(zune_device_handle_t handle, int timeout_ms)
+XUNE_SYNC_API int zune_device_poll_network_data(zune_device_handle_t handle, int timeout_ms)
 {
     if (!handle) return -1;
 
@@ -709,7 +709,7 @@ ZUNE_WIRELESS_API int zune_device_poll_network_data(zune_device_handle_t handle,
     }
 }
 
-ZUNE_WIRELESS_API void zune_device_set_verbose_network_logging(zune_device_handle_t handle, bool enable)
+XUNE_SYNC_API void zune_device_set_verbose_network_logging(zune_device_handle_t handle, bool enable)
 {
     if (!handle) return;
 
@@ -725,7 +725,7 @@ ZUNE_WIRELESS_API void zune_device_set_verbose_network_logging(zune_device_handl
 // Network Session State & Control
 // ============================================================================
 
-ZUNE_WIRELESS_API bool zune_device_read_network_state(
+XUNE_SYNC_API bool zune_device_read_network_state(
     zune_device_handle_t handle,
     int32_t* out_active,
     int32_t* out_progress,
@@ -742,7 +742,7 @@ ZUNE_WIRELESS_API bool zune_device_read_network_state(
     }
 }
 
-ZUNE_WIRELESS_API bool zune_device_teardown_network_session(zune_device_handle_t handle)
+XUNE_SYNC_API bool zune_device_teardown_network_session(zune_device_handle_t handle)
 {
     if (!handle) return false;
 
@@ -754,7 +754,7 @@ ZUNE_WIRELESS_API bool zune_device_teardown_network_session(zune_device_handle_t
     }
 }
 
-ZUNE_WIRELESS_API bool zune_device_enable_trusted_files(zune_device_handle_t handle)
+XUNE_SYNC_API bool zune_device_enable_trusted_files(zune_device_handle_t handle)
 {
     if (!handle) return false;
 
@@ -766,7 +766,7 @@ ZUNE_WIRELESS_API bool zune_device_enable_trusted_files(zune_device_handle_t han
     }
 }
 
-ZUNE_WIRELESS_API bool zune_device_disable_trusted_files(zune_device_handle_t handle)
+XUNE_SYNC_API bool zune_device_disable_trusted_files(zune_device_handle_t handle)
 {
     if (!handle) return false;
 
@@ -778,7 +778,7 @@ ZUNE_WIRELESS_API bool zune_device_disable_trusted_files(zune_device_handle_t ha
     }
 }
 
-ZUNE_WIRELESS_API bool zune_device_open_idle_session(zune_device_handle_t handle)
+XUNE_SYNC_API bool zune_device_open_idle_session(zune_device_handle_t handle)
 {
     if (!handle) return false;
 
@@ -794,7 +794,7 @@ ZUNE_WIRELESS_API bool zune_device_open_idle_session(zune_device_handle_t handle
     }
 }
 
-ZUNE_WIRELESS_API bool zune_device_read_sync_status(zune_device_handle_t handle)
+XUNE_SYNC_API bool zune_device_read_sync_status(zune_device_handle_t handle)
 {
     if (!handle) return false;
 
@@ -811,7 +811,7 @@ ZUNE_WIRELESS_API bool zune_device_read_sync_status(zune_device_handle_t handle)
     }
 }
 
-ZUNE_WIRELESS_API bool zune_device_close_session(zune_device_handle_t handle)
+XUNE_SYNC_API bool zune_device_close_session(zune_device_handle_t handle)
 {
     if (!handle) return false;
 
@@ -830,7 +830,7 @@ ZUNE_WIRELESS_API bool zune_device_close_session(zune_device_handle_t handle)
 // Low-Level MTP Primitives Implementation
 // ============================================================================
 
-ZUNE_WIRELESS_API ZuneMtpCreateResult zune_mtp_send_object_prop_list(
+XUNE_SYNC_API ZuneMtpCreateResult zune_mtp_send_object_prop_list(
     zune_device_handle_t handle,
     uint32_t storage_id,
     uint32_t parent_id,
@@ -935,7 +935,7 @@ ZUNE_WIRELESS_API ZuneMtpCreateResult zune_mtp_send_object_prop_list(
     return result;
 }
 
-ZUNE_WIRELESS_API int zune_mtp_send_object(
+XUNE_SYNC_API int zune_mtp_send_object(
     zune_device_handle_t handle,
     const void* data,
     uint64_t size
@@ -965,7 +965,7 @@ ZUNE_WIRELESS_API int zune_mtp_send_object(
     }
 }
 
-ZUNE_WIRELESS_API int zune_mtp_send_object_from_file(
+XUNE_SYNC_API int zune_mtp_send_object_from_file(
     zune_device_handle_t handle,
     const char* file_path
 ) {
@@ -985,7 +985,7 @@ ZUNE_WIRELESS_API int zune_mtp_send_object_from_file(
     }
 }
 
-ZUNE_WIRELESS_API int zune_mtp_set_object_references(
+XUNE_SYNC_API int zune_mtp_set_object_references(
     zune_device_handle_t handle,
     uint32_t object_id,
     const uint32_t* ref_ids,
@@ -1014,7 +1014,7 @@ ZUNE_WIRELESS_API int zune_mtp_set_object_references(
     }
 }
 
-ZUNE_WIRELESS_API int zune_mtp_get_object_references(
+XUNE_SYNC_API int zune_mtp_get_object_references(
     zune_device_handle_t handle,
     uint32_t object_id,
     uint32_t* out_ref_ids,
@@ -1047,7 +1047,7 @@ ZUNE_WIRELESS_API int zune_mtp_get_object_references(
     }
 }
 
-ZUNE_WIRELESS_API int zune_mtp_set_object_property_string(
+XUNE_SYNC_API int zune_mtp_set_object_property_string(
     zune_device_handle_t handle,
     uint32_t object_id,
     uint16_t property_code,
@@ -1072,7 +1072,7 @@ ZUNE_WIRELESS_API int zune_mtp_set_object_property_string(
     }
 }
 
-ZUNE_WIRELESS_API int zune_mtp_set_object_property_int(
+XUNE_SYNC_API int zune_mtp_set_object_property_int(
     zune_device_handle_t handle,
     uint32_t object_id,
     uint16_t property_code,
@@ -1097,7 +1097,7 @@ ZUNE_WIRELESS_API int zune_mtp_set_object_property_int(
     }
 }
 
-ZUNE_WIRELESS_API int zune_mtp_set_object_property_array(
+XUNE_SYNC_API int zune_mtp_set_object_property_array(
     zune_device_handle_t handle,
     uint32_t object_id,
     uint16_t property_code,
@@ -1129,7 +1129,7 @@ ZUNE_WIRELESS_API int zune_mtp_set_object_property_array(
     }
 }
 
-ZUNE_WIRELESS_API int zune_mtp_get_object_handles(
+XUNE_SYNC_API int zune_mtp_get_object_handles(
     zune_device_handle_t handle,
     uint32_t storage_id,
     uint16_t format,
@@ -1168,7 +1168,7 @@ ZUNE_WIRELESS_API int zune_mtp_get_object_handles(
     }
 }
 
-ZUNE_WIRELESS_API uint32_t zune_mtp_create_directory(
+XUNE_SYNC_API uint32_t zune_mtp_create_directory(
     zune_device_handle_t handle,
     const char* name,
     uint32_t parent_id,
@@ -1192,7 +1192,7 @@ ZUNE_WIRELESS_API uint32_t zune_mtp_create_directory(
     }
 }
 
-ZUNE_WIRELESS_API int zune_mtp_get_storage_ids(
+XUNE_SYNC_API int zune_mtp_get_storage_ids(
     zune_device_handle_t handle,
     uint32_t* out_storage_ids,
     uint32_t max_storages
@@ -1220,7 +1220,7 @@ ZUNE_WIRELESS_API int zune_mtp_get_storage_ids(
     }
 }
 
-ZUNE_WIRELESS_API uint32_t zune_mtp_get_default_storage(
+XUNE_SYNC_API uint32_t zune_mtp_get_default_storage(
     zune_device_handle_t handle
 ) {
     if (!handle) return 0;
@@ -1233,7 +1233,7 @@ ZUNE_WIRELESS_API uint32_t zune_mtp_get_default_storage(
     }
 }
 
-ZUNE_WIRELESS_API int zune_mtp_delete_object(
+XUNE_SYNC_API int zune_mtp_delete_object(
     zune_device_handle_t handle,
     uint32_t object_id
 ) {
@@ -1254,7 +1254,7 @@ ZUNE_WIRELESS_API int zune_mtp_delete_object(
 
 // --- Zune Vendor Operations ---
 
-ZUNE_WIRELESS_API int zune_mtp_operation_9217(
+XUNE_SYNC_API int zune_mtp_operation_9217(
     zune_device_handle_t handle,
     uint32_t param
 ) {
@@ -1276,7 +1276,7 @@ ZUNE_WIRELESS_API int zune_mtp_operation_9217(
     }
 }
 
-ZUNE_WIRELESS_API int zune_mtp_operation_922a(
+XUNE_SYNC_API int zune_mtp_operation_922a(
     zune_device_handle_t handle,
     const char* track_name
 ) {
@@ -1298,7 +1298,7 @@ ZUNE_WIRELESS_API int zune_mtp_operation_922a(
     }
 }
 
-ZUNE_WIRELESS_API int zune_mtp_operation_9802(
+XUNE_SYNC_API int zune_mtp_operation_9802(
     zune_device_handle_t handle,
     uint16_t property_code,
     uint16_t format_type
@@ -1340,7 +1340,7 @@ ZUNE_WIRELESS_API int zune_mtp_operation_9802(
 
 // --- Pre-Upload ---
 
-ZUNE_WIRELESS_API ZuneRootDiscovery zune_upload_discover_root(zune_device_handle_t handle, uint8_t is_hd) {
+XUNE_SYNC_API ZuneRootDiscovery zune_upload_discover_root(zune_device_handle_t handle, uint8_t is_hd) {
     ZuneRootDiscovery result = {};
     if (!handle) return result;
     auto* device = static_cast<ZuneDevice*>(handle);
@@ -1358,7 +1358,7 @@ ZUNE_WIRELESS_API ZuneRootDiscovery zune_upload_discover_root(zune_device_handle
     return result;
 }
 
-ZUNE_WIRELESS_API int zune_upload_root_re_enum(zune_device_handle_t handle) {
+XUNE_SYNC_API int zune_upload_root_re_enum(zune_device_handle_t handle) {
     UPLOAD_SESSION_GUARD(handle);
     try { zune::MtpWriter::RootReEnum(_session); return 0; }
     catch (...) { return -1; }
@@ -1366,7 +1366,7 @@ ZUNE_WIRELESS_API int zune_upload_root_re_enum(zune_device_handle_t handle) {
 
 // --- Folder Discovery & Creation ---
 
-ZUNE_WIRELESS_API ZuneFolderDiscovery zune_upload_discover_folder(
+XUNE_SYNC_API ZuneFolderDiscovery zune_upload_discover_folder(
     zune_device_handle_t handle, uint32_t folder_id)
 {
     ZuneFolderDiscovery result = {};
@@ -1387,7 +1387,7 @@ ZUNE_WIRELESS_API ZuneFolderDiscovery zune_upload_discover_folder(
     return result;
 }
 
-ZUNE_WIRELESS_API uint32_t zune_upload_create_folder(
+XUNE_SYNC_API uint32_t zune_upload_create_folder(
     zune_device_handle_t handle, uint32_t parent_id, const char* name)
 {
     UPLOAD_SESSION_GUARD_VAL(handle, 0);
@@ -1397,7 +1397,7 @@ ZUNE_WIRELESS_API uint32_t zune_upload_create_folder(
     } catch (...) { return 0; }
 }
 
-ZUNE_WIRELESS_API int zune_upload_folder_readback(
+XUNE_SYNC_API int zune_upload_folder_readback(
     zune_device_handle_t handle, uint32_t folder_id)
 {
     UPLOAD_SESSION_GUARD(handle);
@@ -1408,7 +1408,7 @@ ZUNE_WIRELESS_API int zune_upload_folder_readback(
     } catch (...) { return -1; }
 }
 
-ZUNE_WIRELESS_API int zune_upload_first_folder_readback(
+XUNE_SYNC_API int zune_upload_first_folder_readback(
     zune_device_handle_t handle, uint32_t folder_id)
 {
     UPLOAD_SESSION_GUARD(handle);
@@ -1422,7 +1422,7 @@ ZUNE_WIRELESS_API int zune_upload_first_folder_readback(
 
 // --- Artist Metadata ---
 
-ZUNE_WIRELESS_API uint32_t zune_upload_create_artist_metadata(
+XUNE_SYNC_API uint32_t zune_upload_create_artist_metadata(
     zune_device_handle_t handle, uint32_t artists_folder,
     const char* name, const uint8_t* guid_bytes, uint32_t guid_len)
 {
@@ -1436,7 +1436,7 @@ ZUNE_WIRELESS_API uint32_t zune_upload_create_artist_metadata(
 
 // --- Track Operations ---
 
-ZUNE_WIRELESS_API uint32_t zune_upload_create_track(
+XUNE_SYNC_API uint32_t zune_upload_create_track(
     zune_device_handle_t handle, uint32_t album_folder,
     const ZuneTrackProps* props, uint16_t format_code, uint64_t file_size)
 {
@@ -1463,7 +1463,7 @@ ZUNE_WIRELESS_API uint32_t zune_upload_create_track(
     } catch (...) { return 0; }
 }
 
-ZUNE_WIRELESS_API int zune_upload_send_audio(
+XUNE_SYNC_API int zune_upload_send_audio(
     zune_device_handle_t handle, const char* file_path)
 {
     UPLOAD_SESSION_GUARD(handle);
@@ -1474,7 +1474,7 @@ ZUNE_WIRELESS_API int zune_upload_send_audio(
     } catch (...) { return -1; }
 }
 
-ZUNE_WIRELESS_API int zune_upload_verify_track(
+XUNE_SYNC_API int zune_upload_verify_track(
     zune_device_handle_t handle, uint32_t track_id)
 {
     UPLOAD_SESSION_GUARD(handle);
@@ -1484,7 +1484,7 @@ ZUNE_WIRELESS_API int zune_upload_verify_track(
 
 // --- Album Metadata ---
 
-ZUNE_WIRELESS_API uint32_t zune_upload_create_album(
+XUNE_SYNC_API uint32_t zune_upload_create_album(
     zune_device_handle_t handle, uint32_t albums_folder,
     const ZuneAlbumProps* props)
 {
@@ -1502,7 +1502,7 @@ ZUNE_WIRELESS_API uint32_t zune_upload_create_album(
     } catch (...) { return 0; }
 }
 
-ZUNE_WIRELESS_API int zune_upload_set_artwork(
+XUNE_SYNC_API int zune_upload_set_artwork(
     zune_device_handle_t handle, uint32_t album_id,
     const uint8_t* data, uint32_t size)
 {
@@ -1514,7 +1514,7 @@ ZUNE_WIRELESS_API int zune_upload_set_artwork(
     } catch (...) { return -1; }
 }
 
-ZUNE_WIRELESS_API int zune_upload_set_album_refs(
+XUNE_SYNC_API int zune_upload_set_album_refs(
     zune_device_handle_t handle, uint32_t album_id,
     const uint32_t* track_ids, uint32_t count)
 {
@@ -1526,7 +1526,7 @@ ZUNE_WIRELESS_API int zune_upload_set_album_refs(
     } catch (...) { return -1; }
 }
 
-ZUNE_WIRELESS_API int zune_upload_verify_album(
+XUNE_SYNC_API int zune_upload_verify_album(
     zune_device_handle_t handle, uint32_t album_id, bool include_parent_desc)
 {
     UPLOAD_SESSION_GUARD(handle);
@@ -1536,7 +1536,7 @@ ZUNE_WIRELESS_API int zune_upload_verify_album(
     } catch (...) { return -1; }
 }
 
-ZUNE_WIRELESS_API int zune_upload_read_album_subset(
+XUNE_SYNC_API int zune_upload_read_album_subset(
     zune_device_handle_t handle, uint32_t album_id)
 {
     UPLOAD_SESSION_GUARD(handle);
@@ -1550,7 +1550,7 @@ ZUNE_WIRELESS_API int zune_upload_read_album_subset(
 
 // --- Finalization ---
 
-ZUNE_WIRELESS_API int zune_upload_register_track_ctx(
+XUNE_SYNC_API int zune_upload_register_track_ctx(
     zune_device_handle_t handle, const char* track_name)
 {
     UPLOAD_SESSION_GUARD(handle);
@@ -1563,13 +1563,13 @@ ZUNE_WIRELESS_API int zune_upload_register_track_ctx(
 
 // --- Property Descriptor Queries ---
 
-ZUNE_WIRELESS_API int zune_upload_query_folder_descs(zune_device_handle_t handle) {
+XUNE_SYNC_API int zune_upload_query_folder_descs(zune_device_handle_t handle) {
     UPLOAD_SESSION_GUARD(handle);
     try { zune::MtpWriter::QueryFolderDescriptors(_session); return 0; }
     catch (...) { return -1; }
 }
 
-ZUNE_WIRELESS_API int zune_upload_query_batch_descs(
+XUNE_SYNC_API int zune_upload_query_batch_descs(
     zune_device_handle_t handle, uint16_t prop_code)
 {
     UPLOAD_SESSION_GUARD(handle);
@@ -1578,14 +1578,14 @@ ZUNE_WIRELESS_API int zune_upload_query_batch_descs(
     catch (...) { return -1; }
 }
 
-ZUNE_WIRELESS_API int zune_upload_query_object_format_descs(zune_device_handle_t handle) {
+XUNE_SYNC_API int zune_upload_query_object_format_descs(zune_device_handle_t handle) {
     UPLOAD_SESSION_GUARD(handle);
     bool isHD = (_device->GetDeviceFamily() == zune::DeviceFamily::Pavo);
     try { zune::MtpWriter::QueryBatchDescriptors(_session, 0xDC02, isHD); return 0; }
     catch (...) { return -1; }
 }
 
-ZUNE_WIRELESS_API int zune_upload_query_track_descs(
+XUNE_SYNC_API int zune_upload_query_track_descs(
     zune_device_handle_t handle, uint16_t format_code)
 {
     UPLOAD_SESSION_GUARD(handle);
@@ -1594,20 +1594,20 @@ ZUNE_WIRELESS_API int zune_upload_query_track_descs(
     catch (...) { return -1; }
 }
 
-ZUNE_WIRELESS_API int zune_upload_query_album_descs(zune_device_handle_t handle) {
+XUNE_SYNC_API int zune_upload_query_album_descs(zune_device_handle_t handle) {
     UPLOAD_SESSION_GUARD(handle);
     bool isHD = (_device->GetDeviceFamily() == zune::DeviceFamily::Pavo);
     try { zune::MtpWriter::QueryAlbumDescriptors(_session, isHD); return 0; }
     catch (...) { return -1; }
 }
 
-ZUNE_WIRELESS_API int zune_upload_query_artist_descs(zune_device_handle_t handle) {
+XUNE_SYNC_API int zune_upload_query_artist_descs(zune_device_handle_t handle) {
     UPLOAD_SESSION_GUARD(handle);
     try { zune::MtpWriter::QueryArtistDescriptors(_session); return 0; }
     catch (...) { return -1; }
 }
 
-ZUNE_WIRELESS_API int zune_upload_query_artwork_descs(zune_device_handle_t handle) {
+XUNE_SYNC_API int zune_upload_query_artwork_descs(zune_device_handle_t handle) {
     UPLOAD_SESSION_GUARD(handle);
     try { zune::MtpWriter::QueryArtworkDescriptors(_session); return 0; }
     catch (...) { return -1; }

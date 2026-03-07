@@ -10,7 +10,7 @@
 #include <mtp/ptp/Device.h>
 #include <usb/Context.h>
 #include <cli/Session.h>
-#include "zune_wireless/zune_wireless_api.h"
+#include "xune_sync/xune_sync_api.h"
 #include "ZuneTypes.h"
 #include "ZuneDeviceIdentification.h"
 

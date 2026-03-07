@@ -1,5 +1,5 @@
-#ifndef ZUNE_WIRELESS_API_H
-#define ZUNE_WIRELESS_API_H
+#ifndef XUNE_SYNC_API_H
+#define XUNE_SYNC_API_H
 
 #ifdef __cplusplus
 extern "C" {
@@ -7,12 +7,12 @@ extern "C" {
 
 #if defined(_WIN32)
     #ifdef ZUNE_WIRELESS_EXPORTS
-        #define ZUNE_WIRELESS_API __declspec(dllexport)
+        #define XUNE_SYNC_API __declspec(dllexport)
     #else
-        #define ZUNE_WIRELESS_API __declspec(dllimport)
+        #define XUNE_SYNC_API __declspec(dllimport)
     #endif
 #else
-    #define ZUNE_WIRELESS_API __attribute__((visibility("default")))
+    #define XUNE_SYNC_API __attribute__((visibility("default")))
 #endif
 
 // Opaque handle to the ZuneDevice object
@@ -118,55 +118,55 @@ struct ZunePlaylistInfo {
 };
 
 // API functions
-ZUNE_WIRELESS_API zune_device_handle_t zune_device_create();
-ZUNE_WIRELESS_API void zune_device_destroy(zune_device_handle_t handle);
+XUNE_SYNC_API zune_device_handle_t zune_device_create();
+XUNE_SYNC_API void zune_device_destroy(zune_device_handle_t handle);
 
-ZUNE_WIRELESS_API bool zune_device_connect_usb(zune_device_handle_t handle);
-ZUNE_WIRELESS_API void zune_device_disconnect(zune_device_handle_t handle);
+XUNE_SYNC_API bool zune_device_connect_usb(zune_device_handle_t handle);
+XUNE_SYNC_API void zune_device_disconnect(zune_device_handle_t handle);
 
 // Connection validation - lightweight MTP operation to verify session is still valid
-ZUNE_WIRELESS_API bool zune_device_is_connected(zune_device_handle_t handle);
-ZUNE_WIRELESS_API bool zune_device_validate_connection(zune_device_handle_t handle);
+XUNE_SYNC_API bool zune_device_is_connected(zune_device_handle_t handle);
+XUNE_SYNC_API bool zune_device_validate_connection(zune_device_handle_t handle);
 
-ZUNE_WIRELESS_API void zune_device_set_log_callback(zune_device_handle_t handle, log_callback_t callback);
+XUNE_SYNC_API void zune_device_set_log_callback(zune_device_handle_t handle, log_callback_t callback);
 
 // Set the path to the MTPZ authentication data file.
 // Must be called before zune_device_connect_usb().
 // If not set, falls back to $HOME/.mtpz-data.
-ZUNE_WIRELESS_API void zune_device_set_mtpz_data_path(zune_device_handle_t handle, const char* path);
+XUNE_SYNC_API void zune_device_set_mtpz_data_path(zune_device_handle_t handle, const char* path);
 
-ZUNE_WIRELESS_API int zune_device_establish_sync_pairing(zune_device_handle_t handle, const char* device_name);
-ZUNE_WIRELESS_API const char* zune_device_establish_wireless_pairing(zune_device_handle_t handle, const char* ssid, const char* password);
-ZUNE_WIRELESS_API int zune_device_disable_wireless(zune_device_handle_t handle);
+XUNE_SYNC_API int zune_device_establish_sync_pairing(zune_device_handle_t handle, const char* device_name);
+XUNE_SYNC_API const char* zune_device_establish_wireless_pairing(zune_device_handle_t handle, const char* ssid, const char* password);
+XUNE_SYNC_API int zune_device_disable_wireless(zune_device_handle_t handle);
 
 // Device Management
 // Erase all content on the device (WARNING: This will delete all music, playlists, and other content)
 // Returns: 0 on success, -1 if not connected, -2 on MTP error
-ZUNE_WIRELESS_API int zune_device_erase_all_content(zune_device_handle_t handle);
+XUNE_SYNC_API int zune_device_erase_all_content(zune_device_handle_t handle);
 
 // Clears the cached track object ID lookup table.
 // Call at the start of upload sessions to prevent stale entries after track modifications.
-ZUNE_WIRELESS_API void zune_device_clear_track_cache(zune_device_handle_t handle);
+XUNE_SYNC_API void zune_device_clear_track_cache(zune_device_handle_t handle);
 
 // Sync Partnership Functions
 // GUID returned when device has no sync partnership (unpaired or pairing incomplete)
 #define ZUNE_NULL_GUID "{00000000-0000-0000-0000-000000000000}"
 // Returns device's sync partner GUID (MTP property 0xd401)
 // Returns nullptr on error, ZUNE_NULL_GUID if not paired, real GUID if paired
-ZUNE_WIRELESS_API const char* zune_device_get_sync_partner_guid(zune_device_handle_t handle);
+XUNE_SYNC_API const char* zune_device_get_sync_partner_guid(zune_device_handle_t handle);
 // Sets device friendly name (MTP property 0xd402) without full pairing
 // Returns 0 on success, -1 on invalid input, -2 if not connected, -3 on MTP error
-ZUNE_WIRELESS_API int zune_device_set_device_name(zune_device_handle_t handle, const char* name);
+XUNE_SYNC_API int zune_device_set_device_name(zune_device_handle_t handle, const char* name);
 
 // Device Info Functions
-ZUNE_WIRELESS_API const char* zune_device_get_name(zune_device_handle_t handle);
-ZUNE_WIRELESS_API const char* zune_device_get_serial_number(zune_device_handle_t handle);
+XUNE_SYNC_API const char* zune_device_get_name(zune_device_handle_t handle);
+XUNE_SYNC_API const char* zune_device_get_serial_number(zune_device_handle_t handle);
 
 // Storage capacity in bytes (from MTP StorageInfo)
-ZUNE_WIRELESS_API uint64_t zune_device_get_storage_capacity_bytes(zune_device_handle_t handle);
+XUNE_SYNC_API uint64_t zune_device_get_storage_capacity_bytes(zune_device_handle_t handle);
 
 // Storage free space in bytes (from MTP StorageInfo)
-ZUNE_WIRELESS_API uint64_t zune_device_get_storage_free_bytes(zune_device_handle_t handle);
+XUNE_SYNC_API uint64_t zune_device_get_storage_free_bytes(zune_device_handle_t handle);
 
 // Device Family enumeration (from MTP property 0xd21a)
 // Values match the Zune firmware's internal family IDs
@@ -180,30 +180,30 @@ typedef enum {
 
 // Device Identification Functions (from MTP property 0xd21a)
 // Returns the device family enum
-ZUNE_WIRELESS_API zune_device_family_t zune_device_get_family(zune_device_handle_t handle);
+XUNE_SYNC_API zune_device_family_t zune_device_get_family(zune_device_handle_t handle);
 // Returns the raw color ID from 0xd21a byte 0
-ZUNE_WIRELESS_API uint8_t zune_device_get_color_id(zune_device_handle_t handle);
+XUNE_SYNC_API uint8_t zune_device_get_color_id(zune_device_handle_t handle);
 // Returns the color name (e.g., "Brown", "Platinum", "BlackBlack")
 // Pointer remains valid until next call or device destruction
-ZUNE_WIRELESS_API const char* zune_device_get_color_name(zune_device_handle_t handle);
+XUNE_SYNC_API const char* zune_device_get_color_name(zune_device_handle_t handle);
 // Returns the family name with generation (e.g., "Keel (1st Gen)", "Draco (2nd Gen HDD)")
 // Pointer remains valid until next call or device destruction
-ZUNE_WIRELESS_API const char* zune_device_get_family_name(zune_device_handle_t handle);
+XUNE_SYNC_API const char* zune_device_get_family_name(zune_device_handle_t handle);
 
 // Device Capability Functions
 // Returns true if device supports network mode (HTTP-based artist metadata proxy).
 // Only Zune HD devices (USB Product ID 0x063e) support this feature.
 // Classic devices (Zune 30/80/120/Flash) do not have the required hardware.
-ZUNE_WIRELESS_API bool zune_device_supports_network_mode(zune_device_handle_t handle);
+XUNE_SYNC_API bool zune_device_supports_network_mode(zune_device_handle_t handle);
 
 // Library & File Operations
-ZUNE_WIRELESS_API ZuneMusicLibrary* zune_device_get_music_library(zune_device_handle_t handle);
-ZUNE_WIRELESS_API void zune_device_free_music_library(ZuneMusicLibrary* library);
-ZUNE_WIRELESS_API int zune_device_download_file(zune_device_handle_t handle, uint32_t object_handle, const char* destination_path);
-ZUNE_WIRELESS_API int zune_device_delete_file(zune_device_handle_t handle, uint32_t object_handle);
+XUNE_SYNC_API ZuneMusicLibrary* zune_device_get_music_library(zune_device_handle_t handle);
+XUNE_SYNC_API void zune_device_free_music_library(ZuneMusicLibrary* library);
+XUNE_SYNC_API int zune_device_download_file(zune_device_handle_t handle, uint32_t object_handle, const char* destination_path);
+XUNE_SYNC_API int zune_device_delete_file(zune_device_handle_t handle, uint32_t object_handle);
 
 // Streaming/Partial Downloads
-ZUNE_WIRELESS_API int zune_device_get_partial_object(
+XUNE_SYNC_API int zune_device_get_partial_object(
     zune_device_handle_t handle,
     uint32_t object_id,
     uint64_t offset,
@@ -211,9 +211,9 @@ ZUNE_WIRELESS_API int zune_device_get_partial_object(
     uint8_t** out_data,
     uint32_t* out_size
 );
-ZUNE_WIRELESS_API void zune_device_free_partial_data(uint8_t* data);
-ZUNE_WIRELESS_API uint64_t zune_device_get_object_size(zune_device_handle_t handle, uint32_t object_id);
-ZUNE_WIRELESS_API const char* zune_device_get_object_filename(zune_device_handle_t handle, uint32_t object_id);
+XUNE_SYNC_API void zune_device_free_partial_data(uint8_t* data);
+XUNE_SYNC_API uint64_t zune_device_get_object_size(zune_device_handle_t handle, uint32_t object_id);
+XUNE_SYNC_API const char* zune_device_get_object_filename(zune_device_handle_t handle, uint32_t object_id);
 
 // Dynamic ObjectId resolution
 // Query MTP for a specific audio track's ObjectId by title/filename within an album context.
@@ -229,7 +229,7 @@ ZUNE_WIRELESS_API const char* zune_device_get_object_filename(zune_device_handle
 //   - Comparison is exact match, case-sensitive
 //   - This function may make multiple MTP queries; results should be cached in persistent storage
 //   - Requires valid album context for efficient searching
-ZUNE_WIRELESS_API uint32_t zune_device_get_audio_track_object_id(
+XUNE_SYNC_API uint32_t zune_device_get_audio_track_object_id(
     zune_device_handle_t handle,
     const char* track_title,
     uint32_t album_object_id
@@ -247,7 +247,7 @@ ZUNE_WIRELESS_API uint32_t zune_device_get_audio_track_object_id(
 /// @param track_count Number of tracks in the array
 /// @param playlists_folder_id MTP object ID of the Playlists folder (from root discovery)
 /// @return New playlist MTP object ID, or 0 on failure
-ZUNE_WIRELESS_API uint32_t zune_device_create_playlist(
+XUNE_SYNC_API uint32_t zune_device_create_playlist(
     zune_device_handle_t handle,
     const char* name,
     const char* guid,
@@ -262,7 +262,7 @@ ZUNE_WIRELESS_API uint32_t zune_device_create_playlist(
 /// @param track_ids Array of track MTP object IDs (atom_ids from zmdb)
 /// @param track_count Number of tracks in the array
 /// @return 0 on success, negative on error
-ZUNE_WIRELESS_API int zune_device_update_playlist_tracks(
+XUNE_SYNC_API int zune_device_update_playlist_tracks(
     zune_device_handle_t handle,
     uint32_t playlist_id,
     const uint32_t* track_ids,
@@ -273,7 +273,7 @@ ZUNE_WIRELESS_API int zune_device_update_playlist_tracks(
 /// @param handle Device handle from zune_device_create()
 /// @param playlist_id MTP object ID of the playlist to delete
 /// @return 0 on success, negative on error
-ZUNE_WIRELESS_API int zune_device_delete_playlist(
+XUNE_SYNC_API int zune_device_delete_playlist(
     zune_device_handle_t handle,
     uint32_t playlist_id
 );
@@ -296,7 +296,7 @@ ZUNE_WIRELESS_API int zune_device_delete_playlist(
 //
 // Note: Rating is implemented via MTP SetObjectProperty with UserRating (0xDC8A).
 // Play count and skip count are ignored pending protocol analysis.
-ZUNE_WIRELESS_API int zune_device_set_track_user_state(
+XUNE_SYNC_API int zune_device_set_track_user_state(
     zune_device_handle_t handle,
     uint32_t zmdb_atom_id,
     int play_count,
@@ -305,15 +305,15 @@ ZUNE_WIRELESS_API int zune_device_set_track_user_state(
 );
 
 // USB Discovery functions
-ZUNE_WIRELESS_API bool zune_device_find_on_usb(const char** uuid, const char** device_name);
+XUNE_SYNC_API bool zune_device_find_on_usb(const char** uuid, const char** device_name);
 
 // Lightweight USB detection — checks sysfs/IOKit for Zune VID/PID only.
 // Does NOT open the device or claim any USB interfaces.
-ZUNE_WIRELESS_API bool zune_device_detect_on_usb();
+XUNE_SYNC_API bool zune_device_detect_on_usb();
 
 // SSDP Discovery functions
-ZUNE_WIRELESS_API void zune_ssdp_start_discovery(device_discovered_callback_t callback);
-ZUNE_WIRELESS_API void zune_ssdp_stop_discovery();
+XUNE_SYNC_API void zune_ssdp_start_discovery(device_discovered_callback_t callback);
+XUNE_SYNC_API void zune_ssdp_stop_discovery();
 
 // ============================================================================
 // Artist Metadata HTTP Interception
@@ -349,21 +349,21 @@ typedef struct {
 /// @param handle Device handle from zune_device_create()
 /// @param config Configuration for interception mode
 /// @return 0 on success, negative error code on failure
-ZUNE_WIRELESS_API int zune_device_start_artist_metadata_interceptor(
+XUNE_SYNC_API int zune_device_start_artist_metadata_interceptor(
     zune_device_handle_t handle,
     const ZuneArtistMetadataConfig* config
 );
 
 /// Stop the artist metadata HTTP interceptor
 /// @param handle Device handle
-ZUNE_WIRELESS_API void zune_device_stop_artist_metadata_interceptor(
+XUNE_SYNC_API void zune_device_stop_artist_metadata_interceptor(
     zune_device_handle_t handle
 );
 
 /// Check if interceptor is running
 /// @param handle Device handle
 /// @return true if interceptor is active
-ZUNE_WIRELESS_API bool zune_device_is_artist_metadata_interceptor_running(
+XUNE_SYNC_API bool zune_device_is_artist_metadata_interceptor_running(
     zune_device_handle_t handle
 );
 
@@ -371,7 +371,7 @@ ZUNE_WIRELESS_API bool zune_device_is_artist_metadata_interceptor_running(
 /// @param handle Device handle
 /// @param config Output buffer for configuration (caller allocated)
 /// @return 0 on success, negative error code on failure
-ZUNE_WIRELESS_API int zune_device_get_artist_metadata_config(
+XUNE_SYNC_API int zune_device_get_artist_metadata_config(
     zune_device_handle_t handle,
     ZuneArtistMetadataConfig* config
 );
@@ -379,19 +379,19 @@ ZUNE_WIRELESS_API int zune_device_get_artist_metadata_config(
 /// Helper: Create default static mode config
 /// @param data_directory Path to artist_data folder
 /// @return Configuration structure (caller must free strings with zune_artist_metadata_config_free)
-ZUNE_WIRELESS_API ZuneArtistMetadataConfig zune_artist_metadata_config_static(
+XUNE_SYNC_API ZuneArtistMetadataConfig zune_artist_metadata_config_static(
     const char* data_directory
 );
 
 /// Helper: Create default proxy mode config
 /// @param server_base_url Base URL for all servers (e.g. "http://localhost:8000")
 /// @return Configuration structure (caller must free strings with zune_artist_metadata_config_free)
-ZUNE_WIRELESS_API ZuneArtistMetadataConfig zune_artist_metadata_config_proxy(
+XUNE_SYNC_API ZuneArtistMetadataConfig zune_artist_metadata_config_proxy(
     const char* server_base_url
 );
 
 /// Free strings allocated by config helpers
-ZUNE_WIRELESS_API void zune_artist_metadata_config_free(ZuneArtistMetadataConfig* config);
+XUNE_SYNC_API void zune_artist_metadata_config_free(ZuneArtistMetadataConfig* config);
 
 // ============================================================================
 // Artist Metadata Hybrid Mode Callbacks (C# interop)
@@ -439,7 +439,7 @@ typedef bool (*zune_cache_storage_callback_t)(
 /// @param handle Device handle
 /// @param callback Path resolver callback function
 /// @param user_data User-provided context pointer passed to callback
-ZUNE_WIRELESS_API void zune_device_set_path_resolver_callback(
+XUNE_SYNC_API void zune_device_set_path_resolver_callback(
     zune_device_handle_t handle,
     zune_path_resolver_callback_t callback,
     void* user_data
@@ -449,7 +449,7 @@ ZUNE_WIRELESS_API void zune_device_set_path_resolver_callback(
 /// @param handle Device handle
 /// @param callback Cache storage callback function
 /// @param user_data User-provided context pointer passed to callback
-ZUNE_WIRELESS_API void zune_device_set_cache_storage_callback(
+XUNE_SYNC_API void zune_device_set_cache_storage_callback(
     zune_device_handle_t handle,
     zune_cache_storage_callback_t callback,
     void* user_data
@@ -462,21 +462,21 @@ ZUNE_WIRELESS_API void zune_device_set_cache_storage_callback(
 /// Initialize HTTP subsystem on device (MTP operations)
 /// @param handle Device handle
 /// @return true on success, false on failure
-ZUNE_WIRELESS_API bool zune_device_initialize_http_subsystem(
+XUNE_SYNC_API bool zune_device_initialize_http_subsystem(
     zune_device_handle_t handle
 );
 
 /// Trigger network mode (PPP/IPCP negotiation)
 /// @param handle Device handle
 /// @return true on success, false on failure (allows C# to retry)
-ZUNE_WIRELESS_API bool zune_device_trigger_network_mode(
+XUNE_SYNC_API bool zune_device_trigger_network_mode(
     zune_device_handle_t handle
 );
 
 
 /// Enable network polling flag (must call before PollNetworkData)
 /// @param handle Device handle
-ZUNE_WIRELESS_API void zune_device_enable_network_polling(
+XUNE_SYNC_API void zune_device_enable_network_polling(
     zune_device_handle_t handle
 );
 
@@ -485,7 +485,7 @@ ZUNE_WIRELESS_API void zune_device_enable_network_polling(
 /// @param handle Device handle
 /// @param timeout_ms USB interrupt timeout in milliseconds (0 = non-blocking)
 /// @return 1 = processed data, 0 = timeout/no data, -1 = not running/error, -2 = no session
-ZUNE_WIRELESS_API int zune_device_poll_network_data(
+XUNE_SYNC_API int zune_device_poll_network_data(
     zune_device_handle_t handle,
     int timeout_ms
 );
@@ -493,7 +493,7 @@ ZUNE_WIRELESS_API int zune_device_poll_network_data(
 /// Enable or disable verbose network logging
 /// @param handle Device handle
 /// @param enable true to enable verbose TCP/IP packet logging, false for errors only
-ZUNE_WIRELESS_API void zune_device_set_verbose_network_logging(
+XUNE_SYNC_API void zune_device_set_verbose_network_logging(
     zune_device_handle_t handle,
     bool enable
 );
@@ -515,7 +515,7 @@ ZUNE_WIRELESS_API void zune_device_set_verbose_network_logging(
 /// @param out_phase Third uint32 (0, 1, 3, or 4)
 /// @param out_status Fourth uint32 (0, 1, 2, or 3)
 /// @return true on success, false on failure
-ZUNE_WIRELESS_API bool zune_device_read_network_state(
+XUNE_SYNC_API bool zune_device_read_network_state(
     zune_device_handle_t handle,
     int32_t* out_active,
     int32_t* out_progress,
@@ -526,7 +526,7 @@ ZUNE_WIRELESS_API bool zune_device_read_network_state(
 /// Calls Op9230(2) END + Op922b(3,2,0) close.
 /// @param handle Device handle
 /// @return true on success, false on failure
-ZUNE_WIRELESS_API bool zune_device_teardown_network_session(
+XUNE_SYNC_API bool zune_device_teardown_network_session(
     zune_device_handle_t handle);
 
 /// Re-enables secure file operations via full MTPZ re-handshake
@@ -535,34 +535,34 @@ ZUNE_WIRELESS_API bool zune_device_teardown_network_session(
 /// work — full re-authentication is required.
 /// @param handle Device handle
 /// @return true on success, false on failure
-ZUNE_WIRELESS_API bool zune_device_enable_trusted_files(
+XUNE_SYNC_API bool zune_device_enable_trusted_files(
     zune_device_handle_t handle);
 
 /// Disables trusted file operations (Op9215).
 /// Signals the device that the current operation batch is complete.
 /// @param handle Device handle
 /// @return true on success, false on failure
-ZUNE_WIRELESS_API bool zune_device_disable_trusted_files(
+XUNE_SYNC_API bool zune_device_disable_trusted_files(
     zune_device_handle_t handle);
 
 /// Opens an idle session on the device (Op922b 3,1,0).
 /// Called after all operations complete to leave device in connected/idle state.
 /// @param handle Device handle
 /// @return true on success, false on failure
-ZUNE_WIRELESS_API bool zune_device_open_idle_session(
+XUNE_SYNC_API bool zune_device_open_idle_session(
     zune_device_handle_t handle);
 
 /// Reads device sync status (GetDevicePropValue 0xD217 x2).
 /// @param handle Device handle
 /// @return true on success, false on failure
-ZUNE_WIRELESS_API bool zune_device_read_sync_status(
+XUNE_SYNC_API bool zune_device_read_sync_status(
     zune_device_handle_t handle);
 
 /// Closes the device session (Op922b 3,2,0).
 /// Called on disconnect to cleanly end the session.
 /// @param handle Device handle
 /// @return true on success, false on failure
-ZUNE_WIRELESS_API bool zune_device_close_session(
+XUNE_SYNC_API bool zune_device_close_session(
     zune_device_handle_t handle);
 
 // ============================================================================
@@ -653,7 +653,7 @@ typedef struct {
 /// @param properties Array of property elements
 /// @param property_count Number of properties
 /// @return Created object info with status
-ZUNE_WIRELESS_API ZuneMtpCreateResult zune_mtp_send_object_prop_list(
+XUNE_SYNC_API ZuneMtpCreateResult zune_mtp_send_object_prop_list(
     zune_device_handle_t handle,
     uint32_t storage_id,
     uint32_t parent_id,
@@ -668,7 +668,7 @@ ZUNE_WIRELESS_API ZuneMtpCreateResult zune_mtp_send_object_prop_list(
 /// @param data Object data (audio file bytes, or NULL for empty metadata objects)
 /// @param size Data size (0 for empty object)
 /// @return 0 on success, negative on error
-ZUNE_WIRELESS_API int zune_mtp_send_object(
+XUNE_SYNC_API int zune_mtp_send_object(
     zune_device_handle_t handle,
     const void* data,
     uint64_t size
@@ -678,7 +678,7 @@ ZUNE_WIRELESS_API int zune_mtp_send_object(
 /// @param handle Device handle
 /// @param file_path Path to file to upload
 /// @return 0 on success, negative on error
-ZUNE_WIRELESS_API int zune_mtp_send_object_from_file(
+XUNE_SYNC_API int zune_mtp_send_object_from_file(
     zune_device_handle_t handle,
     const char* file_path
 );
@@ -689,7 +689,7 @@ ZUNE_WIRELESS_API int zune_mtp_send_object_from_file(
 /// @param ref_ids Array of track ObjectIds to link
 /// @param ref_count Number of references
 /// @return 0 on success, negative on error
-ZUNE_WIRELESS_API int zune_mtp_set_object_references(
+XUNE_SYNC_API int zune_mtp_set_object_references(
     zune_device_handle_t handle,
     uint32_t object_id,
     const uint32_t* ref_ids,
@@ -703,7 +703,7 @@ ZUNE_WIRELESS_API int zune_mtp_set_object_references(
 /// @param max_refs Maximum refs to return
 /// @param out_count Actual number of refs returned
 /// @return 0 on success, negative on error
-ZUNE_WIRELESS_API int zune_mtp_get_object_references(
+XUNE_SYNC_API int zune_mtp_get_object_references(
     zune_device_handle_t handle,
     uint32_t object_id,
     uint32_t* out_ref_ids,
@@ -713,7 +713,7 @@ ZUNE_WIRELESS_API int zune_mtp_get_object_references(
 
 /// Set single object property (string value)
 /// @return 0 on success, negative on error
-ZUNE_WIRELESS_API int zune_mtp_set_object_property_string(
+XUNE_SYNC_API int zune_mtp_set_object_property_string(
     zune_device_handle_t handle,
     uint32_t object_id,
     uint16_t property_code,
@@ -722,7 +722,7 @@ ZUNE_WIRELESS_API int zune_mtp_set_object_property_string(
 
 /// Set single object property (integer value, any size up to 64-bit)
 /// @return 0 on success, negative on error
-ZUNE_WIRELESS_API int zune_mtp_set_object_property_int(
+XUNE_SYNC_API int zune_mtp_set_object_property_int(
     zune_device_handle_t handle,
     uint32_t object_id,
     uint16_t property_code,
@@ -731,7 +731,7 @@ ZUNE_WIRELESS_API int zune_mtp_set_object_property_int(
 
 /// Set object property as byte array (for artwork)
 /// @return 0 on success, negative on error
-ZUNE_WIRELESS_API int zune_mtp_set_object_property_array(
+XUNE_SYNC_API int zune_mtp_set_object_property_array(
     zune_device_handle_t handle,
     uint32_t object_id,
     uint16_t property_code,
@@ -748,7 +748,7 @@ ZUNE_WIRELESS_API int zune_mtp_set_object_property_array(
 /// @param max_handles Maximum handles to return
 /// @param out_count Actual count returned
 /// @return 0 on success, negative on error
-ZUNE_WIRELESS_API int zune_mtp_get_object_handles(
+XUNE_SYNC_API int zune_mtp_get_object_handles(
     zune_device_handle_t handle,
     uint32_t storage_id,
     uint16_t format,
@@ -764,7 +764,7 @@ ZUNE_WIRELESS_API int zune_mtp_get_object_handles(
 /// @param parent_id Parent folder ObjectId
 /// @param storage_id Storage ID (0 for default)
 /// @return ObjectId of created folder, or 0 on error
-ZUNE_WIRELESS_API uint32_t zune_mtp_create_directory(
+XUNE_SYNC_API uint32_t zune_mtp_create_directory(
     zune_device_handle_t handle,
     const char* name,
     uint32_t parent_id,
@@ -776,7 +776,7 @@ ZUNE_WIRELESS_API uint32_t zune_mtp_create_directory(
 /// @param out_storage_ids Output array (caller allocates)
 /// @param max_storages Maximum storages to return
 /// @return Number of storages, or negative on error
-ZUNE_WIRELESS_API int zune_mtp_get_storage_ids(
+XUNE_SYNC_API int zune_mtp_get_storage_ids(
     zune_device_handle_t handle,
     uint32_t* out_storage_ids,
     uint32_t max_storages
@@ -784,7 +784,7 @@ ZUNE_WIRELESS_API int zune_mtp_get_storage_ids(
 
 /// Get default storage ID
 /// @return Storage ID, or 0 on error
-ZUNE_WIRELESS_API uint32_t zune_mtp_get_default_storage(
+XUNE_SYNC_API uint32_t zune_mtp_get_default_storage(
     zune_device_handle_t handle
 );
 
@@ -792,7 +792,7 @@ ZUNE_WIRELESS_API uint32_t zune_mtp_get_default_storage(
 /// @param handle Device handle
 /// @param object_id ObjectId to delete
 /// @return 0 on success, negative on error
-ZUNE_WIRELESS_API int zune_mtp_delete_object(
+XUNE_SYNC_API int zune_mtp_delete_object(
     zune_device_handle_t handle,
     uint32_t object_id
 );
@@ -804,7 +804,7 @@ ZUNE_WIRELESS_API int zune_mtp_delete_object(
 /// @param handle Device handle
 /// @param param Usually 1
 /// @return 0 on success, negative on error
-ZUNE_WIRELESS_API int zune_mtp_operation_9217(
+XUNE_SYNC_API int zune_mtp_operation_9217(
     zune_device_handle_t handle,
     uint32_t param
 );
@@ -814,7 +814,7 @@ ZUNE_WIRELESS_API int zune_mtp_operation_9217(
 /// @param handle Device handle
 /// @param track_name Track name to register
 /// @return 0 on success, negative on error
-ZUNE_WIRELESS_API int zune_mtp_operation_922a(
+XUNE_SYNC_API int zune_mtp_operation_922a(
     zune_device_handle_t handle,
     const char* track_name
 );
@@ -825,7 +825,7 @@ ZUNE_WIRELESS_API int zune_mtp_operation_922a(
 /// @param property_code Property to query
 /// @param format_type Object format type
 /// @return 0 on success, negative on error
-ZUNE_WIRELESS_API int zune_mtp_operation_9802(
+XUNE_SYNC_API int zune_mtp_operation_9802(
     zune_device_handle_t handle,
     uint16_t property_code,
     uint16_t format_type
@@ -889,110 +889,110 @@ struct ZuneAlbumProps {
 /// Discover root folder structure and create missing essential folders.
 /// @param handle Device handle
 /// @param is_hd 1 for Zune HD (creates Artists folder if missing), 0 for Classic
-ZUNE_WIRELESS_API ZuneRootDiscovery zune_upload_discover_root(zune_device_handle_t handle, uint8_t is_hd);
+XUNE_SYNC_API ZuneRootDiscovery zune_upload_discover_root(zune_device_handle_t handle, uint8_t is_hd);
 
 /// Root re-enumeration (depth=1, between every major operation)
-ZUNE_WIRELESS_API int zune_upload_root_re_enum(zune_device_handle_t handle);
+XUNE_SYNC_API int zune_upload_root_re_enum(zune_device_handle_t handle);
 
 // --- Folder Discovery & Creation ---
 
 /// Discover children of an existing folder (3-op pattern: grp=2, GetObjectHandles, ObjFileName depth=1)
-ZUNE_WIRELESS_API ZuneFolderDiscovery zune_upload_discover_folder(
+XUNE_SYNC_API ZuneFolderDiscovery zune_upload_discover_folder(
     zune_device_handle_t handle, uint32_t folder_id);
 
 /// Create a folder and return its handle
-ZUNE_WIRELESS_API uint32_t zune_upload_create_folder(
+XUNE_SYNC_API uint32_t zune_upload_create_folder(
     zune_device_handle_t handle, uint32_t parent_id, const char* name);
 
 /// Folder readback (PersistentUID read, grp=4 read, GetObjectHandles)
-ZUNE_WIRELESS_API int zune_upload_folder_readback(
+XUNE_SYNC_API int zune_upload_folder_readback(
     zune_device_handle_t handle, uint32_t folder_id);
 
 /// First-folder readback with interleaved batch descriptors
-ZUNE_WIRELESS_API int zune_upload_first_folder_readback(
+XUNE_SYNC_API int zune_upload_first_folder_readback(
     zune_device_handle_t handle, uint32_t folder_id);
 
 // --- Artist Metadata (HD Only) ---
 
 /// Create artist metadata object (0xB218). Returns MTP handle or 0 on error.
-ZUNE_WIRELESS_API uint32_t zune_upload_create_artist_metadata(
+XUNE_SYNC_API uint32_t zune_upload_create_artist_metadata(
     zune_device_handle_t handle, uint32_t artists_folder,
     const char* name, const uint8_t* guid_bytes, uint32_t guid_len);
 
 // --- Track Operations ---
 
 /// Create track metadata object. Returns MTP handle or 0 on error.
-ZUNE_WIRELESS_API uint32_t zune_upload_create_track(
+XUNE_SYNC_API uint32_t zune_upload_create_track(
     zune_device_handle_t handle, uint32_t album_folder,
     const ZuneTrackProps* props, uint16_t format_code, uint64_t file_size);
 
 /// Upload audio data (must follow create_track immediately)
-ZUNE_WIRELESS_API int zune_upload_send_audio(
+XUNE_SYNC_API int zune_upload_send_audio(
     zune_device_handle_t handle, const char* file_path);
 
 /// Verify track (GetObjPropList ALL)
-ZUNE_WIRELESS_API int zune_upload_verify_track(
+XUNE_SYNC_API int zune_upload_verify_track(
     zune_device_handle_t handle, uint32_t track_id);
 
 // --- Album Metadata ---
 
 /// Create album metadata object. Returns MTP handle or 0 on error.
-ZUNE_WIRELESS_API uint32_t zune_upload_create_album(
+XUNE_SYNC_API uint32_t zune_upload_create_album(
     zune_device_handle_t handle, uint32_t albums_folder,
     const ZuneAlbumProps* props);
 
 /// Set album artwork (read current + set data + set JPEG format)
-ZUNE_WIRELESS_API int zune_upload_set_artwork(
+XUNE_SYNC_API int zune_upload_set_artwork(
     zune_device_handle_t handle, uint32_t album_id,
     const uint8_t* data, uint32_t size);
 
 /// Set album track references (cumulative — pass ALL track IDs)
-ZUNE_WIRELESS_API int zune_upload_set_album_refs(
+XUNE_SYNC_API int zune_upload_set_album_refs(
     zune_device_handle_t handle, uint32_t album_id,
     const uint32_t* track_ids, uint32_t count);
 
 /// Verify album (subset + optional ParentObject desc + ALL)
-ZUNE_WIRELESS_API int zune_upload_verify_album(
+XUNE_SYNC_API int zune_upload_verify_album(
     zune_device_handle_t handle, uint32_t album_id, bool include_parent_desc);
 
 /// Read album subset properties (grp=2, for existing albums)
-ZUNE_WIRELESS_API int zune_upload_read_album_subset(
+XUNE_SYNC_API int zune_upload_read_album_subset(
     zune_device_handle_t handle, uint32_t album_id);
 
 // --- Finalization ---
 
 /// Register track context (Op922A)
-ZUNE_WIRELESS_API int zune_upload_register_track_ctx(
+XUNE_SYNC_API int zune_upload_register_track_ctx(
     zune_device_handle_t handle, const char* track_name);
 
 // --- Property Descriptor Queries ---
 
 /// Query folder descriptors (GetObjPropsSupported + GetObjPropDesc ObjectFileName)
-ZUNE_WIRELESS_API int zune_upload_query_folder_descs(zune_device_handle_t handle);
+XUNE_SYNC_API int zune_upload_query_folder_descs(zune_device_handle_t handle);
 
 /// Query batch descriptors for a property across all formats
-ZUNE_WIRELESS_API int zune_upload_query_batch_descs(
+XUNE_SYNC_API int zune_upload_query_batch_descs(
     zune_device_handle_t handle, uint16_t prop_code);
 
 /// Query ObjectFormat batch descriptors
-ZUNE_WIRELESS_API int zune_upload_query_object_format_descs(zune_device_handle_t handle);
+XUNE_SYNC_API int zune_upload_query_object_format_descs(zune_device_handle_t handle);
 
 /// Query track property descriptors for a specific format
-ZUNE_WIRELESS_API int zune_upload_query_track_descs(
+XUNE_SYNC_API int zune_upload_query_track_descs(
     zune_device_handle_t handle, uint16_t format_code);
 
 /// Query album property descriptors
-ZUNE_WIRELESS_API int zune_upload_query_album_descs(zune_device_handle_t handle);
+XUNE_SYNC_API int zune_upload_query_album_descs(zune_device_handle_t handle);
 
 /// Query artist property descriptors (HD only)
-ZUNE_WIRELESS_API int zune_upload_query_artist_descs(zune_device_handle_t handle);
+XUNE_SYNC_API int zune_upload_query_artist_descs(zune_device_handle_t handle);
 
 /// Query artwork property descriptors (RepSampleData + RepSampleFormat)
-ZUNE_WIRELESS_API int zune_upload_query_artwork_descs(zune_device_handle_t handle);
+XUNE_SYNC_API int zune_upload_query_artwork_descs(zune_device_handle_t handle);
 
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif // ZUNE_WIRELESS_API_H
+#endif // XUNE_SYNC_API_H

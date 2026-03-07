@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-project(zune_wireless)
+project(xune_sync_library)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -161,7 +161,7 @@ target_compile_options(aft-cli-static PRIVATE
 )
 
 # Main library
-add_library(zune_wireless SHARED
+add_library(xune_sync SHARED
     lib/src/ZuneDevice.cpp
     lib/src/ZuneDeviceIdentification.cpp
     lib/src/NetworkManager.cpp
@@ -177,7 +177,7 @@ add_library(zune_wireless SHARED
     lib/src/zmdb/ZMDBParserFactory.cpp
     lib/src/ptpip_client.cpp
     lib/src/ssdp_discovery.cpp
-    lib/src/zune_wireless_api.cpp
+    lib/src/xune_sync_api.cpp
     lib/src/protocols/http/ZuneHTTPInterceptor.cpp
     lib/src/protocols/ppp/PPPParser.cpp
     lib/src/protocols/ppp/PPPFrameBuilder.cpp
@@ -194,7 +194,7 @@ add_library(zune_wireless SHARED
     lib/src/protocols/tcp/RTOManager.cpp
 )
 
-target_include_directories(zune_wireless PUBLIC
+target_include_directories(xune_sync PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${AFTL_INCLUDE_DIRS}
     ${OPENSSL_INCLUDE_DIR}
@@ -202,7 +202,7 @@ target_include_directories(zune_wireless PUBLIC
     ${CURL_INCLUDE_DIRS}
 )
 
-target_link_libraries(zune_wireless
+target_link_libraries(xune_sync
     aft-cli-static
     ${AFTL_LIBRARY}
     ${TAGLIB_LIBRARIES}
@@ -217,39 +217,39 @@ if(UNIX AND NOT APPLE)
     find_library(LIBUSB_STATIC NAMES libusb-1.0.a
         PATHS /opt/libusb/lib NO_DEFAULT_PATH)
     if(LIBUSB_STATIC)
-        target_link_libraries(zune_wireless ${LIBUSB_STATIC})
+        target_link_libraries(xune_sync ${LIBUSB_STATIC})
         find_library(UDEV_LIBRARY udev)
         if(UDEV_LIBRARY)
-            target_link_libraries(zune_wireless ${UDEV_LIBRARY})
+            target_link_libraries(xune_sync ${UDEV_LIBRARY})
         endif()
     else()
-        target_link_libraries(zune_wireless ${LIBUSB_LIBRARIES})
+        target_link_libraries(xune_sync ${LIBUSB_LIBRARIES})
     endif()
 endif()
 
 # macOS: use @loader_path for hardened runtime compatibility
 if(APPLE)
-    set_target_properties(zune_wireless PROPERTIES
+    set_target_properties(xune_sync PROPERTIES
         MACOSX_RPATH OFF
         INSTALL_NAME_DIR "@loader_path"
     )
 elseif(UNIX)
     # RPATH $ORIGIN so bundled deps (TagLib) are found next to the .so
-    set_target_properties(zune_wireless PROPERTIES
+    set_target_properties(xune_sync PROPERTIES
         BUILD_RPATH "$ORIGIN"
         INSTALL_RPATH "$ORIGIN"
     )
 endif()
 
 # Compiler flags
-target_compile_options(zune_wireless PRIVATE
+target_compile_options(xune_sync PRIVATE
     -Wall
     -Wextra
     -Wno-unused-parameter
 )
 
 if(CMAKE_BUILD_TYPE STREQUAL Debug)
-    target_compile_options(zune_wireless PRIVATE -g)
+    target_compile_options(xune_sync PRIVATE -g)
 endif()
 
 # Automatically copy library to Xune.Infrastructure.Devices runtime directories after build
@@ -272,10 +272,10 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../src/Xune.Infrastructure.Devices")
     endif()
 
     set(ZW_RUNTIME_NATIVE "${XUNE_DEVICES_RUNTIME_DIR}/${RUNTIME_ID}/native")
-    add_custom_command(TARGET zune_wireless POST_BUILD
+    add_custom_command(TARGET xune_sync POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E make_directory "${ZW_RUNTIME_NATIVE}"
-        COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:zune_wireless>" "${ZW_RUNTIME_NATIVE}/$<TARGET_FILE_NAME:zune_wireless>"
-        COMMENT "Copying $<TARGET_FILE_NAME:zune_wireless> to Xune.Infrastructure.Devices/runtimes/${RUNTIME_ID}/native/"
+        COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:xune_sync>" "${ZW_RUNTIME_NATIVE}/$<TARGET_FILE_NAME:xune_sync>"
+        COMMENT "Copying $<TARGET_FILE_NAME:xune_sync> to Xune.Infrastructure.Devices/runtimes/${RUNTIME_ID}/native/"
         VERBATIM
     )
 
@@ -290,7 +290,7 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../src/Xune.Infrastructure.Devices")
             set(TAGLIB_SONAME "libtag.so.2")
         endif()
         message(STATUS "Bundling TagLib: ${TAGLIB_SO_REALPATH} (SONAME: ${TAGLIB_SONAME})")
-        add_custom_command(TARGET zune_wireless POST_BUILD
+        add_custom_command(TARGET xune_sync POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy "${TAGLIB_SO_REALPATH}" "${ZW_RUNTIME_NATIVE}/${TAGLIB_SO_FILENAME}"
             COMMAND ${CMAKE_COMMAND} -E create_symlink "${TAGLIB_SO_FILENAME}" "${ZW_RUNTIME_NATIVE}/${TAGLIB_SONAME}"
             COMMENT "Bundling TagLib (${TAGLIB_SONAME}) for Flatpak/AppImage compatibility"
@@ -315,22 +315,22 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../src/Xune.Infrastructure.Devices")
         message(STATUS "Bundling TagLib: ${TAGLIB_DYLIB_PATH} (id: ${TAGLIB_ORIG_ID})")
         message(STATUS "Bundling OpenSSL: ${OPENSSL_CRYPTO_LIBRARY} (id: ${OPENSSL_ORIG_ID})")
 
-        add_custom_command(TARGET zune_wireless POST_BUILD
+        add_custom_command(TARGET xune_sync POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy "${TAGLIB_DYLIB_PATH}" "${ZW_RUNTIME_NATIVE}/libtag.2.dylib"
             COMMAND ${CMAKE_COMMAND} -E copy "${OPENSSL_CRYPTO_LIBRARY}" "${ZW_RUNTIME_NATIVE}/libcrypto.3.dylib"
             COMMAND install_name_tool -id "@loader_path/libtag.2.dylib" "${ZW_RUNTIME_NATIVE}/libtag.2.dylib"
             COMMAND install_name_tool -id "@loader_path/libcrypto.3.dylib" "${ZW_RUNTIME_NATIVE}/libcrypto.3.dylib"
             COMMAND install_name_tool -change "${TAGLIB_ORIG_ID}" "@loader_path/libtag.2.dylib"
-                "${ZW_RUNTIME_NATIVE}/$<TARGET_FILE_NAME:zune_wireless>"
+                "${ZW_RUNTIME_NATIVE}/$<TARGET_FILE_NAME:xune_sync>"
             COMMAND install_name_tool -change "${OPENSSL_ORIG_ID}" "@loader_path/libcrypto.3.dylib"
-                "${ZW_RUNTIME_NATIVE}/$<TARGET_FILE_NAME:zune_wireless>"
-            # Fix zune_wireless own install name
-            COMMAND install_name_tool -id "@loader_path/libzune_wireless.dylib"
-                "${ZW_RUNTIME_NATIVE}/$<TARGET_FILE_NAME:zune_wireless>"
+                "${ZW_RUNTIME_NATIVE}/$<TARGET_FILE_NAME:xune_sync>"
+            # Fix xune_sync own install name
+            COMMAND install_name_tool -id "@loader_path/libxune_sync.dylib"
+                "${ZW_RUNTIME_NATIVE}/$<TARGET_FILE_NAME:xune_sync>"
             # Re-sign ad-hoc (install_name_tool invalidates signatures)
             COMMAND codesign --force --sign - "${ZW_RUNTIME_NATIVE}/libtag.2.dylib"
             COMMAND codesign --force --sign - "${ZW_RUNTIME_NATIVE}/libcrypto.3.dylib"
-            COMMAND codesign --force --sign - "${ZW_RUNTIME_NATIVE}/$<TARGET_FILE_NAME:zune_wireless>"
+            COMMAND codesign --force --sign - "${ZW_RUNTIME_NATIVE}/$<TARGET_FILE_NAME:xune_sync>"
             COMMENT "Bundling taglib/openssl and fixing install names for hardened runtime"
         )
     endif()
@@ -362,7 +362,7 @@ add_executable(test_library_json
     lib/src/zmdb/ZMDBParserFactory.cpp
     lib/src/ptpip_client.cpp
     lib/src/ssdp_discovery.cpp
-    lib/src/zune_wireless_api.cpp
+    lib/src/xune_sync_api.cpp
     lib/src/protocols/http/ZuneHTTPInterceptor.cpp
     lib/src/protocols/ppp/PPPParser.cpp
     lib/src/protocols/ppp/PPPFrameBuilder.cpp
@@ -421,7 +421,7 @@ add_executable(test_zmdb_fast
     lib/src/zmdb/ZMDBParserFactory.cpp
     lib/src/ptpip_client.cpp
     lib/src/ssdp_discovery.cpp
-    lib/src/zune_wireless_api.cpp
+    lib/src/xune_sync_api.cpp
     lib/src/protocols/http/ZuneHTTPInterceptor.cpp
     lib/src/protocols/ppp/PPPParser.cpp
     lib/src/protocols/ppp/PPPFrameBuilder.cpp
@@ -480,7 +480,7 @@ add_executable(test_zmdb_extractor
     lib/src/zmdb/ZMDBParserFactory.cpp
     lib/src/ptpip_client.cpp
     lib/src/ssdp_discovery.cpp
-    lib/src/zune_wireless_api.cpp
+    lib/src/xune_sync_api.cpp
     lib/src/protocols/http/ZuneHTTPInterceptor.cpp
     lib/src/protocols/ppp/PPPParser.cpp
     lib/src/protocols/ppp/PPPFrameBuilder.cpp
@@ -539,7 +539,7 @@ add_executable(test_http_interceptor
     lib/src/zmdb/ZMDBParserFactory.cpp
     lib/src/ptpip_client.cpp
     lib/src/ssdp_discovery.cpp
-    lib/src/zune_wireless_api.cpp
+    lib/src/xune_sync_api.cpp
     lib/src/protocols/http/ZuneHTTPInterceptor.cpp
     lib/src/protocols/ppp/PPPParser.cpp
     lib/src/protocols/ppp/PPPFrameBuilder.cpp
@@ -708,7 +708,7 @@ add_executable(test_http_monitor_boot
     lib/src/zmdb/ZMDBParserFactory.cpp
     lib/src/ptpip_client.cpp
     lib/src/ssdp_discovery.cpp
-    lib/src/zune_wireless_api.cpp
+    lib/src/xune_sync_api.cpp
     lib/src/protocols/http/ZuneHTTPInterceptor.cpp
     lib/src/protocols/ppp/PPPParser.cpp
     lib/src/protocols/ppp/PPPFrameBuilder.cpp
@@ -767,7 +767,7 @@ add_executable(test_rating
     lib/src/zmdb/ZMDBParserFactory.cpp
     lib/src/ptpip_client.cpp
     lib/src/ssdp_discovery.cpp
-    lib/src/zune_wireless_api.cpp
+    lib/src/xune_sync_api.cpp
     lib/src/protocols/http/ZuneHTTPInterceptor.cpp
     lib/src/protocols/ppp/PPPParser.cpp
     lib/src/protocols/ppp/PPPFrameBuilder.cpp
@@ -923,7 +923,7 @@ add_executable(artist_images_tool_cli
     lib/src/zmdb/ZMDBParserFactory.cpp
     lib/src/ptpip_client.cpp
     lib/src/ssdp_discovery.cpp
-    lib/src/zune_wireless_api.cpp
+    lib/src/xune_sync_api.cpp
     lib/src/protocols/http/ZuneHTTPInterceptor.cpp
     lib/src/protocols/ppp/PPPParser.cpp
     lib/src/protocols/ppp/PPPFrameBuilder.cpp
@@ -982,7 +982,7 @@ add_executable(playlist_test_cli
     lib/src/zmdb/ZMDBParserFactory.cpp
     lib/src/ptpip_client.cpp
     lib/src/ssdp_discovery.cpp
-    lib/src/zune_wireless_api.cpp
+    lib/src/xune_sync_api.cpp
     lib/src/protocols/http/ZuneHTTPInterceptor.cpp
     lib/src/protocols/ppp/PPPParser.cpp
     lib/src/protocols/ppp/PPPFrameBuilder.cpp
@@ -1040,7 +1040,7 @@ add_executable(audiobook_test_cli
     lib/src/zmdb/ZMDBParserFactory.cpp
     lib/src/ptpip_client.cpp
     lib/src/ssdp_discovery.cpp
-    lib/src/zune_wireless_api.cpp
+    lib/src/xune_sync_api.cpp
     lib/src/protocols/http/ZuneHTTPInterceptor.cpp
     lib/src/protocols/ppp/PPPParser.cpp
     lib/src/protocols/ppp/PPPFrameBuilder.cpp
@@ -1100,7 +1100,7 @@ add_executable(sync_partnership_test_cli
 
     lib/src/ptpip_client.cpp
     lib/src/ssdp_discovery.cpp
-    lib/src/zune_wireless_api.cpp
+    lib/src/xune_sync_api.cpp
 
     lib/src/protocols/http/ZuneHTTPInterceptor.cpp
     lib/src/protocols/ppp/PPPParser.cpp
@@ -1160,7 +1160,7 @@ add_executable(erase_content_test_cli
 
     lib/src/ptpip_client.cpp
     lib/src/ssdp_discovery.cpp
-    lib/src/zune_wireless_api.cpp
+    lib/src/xune_sync_api.cpp
 
     lib/src/protocols/http/ZuneHTTPInterceptor.cpp
     lib/src/protocols/ppp/PPPParser.cpp
@@ -1220,7 +1220,7 @@ add_executable(upload_test_cli
     lib/src/zmdb/ZMDBParserFactory.cpp
     lib/src/ptpip_client.cpp
     lib/src/ssdp_discovery.cpp
-    lib/src/zune_wireless_api.cpp
+    lib/src/xune_sync_api.cpp
     lib/src/protocols/http/ZuneHTTPInterceptor.cpp
     lib/src/protocols/ppp/PPPParser.cpp
     lib/src/protocols/ppp/PPPFrameBuilder.cpp
@@ -1267,7 +1267,7 @@ endif() # ZUNE_BUILD_TOOLS
 # =============================================================================
 # Install
 # =============================================================================
-install(TARGETS zune_wireless
+install(TARGETS xune_sync
     LIBRARY DESTINATION lib
     ARCHIVE DESTINATION lib
 )

@@ -8,7 +8,7 @@
  */
 
 #include <mtp/ptp/Session.h>
-#include "zune_wireless/zune_wireless_api.h"
+#include "xune_sync/xune_sync_api.h"
 #include "ZuneDeviceIdentification.h"
 
 #include <string>
