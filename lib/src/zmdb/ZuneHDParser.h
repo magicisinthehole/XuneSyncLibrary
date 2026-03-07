@@ -17,8 +17,7 @@ namespace zmdb {
  * - Playlists (Schema 0x07)
  * - Podcast episodes (Schema 0x10)
  *
- * Based on reverse engineering of ZuneZMDB.ZuneHD.dll and
- * analysis documented in zunehd_parser.py and ZMDB wiki.
+ * Based on reverse engineering of ZuneZMDB.ZuneHD.dll
  */
 class ZuneHDParser : public ZMDBParserBase {
 public:
