@@ -38,9 +38,6 @@ bool NetworkManager::InitializeHTTPSubsystem() {
     try {
         Log("Initializing HTTP subsystem on device...");
 
-        // NOTE: 0x1002 already called in ConnectUSB() before MTPZ auth
-        // Skip duplicate call here
-
         // HTTP trigger command (pcap shows single call with 258B data)
         Log("  → Sending 0x9231() - HTTP init trigger");
         mtp_session_->Operation9231();
@@ -169,18 +166,9 @@ void NetworkManager::TriggerNetworkMode() {
         return ss.str();
     };
 
-    // Pcap-verified handshake:
-    //   After Op922b(3,1,0) + Op9230(1), the device signals readiness by sending
-    //   "CLIENT" (6 bytes: 43 4c 49 45 4e 54) via Op922d. The host then responds
-    //   with "CLIENTSERVER" (12 bytes) via Op922c. Only after this exchange does
-    //   the device begin LCP negotiation.
-    //
-    //   The device may also send PPP frames or other data before "CLIENT" —
-    //   these are ignored until we see the "CLIENT" string.
-
+    // PPP handshake: device sends "CLIENT", host responds "CLIENTSERVER"
     const mtp::ByteArray client_sig = {0x43, 0x4c, 0x49, 0x45, 0x4e, 0x54}; // "CLIENT"
 
-    // Step 1: Poll Op922d until device sends "CLIENT"
     Log("Polling for device CLIENT readiness signal...");
     int poll_count = 0;
     const int max_polls = 200;
@@ -208,14 +196,12 @@ void NetworkManager::TriggerNetworkMode() {
         throw std::runtime_error("Device did not signal readiness for network mode");
     }
 
-    // Step 2: Send "CLIENTSERVER" in response
     Log("Sending CLIENTSERVER response...");
     const char* trigger_str = "CLIENTSERVER";
     mtp::ByteArray trigger_payload(trigger_str, trigger_str + 12);
     mtp_session_->Operation922c(trigger_payload, 3, 3);
     Log("  ✓ CLIENTSERVER sent");
 
-    // Step 3: Poll for device LCP Config-Request (PPP negotiation begins)
     Log("Polling for device LCP Config-Request...");
     mtp::ByteArray device_lcp;
     poll_count = 0;
@@ -248,7 +234,6 @@ void NetworkManager::TriggerNetworkMode() {
     Log("  ✓ Device LCP Config-Request received: " + std::to_string(device_lcp.size()) + " bytes");
     Log("    Data: " + format_hex(device_lcp, 50));
 
-    // Step 3: Send our LCP response (frame 2315/2317/2319)
     Log("Sending LCP response...");
     const uint8_t lcp_response_data[] = {
         0x7e, 0xff, 0x7d, 0x23, 0xc0, 0x21, 0x7d, 0x22, 0x7d, 0x20, 0x7d, 0x20, 0x7d, 0x2e, 0x7d, 0x22,
@@ -262,21 +247,16 @@ void NetworkManager::TriggerNetworkMode() {
     mtp_session_->Operation922c(lcp_response_payload, 3, 3);
     Log("  ✓ LCP response sent");
 
-    // Step 4: Poll to get device LCP reply (77 bytes expected - frame 2328/2330)
-    // NOTE: The device may send multiple PPP frames in one message, including IPCP Config-Request
     Log("Polling for device LCP reply...");
     mtp::ByteArray device_lcp_reply = mtp_session_->Operation922d(3, 3);
     Log("  ✓ Device LCP reply received: " + std::to_string(device_lcp_reply.size()) + " bytes");
     Log("    Data: " + format_hex(device_lcp_reply, 50));
 
-    // Step 5: Check if device LCP reply already contains IPCP Config-Request
-    // Use PPPParser helper to check for IPCP Config-Request (code 0x01)
     Log("Checking for device IPCP Config-Request in LCP reply...");
     mtp::ByteArray device_ipcp_request;
     poll_count = 0;
     bool found_device_ipcp_request = false;
 
-    // First, check if the LCP reply already contains IPCP Config-Request
     if (!device_lcp_reply.empty() &&
         PPPParser_ContainsIPCPCode(device_lcp_reply, IPCPParser::IPCP_CODE_CONFIG_REQUEST)) {
         Log("  ✓ Found IPCP Config-Request in LCP reply message!");
@@ -312,7 +292,6 @@ void NetworkManager::TriggerNetworkMode() {
         throw std::runtime_error("Device IPCP negotiation failed");
     }
 
-    // Step 6: Parse device's IPCP Config-Request using PPPParser helpers
     IPCPParser::IPCPPacket device_request;
     if (!PPPParser_FindIPCPFrame(device_ipcp_request, IPCPParser::IPCP_CODE_CONFIG_REQUEST, device_request)) {
         throw std::runtime_error("Failed to parse device IPCP Config-Request");
@@ -321,8 +300,6 @@ void NetworkManager::TriggerNetworkMode() {
     uint8_t device_ipcp_request_id = device_request.identifier;
     Log("  → Device IPCP Config-Request ID: " + std::to_string(device_ipcp_request_id));
 
-    // Step 7: Parse device's Config-Request to check requested IP
-    // If device requests 0.0.0.0, we need to send Config-Nak (not Config-Ack!)
     Log("Parsing device IPCP Config-Request...");
 
     // Network configuration
@@ -343,49 +320,44 @@ void NetworkManager::TriggerNetworkMode() {
         }
     }
 
-    // Build our Config-Request (WITH compression option, ID=1)
-    // Per Windows capture: must include IP-Compression option so device can reject it
-    // NOTE: Build IPCP packet only (no protocol bytes) - WrapPayload adds protocol
+    // Build IPCP Config-Request with IP-Compression and IP-Address options
     mtp::ByteArray our_config_request;
     our_config_request.push_back(0x01); // Config-Request
-    our_config_request.push_back(0x01); // Identifier = 1 (first request)
-    our_config_request.push_back(0x00); // Length high byte
-    our_config_request.push_back(0x10); // Length low byte (16 bytes total)
-    // Option 2: IP-Compression (exactly as Windows sends it)
-    our_config_request.push_back(0x02); // Option type 2 (IP-Compression)
-    our_config_request.push_back(0x06); // Option length (6 bytes)
-    our_config_request.push_back(0x00); // Compression data
+    our_config_request.push_back(0x01); // Identifier = 1
+    our_config_request.push_back(0x00);
+    our_config_request.push_back(0x10); // Length = 16 bytes
+    // IP-Compression option (type 2)
+    our_config_request.push_back(0x02);
+    our_config_request.push_back(0x06);
+    our_config_request.push_back(0x00);
     our_config_request.push_back(0x2d);
     our_config_request.push_back(0x0f);
     our_config_request.push_back(0x01);
-    // Option 3: IP-Address
-    our_config_request.push_back(0x03); // Option type 3 (IP-Address)
-    our_config_request.push_back(0x06); // Option length (6 bytes)
+    // IP-Address option (type 3)
+    our_config_request.push_back(0x03);
+    our_config_request.push_back(0x06);
     our_config_request.push_back((host_ip >> 24) & 0xFF);
     our_config_request.push_back((host_ip >> 16) & 0xFF);
     our_config_request.push_back((host_ip >> 8) & 0xFF);
     our_config_request.push_back(host_ip & 0xFF);
     mtp::ByteArray our_config_request_ppp = PPPParser::WrapPayload(our_config_request, 0x8021);
 
-    // Build CCP (Compression Control Protocol) Config-Request
-    // Windows always sends this regardless of whether device IP is valid
-    // NOTE: Build CCP packet only (no protocol bytes) - WrapPayload adds protocol
+    // Build CCP Config-Request
     mtp::ByteArray ccp_request;
     ccp_request.push_back(0x01); // Config-Request
     ccp_request.push_back(0x01); // Identifier = 1
-    ccp_request.push_back(0x00); // Length high byte
-    ccp_request.push_back(0x0a); // Length low byte (10 bytes total)
-    ccp_request.push_back(0x12); // Option type
-    ccp_request.push_back(0x06); // Option length
-    ccp_request.push_back(0x00); // Option data
+    ccp_request.push_back(0x00);
+    ccp_request.push_back(0x0a); // Length = 10 bytes
+    ccp_request.push_back(0x12);
+    ccp_request.push_back(0x06);
+    ccp_request.push_back(0x00);
     ccp_request.push_back(0x00);
     ccp_request.push_back(0x00);
     ccp_request.push_back(0x01);
     mtp::ByteArray ccp_request_ppp = PPPParser::WrapPayload(ccp_request, 0x80fd);
 
-    // Check if device requested invalid IP (0.0.0.0)
     if (device_requested_ip == 0) {
-        // Send Config-Nak to tell device to request correct IP
+        // Device requested invalid IP — send Config-Nak with corrected IP
         VerboseLog("Building initial IPCP response (Config-Request + CCP + Config-Nak)...");
         mtp::ByteArray config_nak_ipcp = IPCPParser::BuildConfigNak(device_ipcp_request_id, device_ip, dns_ip);
         mtp::ByteArray config_nak_ppp = PPPParser::WrapPayload(config_nak_ipcp, 0x8021);
