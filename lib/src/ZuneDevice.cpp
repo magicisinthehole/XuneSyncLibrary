@@ -181,17 +181,11 @@ bool ZuneDevice::ConnectUSB() {
 }
 
 bool ZuneDevice::ConnectWireless(const std::string& ip_address) {
-    // Note: This is a placeholder for the actual wireless connection logic
-    // which would use the ptpip_client. 
     Log("Wireless connection is not yet implemented.");
     return false;
 }
 
 void ZuneDevice::Disconnect() {
-    // Note: Don't call ClearTrackObjectIdCache() here - the cache is destroyed
-    // Track cache is destroyed with the device anyway, and after USB disconnect
-    // the object state may be corrupted.
-
     if (network_manager_) {
         network_manager_.reset();
     }
@@ -346,7 +340,6 @@ int ZuneDevice::EstablishSyncPairing(const std::string& device_name) {
     Log("Establishing USB synchronization partnership...");
 
     try {
-        // Step 3: Set driver version string
         Log("Setting MTP driver version...");
         std::string driver_str = "macOS/11.0 ZuneWirelessSync/1.0.0";
         ByteArray driver_data;
@@ -355,7 +348,6 @@ int ZuneDevice::EstablishSyncPairing(const std::string& device_name) {
         mtp_session_->SetDeviceProperty((DeviceProperty)0xd406, driver_data);
         Log("  ✓ Property 0xd406 set");
 
-        // Step 4: Query property descriptors
         Log("Querying property descriptors...");
         try { mtp_session_->GetDevicePropertyDesc((DeviceProperty)0xd22f); } catch (const std::exception& e) { Log("  → Failed to query 0xd22f (non-critical): " + std::string(e.what())); }
         try { mtp_session_->GetDevicePropertyDesc((DeviceProperty)0xd402); } catch (const std::exception& e) { Log("  → Failed to query 0xd402 (non-critical): " + std::string(e.what())); }
@@ -372,7 +364,6 @@ int ZuneDevice::EstablishSyncPairing(const std::string& device_name) {
             Log("  ✓ Device name set to: \"" + device_name + "\"");
         }
 
-        // Step 6: Query more property descriptors
         Log("Querying pairing property descriptors...");
         try { mtp_session_->GetDevicePropertyDesc((DeviceProperty)0xd231); } catch (const std::exception& e) { Log("  → Failed to query 0xd231 (non-critical): " + std::string(e.what())); }
         try { mtp_session_->GetDevicePropertyDesc((DeviceProperty)0xd232); } catch (const std::exception& e) { Log("  → Failed to query 0xd232 (non-critical): " + std::string(e.what())); }
@@ -381,7 +372,6 @@ int ZuneDevice::EstablishSyncPairing(const std::string& device_name) {
         try { mtp_session_->GetDevicePropertyDesc((DeviceProperty)0xd401); } catch (const std::exception& e) { Log("  → Failed to query 0xd401 (non-critical): " + std::string(e.what())); }
         Log("  ✓ Queried pairing descriptors");
 
-        // Step 8: Set pairing properties
         Log("Setting pairing properties...");
 
         try { mtp_session_->GetDevicePropertyDesc((DeviceProperty)0xd22c); } catch (const std::exception& e) { Log("  → Failed to query 0xd22c (non-critical): " + std::string(e.what())); }
@@ -417,7 +407,6 @@ int ZuneDevice::EstablishSyncPairing(const std::string& device_name) {
         mtp_session_->SetDeviceProperty((DeviceProperty)0xd22a, prop_d22a);
         Log("  ✓ Set property 0xd22a");
 
-        // Step 9: Final sync operations
         Log("Running final sync operations...");
         mtp_session_->Operation9224();
         Log("  ✓ Operation 0x9224 complete");
@@ -517,14 +506,12 @@ int ZuneDevice::EraseAllContent() {
             Log("Error: Could not find default storage on device.");
             return -2;
         }
-        
-        // Step 1: Perform the FormatStore operation
-        Log("Step 1: Executing FormatStore operation...");
+
+        Log("Executing FormatStore operation...");
         mtp_session_->FormatStore(mtp::StorageId(storageId), 0);
         Log("FormatStore completed (device content erased)");
-        
-        // Step 2: Query device property 0xd217 twice (happens quickly after format)
-        Log("Step 2: Checking device state...");
+
+        Log("Checking device state...");
         for (int i = 0; i < 2; i++) {
             try {
                 auto prop = mtp_session_->GetDeviceProperty(mtp::DeviceProperty(0xd217));
@@ -544,19 +531,16 @@ int ZuneDevice::EraseAllContent() {
                 VerboseLog("Property 0xd217 not available: " + std::string(e.what()));
             }
         }
-        
-        // Step 3: Call Zune-specific finalization operation
-        Log("Step 3: Executing device finalization...");
+
+        Log("Executing device finalization...");
         mtp_session_->Operation9217(1);
         Log("Device finalization complete");
-        
-        // Step 4: Verify storage was formatted
-        Log("Step 4: Verifying storage state...");
+
+        Log("Verifying storage state...");
         auto storage_info = mtp_session_->GetStorageInfo(mtp::StorageId(storageId));
         Log("Storage verified - Free space: " + std::to_string(storage_info.FreeSpaceInBytes / 1024 / 1024) + " MB");
-        
-        // Step 5: Query property 0xd217 one more time (third query happens here)
-        Log("Step 5: Final device state check...");
+
+        Log("Performing final device state check...");
         try {
             auto prop = mtp_session_->GetDeviceProperty(mtp::DeviceProperty(0xd217));
             if (prop.size() >= 4) {
@@ -570,9 +554,8 @@ int ZuneDevice::EraseAllContent() {
         } catch (const std::exception& e) {
             VerboseLog("Property 0xd217 final query failed: " + std::string(e.what()));
         }
-        
-        // Step 6: Reboot the device
-        Log("Step 6: Rebooting device...");
+
+        Log("Rebooting device...");
         try {
             mtp_session_->RebootDevice();
             // Note: This command will not receive a response as the device is rebooting
@@ -627,7 +610,6 @@ int ZuneDevice::SetDeviceName(const std::string& name) {
         return -2;
     }
     try {
-        // Truncate if too long (MTP limit)
         std::string truncated = name.size() > 255 ? name.substr(0, 255) : name;
         ByteArray name_data;
         OutputStream stream(name_data);
@@ -655,7 +637,6 @@ std::vector<std::string> ZuneDevice::ScanWiFiNetworks() {
     }
     try {
         Log("Scanning for WiFi networks...");
-        // This is a placeholder. The actual implementation would parse the return of GetWiFiNetworkList()
         mtp_session_->GetWiFiNetworkList();
         return {};
     } catch (const std::exception& e) {
@@ -959,24 +940,17 @@ int ZuneDevice::SetTrackUserState(uint32_t zmdb_atom_id, int play_count, int ski
         ", skip_count=" + std::to_string(skip_count) +
         ", rating=" + std::to_string(rating) + ")");
 
-    // DISABLED: Play count via SetObjectProperty - needs pcap investigation
-    // DC91 (UseCount) works but we don't know if it's the correct protocol
     if (play_count >= 0) {
         Log("  [DISABLED] play_count update - pending protocol analysis");
     }
 
-    // DISABLED: Skip count - property not supported on Zune HD (InvalidObjectPropCode 0xa801)
     if (skip_count >= 0) {
         Log("  [DISABLED] skip_count update - property not supported");
     }
 
-    // Rating: Use standard MTP SetObjectProperty with UserRating (0xDC8A)
-    // atom_id and MTP object_id are synonymous on Zune
-    // Rating values: 0=unrated, 2=dislike, 8=like
-    // IMPORTANT: UserRating is Uint16, must send exactly 2 bytes (not 4)
     if (rating >= 0) {
         try {
-            // Build Uint16 value as 2-byte ByteArray (little-endian)
+            // UserRating (0xDC8A) expects Uint16 (2 bytes, little-endian)
             mtp::ByteArray ratingData(2);
             ratingData[0] = static_cast<uint8_t>(rating & 0xFF);
             ratingData[1] = static_cast<uint8_t>((rating >> 8) & 0xFF);
