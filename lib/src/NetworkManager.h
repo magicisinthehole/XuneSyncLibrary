@@ -52,7 +52,8 @@ public:
 private:
     std::shared_ptr<mtp::Session> mtp_session_;
     LogCallback log_callback_;
-    std::unique_ptr<ZuneHTTPInterceptor> http_interceptor_;
+    std::shared_ptr<ZuneHTTPInterceptor> http_interceptor_;
+    mutable std::mutex interceptor_mutex_;
     bool verbose_logging_ = true;
 
     void Log(const std::string& message);
