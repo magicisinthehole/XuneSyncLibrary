@@ -95,13 +95,15 @@ void NetworkManager::StartHTTPInterceptor(const InterceptorConfig& config) {
         throw std::runtime_error("MTP session not initialized");
     }
 
+    std::lock_guard<std::mutex> lock(interceptor_mutex_);
+
     if (http_interceptor_ && http_interceptor_->IsRunning()) {
         Log("HTTP interceptor is already running");
         return;
     }
 
     Log("Starting HTTP interceptor...");
-    http_interceptor_ = std::make_unique<ZuneHTTPInterceptor>(mtp_session_);
+    http_interceptor_ = std::make_shared<ZuneHTTPInterceptor>(mtp_session_);
     http_interceptor_->SetLogCallback(log_callback_);
     http_interceptor_->Start(config);
 
@@ -110,14 +112,19 @@ void NetworkManager::StartHTTPInterceptor(const InterceptorConfig& config) {
 }
 
 void NetworkManager::StopHTTPInterceptor() {
-    if (http_interceptor_) {
+    std::shared_ptr<ZuneHTTPInterceptor> interceptor;
+    {
+        std::lock_guard<std::mutex> lock(interceptor_mutex_);
+        interceptor = std::move(http_interceptor_);
+    }
+    if (interceptor) {
         Log("Stopping HTTP interceptor...");
-        http_interceptor_->Stop();
-        http_interceptor_.reset();
+        interceptor->Stop();
     }
 }
 
 void NetworkManager::EnableNetworkPolling() {
+    std::lock_guard<std::mutex> lock(interceptor_mutex_);
     if (!http_interceptor_) {
         throw std::runtime_error("HTTP interceptor not running - call StartHTTPInterceptor() first");
     }
@@ -128,17 +135,24 @@ void NetworkManager::EnableNetworkPolling() {
 }
 
 int NetworkManager::PollNetworkData(int timeout_ms) {
-    if (!http_interceptor_) {
+    std::shared_ptr<ZuneHTTPInterceptor> interceptor;
+    {
+        std::lock_guard<std::mutex> lock(interceptor_mutex_);
+        interceptor = http_interceptor_;
+    }
+    if (!interceptor) {
         return -1;
     }
-    return http_interceptor_->PollOnce(timeout_ms);
+    return interceptor->PollOnce(timeout_ms);
 }
 
 bool NetworkManager::IsHTTPInterceptorRunning() const {
+    std::lock_guard<std::mutex> lock(interceptor_mutex_);
     return http_interceptor_ && http_interceptor_->IsRunning();
 }
 
 InterceptorConfig NetworkManager::GetHTTPInterceptorConfig() const {
+    std::lock_guard<std::mutex> lock(interceptor_mutex_);
     if (http_interceptor_) {
         return http_interceptor_->GetConfig();
     }
@@ -593,6 +607,7 @@ USBHandlesWithEndpoints NetworkManager::ExtractUSBHandles() {
 }
 
 void NetworkManager::SetPathResolverCallback(PathResolverCallback callback, void* user_data) {
+    std::lock_guard<std::mutex> lock(interceptor_mutex_);
     if (!http_interceptor_) {
         throw std::runtime_error("HTTP interceptor not initialized - call StartHTTPInterceptor() first");
     }
@@ -600,6 +615,7 @@ void NetworkManager::SetPathResolverCallback(PathResolverCallback callback, void
 }
 
 void NetworkManager::SetCacheStorageCallback(CacheStorageCallback callback, void* user_data) {
+    std::lock_guard<std::mutex> lock(interceptor_mutex_);
     if (!http_interceptor_) {
         throw std::runtime_error("HTTP interceptor not initialized - call StartHTTPInterceptor() first");
     }
@@ -607,7 +623,8 @@ void NetworkManager::SetCacheStorageCallback(CacheStorageCallback callback, void
 }
 
 void NetworkManager::SetVerboseNetworkLogging(bool enable) {
-    verbose_logging_ = enable;  // Set local verbose logging flag
+    verbose_logging_ = enable;
+    std::lock_guard<std::mutex> lock(interceptor_mutex_);
     if (http_interceptor_) {
         http_interceptor_->SetVerboseLogging(enable);
     }
