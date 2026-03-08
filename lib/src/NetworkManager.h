@@ -5,6 +5,8 @@
 #include <functional>
 #include <vector>
 #include <mutex>
+#include <atomic>
+#include <condition_variable>
 
 #include <mtp/ptp/Session.h>
 #include <usb/Device.h>
@@ -37,6 +39,7 @@ public:
     void TriggerNetworkMode();  // Send 0x922c(3,3) to initiate PPP/HTTP after track upload
     void EnableNetworkPolling();  // Enable polling flag - call AFTER TriggerNetworkMode()
     int PollNetworkData(int timeout_ms);  // Single poll cycle - called from C# in a loop
+    void RequestShutdown();  // Signal shutdown and wait for in-flight operations to complete
     void SetVerboseNetworkLogging(bool enable);  // Enable/disable verbose TCP/IP packet logging
 
     // Callback registration for hybrid mode
@@ -55,6 +58,11 @@ private:
     std::shared_ptr<ZuneHTTPInterceptor> http_interceptor_;
     mutable std::mutex interceptor_mutex_;
     bool verbose_logging_ = true;
+
+    std::atomic<bool> shutdown_requested_{false};
+    std::atomic<int> active_operations_{0};
+    std::mutex shutdown_mutex_;
+    std::condition_variable shutdown_cv_;
 
     void Log(const std::string& message);
     void VerboseLog(const std::string& message);

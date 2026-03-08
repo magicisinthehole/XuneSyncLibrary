@@ -187,6 +187,7 @@ bool ZuneDevice::ConnectWireless(const std::string& ip_address) {
 
 void ZuneDevice::Disconnect() {
     if (network_manager_) {
+        network_manager_->RequestShutdown();
         network_manager_.reset();
     }
     if (cli_session_) {

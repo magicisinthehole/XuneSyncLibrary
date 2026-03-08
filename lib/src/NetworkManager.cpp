@@ -17,6 +17,16 @@ NetworkManager::~NetworkManager() {
     StopHTTPInterceptor();
 }
 
+void NetworkManager::RequestShutdown() {
+    shutdown_requested_.store(true);
+    if (active_operations_.load(std::memory_order_acquire) == 0)
+        return;
+    std::unique_lock<std::mutex> lock(shutdown_mutex_);
+    shutdown_cv_.wait_for(lock, std::chrono::seconds(5), [this] {
+        return active_operations_.load() == 0;
+    });
+}
+
 void NetworkManager::Log(const std::string& message) {
     if (log_callback_) {
         log_callback_(message);
@@ -160,9 +170,23 @@ InterceptorConfig NetworkManager::GetHTTPInterceptorConfig() const {
 }
 
 void NetworkManager::TriggerNetworkMode() {
+    if (shutdown_requested_.load(std::memory_order_relaxed)) {
+        throw std::runtime_error("NetworkManager is shutting down");
+    }
     if (!mtp_session_) {
         throw std::runtime_error("No active MTP session");
     }
+
+    active_operations_.fetch_add(1, std::memory_order_acq_rel);
+
+    struct OpGuard {
+        NetworkManager& nm;
+        ~OpGuard() {
+            nm.active_operations_.fetch_sub(1, std::memory_order_acq_rel);
+            if (nm.shutdown_requested_.load(std::memory_order_relaxed))
+                nm.shutdown_cv_.notify_all();
+        }
+    } guard{*this};
 
     Log("Triggering network mode...");
 
@@ -188,7 +212,7 @@ void NetworkManager::TriggerNetworkMode() {
     const int max_polls = 200;
     bool found_client = false;
 
-    while (!found_client && poll_count < max_polls) {
+    while (!found_client && poll_count < max_polls && !shutdown_requested_.load(std::memory_order_relaxed)) {
         mtp::ByteArray response = mtp_session_->Operation922d(3, 3);
         poll_count++;
 
@@ -206,6 +230,7 @@ void NetworkManager::TriggerNetworkMode() {
     }
 
     if (!found_client) {
+        if (shutdown_requested_.load(std::memory_order_relaxed)) return;
         Log("  ✗ Device did not send CLIENT after " + std::to_string(max_polls) + " polls");
         throw std::runtime_error("Device did not signal readiness for network mode");
     }
@@ -221,7 +246,7 @@ void NetworkManager::TriggerNetworkMode() {
     poll_count = 0;
     bool found_valid_lcp = false;
 
-    while (!found_valid_lcp && poll_count < max_polls) {
+    while (!found_valid_lcp && poll_count < max_polls && !shutdown_requested_.load(std::memory_order_relaxed)) {
         mtp::ByteArray response = mtp_session_->Operation922d(3, 3);
         poll_count++;
 
@@ -241,6 +266,7 @@ void NetworkManager::TriggerNetworkMode() {
     }
 
     if (!found_valid_lcp) {
+        if (shutdown_requested_.load(std::memory_order_relaxed)) return;
         Log("  ✗ Device did not send LCP Config-Request after " + std::to_string(max_polls) + " polls");
         throw std::runtime_error("Device did not enter network mode");
     }
@@ -283,7 +309,7 @@ void NetworkManager::TriggerNetworkMode() {
         Log("Polling for device IPCP Config-Request...");
     }
 
-    while (!found_device_ipcp_request && poll_count < max_polls) {
+    while (!found_device_ipcp_request && poll_count < max_polls && !shutdown_requested_.load(std::memory_order_relaxed)) {
         mtp::ByteArray response = mtp_session_->Operation922d(3, 3);
         poll_count++;
 
@@ -302,6 +328,7 @@ void NetworkManager::TriggerNetworkMode() {
     }
 
     if (!found_device_ipcp_request) {
+        if (shutdown_requested_.load(std::memory_order_relaxed)) return;
         Log("  ✗ Device did not send IPCP Config-Request after " + std::to_string(max_polls) + " polls");
         throw std::runtime_error("Device IPCP negotiation failed");
     }
@@ -402,7 +429,7 @@ void NetworkManager::TriggerNetworkMode() {
         bool found_new_request = false;
         uint8_t new_request_id = 0;
 
-        while (!found_new_request && poll_count < max_polls) {
+        while (!found_new_request && poll_count < max_polls && !shutdown_requested_.load(std::memory_order_relaxed)) {
             mtp::ByteArray response = mtp_session_->Operation922d(3, 3);
             poll_count++;
 
@@ -434,6 +461,7 @@ void NetworkManager::TriggerNetworkMode() {
         }
 
         if (!found_new_request) {
+            if (shutdown_requested_.load(std::memory_order_relaxed)) return;
             Log("  ✗ Device did not send new IPCP Config-Request after Config-Nak");
             throw std::runtime_error("Device IPCP negotiation failed after Config-Nak");
         }
@@ -510,7 +538,7 @@ void NetworkManager::TriggerNetworkMode() {
     poll_count = 0;
     bool found_config_ack = false;
 
-    while (!found_config_ack && poll_count < max_polls) {
+    while (!found_config_ack && poll_count < max_polls && !shutdown_requested_.load(std::memory_order_relaxed)) {
         mtp::ByteArray response = mtp_session_->Operation922d(3, 3);
         poll_count++;
 
@@ -534,6 +562,7 @@ void NetworkManager::TriggerNetworkMode() {
     }
 
     if (!found_config_ack) {
+        if (shutdown_requested_.load(std::memory_order_relaxed)) return;
         Log("  ✗ Device did not send IPCP Config-Ack after " + std::to_string(max_polls) + " polls");
         throw std::runtime_error("Device did not complete IPCP negotiation");
     }
