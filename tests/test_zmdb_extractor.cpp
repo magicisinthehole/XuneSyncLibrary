@@ -57,7 +57,7 @@ mtp::ByteArray ReadBinaryFile(const std::string& filepath) {
 }
 
 // Export extracted library to JSON
-bool ExportLibraryToJson(const zmdb::ZMDBLibrary& library, const std::string& output_file) {
+bool ExportLibraryToJson(const zmdb_legacy::ZMDBLibrary& library, const std::string& output_file) {
     std::cout << "\n========================================\n";
     std::cout << "Exporting Library to JSON\n";
     std::cout << "========================================\n";
@@ -131,14 +131,14 @@ bool ExportLibraryToJson(const zmdb::ZMDBLibrary& library, const std::string& ou
     return true;
 }
 
-void PrintLibrarySummary(const zmdb::ZMDBLibrary& library, const std::string& label) {
+void PrintLibrarySummary(const zmdb_legacy::ZMDBLibrary& library, const std::string& label) {
     std::cout << "\n" << label << ":\n";
     std::cout << "  Artists: " << library.artist_count << "\n";
     std::cout << "  Albums: " << library.album_count << "\n";
     std::cout << "  Tracks: " << library.track_count << "\n";
 }
 
-void PrintFirstArtists(const zmdb::ZMDBLibrary& library, int count = 5) {
+void PrintFirstArtists(const zmdb_legacy::ZMDBLibrary& library, int count = 5) {
     std::cout << "\nFirst " << std::min(count, (int)library.albums_by_artist.size()) << " Artists:\n";
     std::cout << "-----------------------------------\n";
 
@@ -320,8 +320,8 @@ int main(int argc, char* argv[]) {
     zune::DeviceFamily parse_family = device_type_override.empty() ? device_family : parseDeviceType(device_type_override);
     std::cout << "Device type: " << zune::GetFamilyName(parse_family) << "\n";
 
-    zmdb::ZMDBLibraryExtractor extractor;
-    zmdb::ZMDBLibrary library = extractor.ExtractLibrary(zmdb_data, parse_family);
+    zmdb_legacy::ZMDBLibraryExtractor extractor;
+    zmdb_legacy::ZMDBLibrary library = extractor.ExtractLibrary(zmdb_data, parse_family);
 
     PrintLibrarySummary(library, "Extraction Results");
     PrintFirstArtists(library, 5);

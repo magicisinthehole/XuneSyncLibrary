@@ -9,7 +9,7 @@
 #include <mtp/ByteArray.h>
 #include "ZuneDeviceIdentification.h"
 
-namespace zmdb {
+namespace zmdb_legacy {
 
 /**
  * High-level library extractor for Zune zmdb files.
@@ -128,6 +128,6 @@ private:
     uint16_t GetPropertyIndex(uint32_t pid) const { return pid & 0xFFFF; }
 };
 
-} // namespace zmdb
+} // namespace zmdb_legacy
 
 #endif // ZMDB_LIBRARY_EXTRACTOR_H

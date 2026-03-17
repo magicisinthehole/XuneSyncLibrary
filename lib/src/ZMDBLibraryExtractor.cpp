@@ -4,7 +4,7 @@
 #include <algorithm>
 #include <set>
 
-namespace zmdb {
+namespace zmdb_legacy {
 
 ZMDBLibraryExtractor::ZMDBLibraryExtractor() {
 }
@@ -659,4 +659,4 @@ void ZMDBLibraryExtractor::Log(const std::string& message) const {
     std::cout << "[ZMDBLibraryExtractor] " << message << std::endl;
 }
 
-} // namespace zmdb
+} // namespace zmdb_legacy
