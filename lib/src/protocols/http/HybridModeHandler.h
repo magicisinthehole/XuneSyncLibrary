@@ -9,6 +9,21 @@
 // Forward declarations
 class HttpClient;
 
+enum class EndpointType {
+    Overview,
+    Biography,
+    Images,
+    Artwork,
+    DeviceBackgroundImage,
+    SimilarArtists,
+    Albums,
+    Tracks,
+    Unknown
+};
+
+const char* EndpointTypeToString(EndpointType type);
+bool IsImageEndpoint(EndpointType type);
+
 /**
  * HybridModeHandler
  *
@@ -75,16 +90,16 @@ public:
 private:
     HTTPParser::HTTPResponse TryServeFromLocal(
         const std::string& artist_uuid,
-        const std::string& endpoint_type,
+        EndpointType endpoint_type,
         const std::string& resource_id);
 
     void CacheResponse(
         const std::string& artist_uuid,
-        const std::string& endpoint_type,
+        EndpointType endpoint_type,
         const std::string& resource_id,
         const HTTPParser::HTTPResponse& response);
 
-    std::string DetermineEndpointType(const std::string& path);
+    static EndpointType DetermineEndpointType(const std::string& path);
     mtp::ByteArray ReadFile(const std::string& file_path);
     std::string GetCurrentHttpDate();
     std::string GetFileModificationDate(const std::string& file_path);

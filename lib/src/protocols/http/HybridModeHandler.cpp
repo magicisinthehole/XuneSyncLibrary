@@ -9,6 +9,25 @@
 #include <sys/stat.h>
 #include <functional>
 
+const char* EndpointTypeToString(EndpointType type) {
+    switch (type) {
+        case EndpointType::Overview:               return "overview";
+        case EndpointType::Biography:              return "biography";
+        case EndpointType::Images:                 return "images";
+        case EndpointType::Artwork:                return "artwork";
+        case EndpointType::DeviceBackgroundImage:  return "devicebackgroundimage";
+        case EndpointType::SimilarArtists:         return "similarartists";
+        case EndpointType::Albums:                 return "albums";
+        case EndpointType::Tracks:                 return "tracks";
+        case EndpointType::Unknown:                return "unknown";
+    }
+    return "unknown";
+}
+
+bool IsImageEndpoint(EndpointType type) {
+    return type == EndpointType::Artwork || type == EndpointType::DeviceBackgroundImage;
+}
+
 HybridModeHandler::HybridModeHandler(
     const std::string& proxy_catalog_server,
     const std::string& proxy_image_server,
@@ -60,11 +79,10 @@ HTTPParser::HTTPResponse HybridModeHandler::HandleRequest(const HTTPParser::HTTP
 
     // Extract artist UUID and endpoint information using HTTPParser
     std::string artist_uuid = HTTPParser::ExtractArtistUUID(request.path);
-    std::string endpoint_type = DetermineEndpointType(request.path);  // Keep local for C# compat
+    auto endpoint_type = DetermineEndpointType(request.path);
     std::string resource_id = HTTPParser::ExtractImageUUID(request.path);
 
     // Step 1: Try to serve from local cache (if callback is set)
-    // Call PathResolver if we have artist UUID OR if we have resource ID (for image-by-ID lookups)
     if (path_resolver_callback_ && (!artist_uuid.empty() || !resource_id.empty())) {
         auto local_response = TryServeFromLocal(artist_uuid, endpoint_type, resource_id);
         if (local_response.status_code != 0) {
@@ -74,13 +92,37 @@ HTTPParser::HTTPResponse HybridModeHandler::HandleRequest(const HTTPParser::HTTP
     }
 
     // Step 2: Local file not found or callback not set -> proxy to server
+    bool is_image = IsImageEndpoint(endpoint_type);
+    bool can_cache = cache_storage_callback_ && (!artist_uuid.empty() || !resource_id.empty());
+
+    if (is_image && can_cache && path_resolver_callback_) {
+        // Fetch full resolution for caching, serve device-sized to device
+        std::map<std::string, std::string> full_res_params;
+        full_res_params["full"] = "true";
+        std::string full_res_url = HttpClient::BuildURL(server, request.path, full_res_params);
+
+        Log("Fetching full-resolution for caching: " + full_res_url);
+        auto proxy_response = http_client_->PerformGET(full_res_url, request.headers);
+
+        if (proxy_response.status_code >= 200 && proxy_response.status_code < 300) {
+            CacheResponse(artist_uuid, endpoint_type, resource_id, proxy_response);
+
+            // Serve the device-sized version that CacheStorage just created
+            auto local_response = TryServeFromLocal(artist_uuid, endpoint_type, resource_id);
+            if (local_response.status_code != 0) {
+                Log("Serving device-sized version after full-res cache");
+                return local_response;
+            }
+        }
+
+        return proxy_response;
+    }
+
+    // Non-image or no callbacks: proxy with original parameters
     Log("No local file, proxying to server");
     auto proxy_response = http_client_->PerformGET(full_url, request.headers);
 
-    // Step 3: Cache the proxy response (if callback is set and response is successful)
-    if (cache_storage_callback_ &&
-        (!artist_uuid.empty() || !resource_id.empty()) &&
-        proxy_response.status_code >= 200 && proxy_response.status_code < 300) {
+    if (can_cache && proxy_response.status_code >= 200 && proxy_response.status_code < 300) {
         CacheResponse(artist_uuid, endpoint_type, resource_id, proxy_response);
     }
 
@@ -110,15 +152,16 @@ bool HybridModeHandler::TestConnection() {
 
 HTTPParser::HTTPResponse HybridModeHandler::TryServeFromLocal(
     const std::string& artist_uuid,
-    const std::string& endpoint_type,
+    EndpointType endpoint_type,
     const std::string& resource_id) {
 
     HTTPParser::HTTPResponse response;
-    response.status_code = 0;  // Indicates "not found locally"
+    response.status_code = 0;
 
+    const char* type_str = EndpointTypeToString(endpoint_type);
     const char* file_path = path_resolver_callback_(
         artist_uuid.c_str(),
-        endpoint_type.c_str(),
+        type_str,
         resource_id.empty() ? nullptr : resource_id.c_str(),
         path_resolver_user_data_
     );
@@ -152,7 +195,7 @@ HTTPParser::HTTPResponse HybridModeHandler::TryServeFromLocal(
     response.headers["Server"] = "gunicorn";
     response.headers["Date"] = GetCurrentHttpDate();
 
-    if (endpoint_type == "devicebackgroundimage") {
+    if (endpoint_type == EndpointType::DeviceBackgroundImage) {
         size_t last_slash = path_str.find_last_of("/\\");
         std::string filename = (last_slash != std::string::npos) ? path_str.substr(last_slash + 1) : path_str;
         response.headers["Content-Disposition"] = "inline; filename=" + filename;
@@ -171,7 +214,7 @@ HTTPParser::HTTPResponse HybridModeHandler::TryServeFromLocal(
 
 void HybridModeHandler::CacheResponse(
     const std::string& artist_uuid,
-    const std::string& endpoint_type,
+    EndpointType endpoint_type,
     const std::string& resource_id,
     const HTTPParser::HTTPResponse& response) {
 
@@ -187,9 +230,10 @@ void HybridModeHandler::CacheResponse(
         }
     }
 
+    const char* type_str = EndpointTypeToString(endpoint_type);
     bool cached = cache_storage_callback_(
         artist_uuid.empty() ? nullptr : artist_uuid.c_str(),
-        endpoint_type.c_str(),
+        type_str,
         resource_id.empty() ? nullptr : resource_id.c_str(),
         response.body.data(),
         response.body.size(),
@@ -201,33 +245,31 @@ void HybridModeHandler::CacheResponse(
                             (!resource_id.empty() ? "resource:" + resource_id : "unknown");
 
     if (cached) {
-        Log("Successfully cached " + endpoint_type + " for " + identifier +
+        Log(std::string("Successfully cached ") + type_str + " for " + identifier +
             " (" + std::to_string(response.body.size()) + " bytes)");
     } else {
-        Log("Cache callback returned false for " + endpoint_type + "/" + identifier);
+        Log(std::string("Cache callback returned false for ") + type_str + "/" + identifier);
     }
 }
 
-std::string HybridModeHandler::DetermineEndpointType(const std::string& path) {
-    // Check specific sub-endpoints before the generic /music/artist/ match
-    if (path.find("/biography") != std::string::npos) {
-        return "biography";
-    } else if (path.find("/deviceBackgroundImage") != std::string::npos) {
-        return "devicebackgroundimage";
-    } else if (path.find("/similarArtists") != std::string::npos) {
-        return "similarartists";
-    } else if (path.find("/albums") != std::string::npos) {
-        return "albums";
-    } else if (path.find("/tracks") != std::string::npos) {
-        return "tracks";
-    } else if (path.find("/images") != std::string::npos) {
-        return "images";
-    } else if (path.find("/music/artist/") != std::string::npos) {
-        return "overview";
-    } else if (path.find("/image/") != std::string::npos) {
-        return "artwork";
-    }
-    return "unknown";
+EndpointType HybridModeHandler::DetermineEndpointType(const std::string& path) {
+    if (path.find("/biography") != std::string::npos)
+        return EndpointType::Biography;
+    if (path.find("/deviceBackgroundImage") != std::string::npos)
+        return EndpointType::DeviceBackgroundImage;
+    if (path.find("/similarArtists") != std::string::npos)
+        return EndpointType::SimilarArtists;
+    if (path.find("/albums") != std::string::npos)
+        return EndpointType::Albums;
+    if (path.find("/tracks") != std::string::npos)
+        return EndpointType::Tracks;
+    if (path.find("/images") != std::string::npos)
+        return EndpointType::Images;
+    if (path.find("/music/artist/") != std::string::npos)
+        return EndpointType::Overview;
+    if (path.find("/image/") != std::string::npos)
+        return EndpointType::Artwork;
+    return EndpointType::Unknown;
 }
 
 mtp::ByteArray HybridModeHandler::ReadFile(const std::string& file_path) {

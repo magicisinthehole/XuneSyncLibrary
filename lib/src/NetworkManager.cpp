@@ -115,6 +115,15 @@ void NetworkManager::StartHTTPInterceptor(const InterceptorConfig& config) {
     Log("Starting HTTP interceptor...");
     http_interceptor_ = std::make_shared<ZuneHTTPInterceptor>(mtp_session_);
     http_interceptor_->SetLogCallback(log_callback_);
+
+    // Apply any callbacks that were registered before the interceptor existed
+    if (pending_path_resolver_) {
+        http_interceptor_->SetPathResolverCallback(pending_path_resolver_, pending_path_resolver_user_data_);
+    }
+    if (pending_cache_storage_) {
+        http_interceptor_->SetCacheStorageCallback(pending_cache_storage_, pending_cache_storage_user_data_);
+    }
+
     http_interceptor_->Start(config);
 
     // NOTE: Don't enable network polling yet - caller must explicitly call EnableNetworkPolling()
@@ -637,18 +646,20 @@ USBHandlesWithEndpoints NetworkManager::ExtractUSBHandles() {
 
 void NetworkManager::SetPathResolverCallback(PathResolverCallback callback, void* user_data) {
     std::lock_guard<std::mutex> lock(interceptor_mutex_);
-    if (!http_interceptor_) {
-        throw std::runtime_error("HTTP interceptor not initialized - call StartHTTPInterceptor() first");
+    pending_path_resolver_ = callback;
+    pending_path_resolver_user_data_ = user_data;
+    if (http_interceptor_) {
+        http_interceptor_->SetPathResolverCallback(callback, user_data);
     }
-    http_interceptor_->SetPathResolverCallback(callback, user_data);
 }
 
 void NetworkManager::SetCacheStorageCallback(CacheStorageCallback callback, void* user_data) {
     std::lock_guard<std::mutex> lock(interceptor_mutex_);
-    if (!http_interceptor_) {
-        throw std::runtime_error("HTTP interceptor not initialized - call StartHTTPInterceptor() first");
+    pending_cache_storage_ = callback;
+    pending_cache_storage_user_data_ = user_data;
+    if (http_interceptor_) {
+        http_interceptor_->SetCacheStorageCallback(callback, user_data);
     }
-    http_interceptor_->SetCacheStorageCallback(callback, user_data);
 }
 
 void NetworkManager::SetVerboseNetworkLogging(bool enable) {

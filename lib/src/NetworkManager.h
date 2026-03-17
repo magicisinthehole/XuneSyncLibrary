@@ -59,6 +59,12 @@ private:
     mutable std::mutex interceptor_mutex_;
     bool verbose_logging_ = true;
 
+    // Deferred callbacks — stored until interceptor is created
+    PathResolverCallback pending_path_resolver_ = nullptr;
+    void* pending_path_resolver_user_data_ = nullptr;
+    CacheStorageCallback pending_cache_storage_ = nullptr;
+    void* pending_cache_storage_user_data_ = nullptr;
+
     std::atomic<bool> shutdown_requested_{false};
     std::atomic<int> active_operations_{0};
     std::mutex shutdown_mutex_;
