@@ -83,6 +83,16 @@ find_package(Threads REQUIRED)
 find_package(OpenSSL REQUIRED)
 find_package(CURL REQUIRED)
 
+# Linux: prefer static libcrypto to eliminate runtime OpenSSL version dependency
+if(UNIX AND NOT APPLE)
+    find_library(OPENSSL_CRYPTO_STATIC NAMES libcrypto.a
+        PATHS ${OPENSSL_ROOT_DIR}/lib /usr/lib/x86_64-linux-gnu /usr/lib/aarch64-linux-gnu /usr/lib)
+    if(OPENSSL_CRYPTO_STATIC)
+        message(STATUS "Using static libcrypto: ${OPENSSL_CRYPTO_STATIC}")
+        set(OPENSSL_CRYPTO_LIBRARY ${OPENSSL_CRYPTO_STATIC})
+    endif()
+endif()
+
 # Find TagLib (required by AFTL Metadata)
 find_package(PkgConfig QUIET)
 if(PKG_CONFIG_FOUND)
