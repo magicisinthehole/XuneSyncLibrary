@@ -174,7 +174,7 @@ int main(int argc, char** argv) {
             return 1;
         }
 
-        std::cout << "✓ HTTP interceptor running" << std::endl;
+        std::cout << "[OK] HTTP interceptor running" << std::endl;
         std::cout << std::endl;
 
         // Trigger network mode to establish PPP/IPCP handshake
@@ -196,7 +196,7 @@ int main(int argc, char** argv) {
                 // Enable continuous polling (after IPCP handshake is sent)
                 device.EnableNetworkPolling();
 
-                std::cout << "✓ Network mode established" << std::endl;
+                std::cout << "[OK] Network mode established" << std::endl;
                 std::cout << "Device should now start HTTP metadata requests..." << std::endl;
 
             } catch (const std::exception& e) {
@@ -245,11 +245,11 @@ int main(int argc, char** argv) {
         std::cout << std::endl;
         std::cout << "Stopping HTTP interceptor..." << std::endl;
         device.StopHTTPInterceptor();
-        std::cout << "✓ Interceptor stopped" << std::endl;
+        std::cout << "[OK] Interceptor stopped" << std::endl;
 
         std::cout << "Disconnecting from device..." << std::endl;
         device.Disconnect();
-        std::cout << "✓ Disconnected" << std::endl;
+        std::cout << "[OK] Disconnected" << std::endl;
 
         std::cout << std::endl;
         std::cout << "Monitoring completed!" << std::endl;

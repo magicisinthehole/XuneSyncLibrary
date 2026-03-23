@@ -126,17 +126,17 @@ bool PTPIPClient::connect() {
         setsockopt(cmd_socket_, SOL_SOCKET, SO_RCVTIMEO, &io_timeout, sizeof(io_timeout));
         setsockopt(cmd_socket_, SOL_SOCKET, SO_SNDTIMEO, &io_timeout, sizeof(io_timeout));
 
-        std::cout << "  ✓ TCP connection established" << std::endl;
+        std::cout << "  [OK] TCP connection established" << std::endl;
 
         // 2. Send Init Command Request
         auto init_req = build_init_command_request();
         send_raw(cmd_socket_, init_req);
-        std::cout << "  ✓ Sent Init Command Request" << std::endl;
+        std::cout << "  [OK] Sent Init Command Request" << std::endl;
 
         // 3. Receive Init Command Ack
         auto init_ack = recv_packet(cmd_socket_);
         connection_number_ = parse_init_ack(init_ack);
-        std::cout << "  ✓ Command channel established (ConnID=" << connection_number_ << ")" << std::endl;
+        std::cout << "  [OK] Command channel established (ConnID=" << connection_number_ << ")" << std::endl;
 
         // 4. Connect event channel
         std::cout << "Connecting event channel..." << std::endl;
@@ -159,7 +159,7 @@ bool PTPIPClient::connect() {
             uint32_t evt_type;
             memcpy(&evt_type, &event_ack[4], 4);
             if (evt_type == static_cast<uint32_t>(PacketType::INIT_EVENT_ACK)) {
-                std::cout << "  ✓ Event channel established" << std::endl;
+                std::cout << "  [OK] Event channel established" << std::endl;
             }
         }
 
@@ -189,7 +189,7 @@ bool PTPIPClient::open_session(uint32_t session_id) {
     auto resp = send_operation(OperationCode::OPEN_SESSION, {session_id});
     if (resp.response_code == ResponseCode::OK) {
         session_id_ = session_id;
-        std::cout << "  ✓ Session opened: " << session_id << std::endl;
+        std::cout << "  [OK] Session opened: " << session_id << std::endl;
         return true;
     }
     std::cerr << "Open session failed" << std::endl;
@@ -204,7 +204,7 @@ bool PTPIPClient::close_session() {
     auto resp = send_operation(OperationCode::CLOSE_SESSION, {});
     if (resp.response_code == ResponseCode::OK) {
         session_id_ = 0;
-        std::cout << "  ✓ Session closed" << std::endl;
+        std::cout << "  [OK] Session closed" << std::endl;
         return true;
     }
     return false;

@@ -258,7 +258,7 @@ bool ExportLibraryToJson(ZuneMusicLibrary* library, const std::string& output_fi
 
     json_file.close();
 
-    std::cout << "✓ Exported library to: " << output_file << "\n";
+    std::cout << "[OK] Exported library to: " << output_file << "\n";
 
     std::set<std::string> unique_artists;
     for (uint32_t i = 0; i < library->track_count; ++i) {
@@ -324,10 +324,10 @@ int DownloadAllArtwork(ZuneDevice& device, ZuneMusicLibrary* library, const std:
 
         if (result == 0) {
             downloaded++;
-            std::cout << "  ✓ Downloaded successfully\n\n";
+            std::cout << "  [OK] Downloaded successfully\n\n";
         } else {
             failed++;
-            std::cout << "  ✗ Download failed (error code: " << result << ")\n\n";
+            std::cout << "  [FAIL] Download failed (error code: " << result << ")\n\n";
         }
     }
 
@@ -373,7 +373,7 @@ int main() {
         return 1;
     }
 
-    std::cout << "\n✓ Connected successfully!\n\n";
+    std::cout << "\n[OK] Connected successfully!\n\n";
 
     // Get device info
     std::string device_name = device.GetName();
@@ -400,7 +400,7 @@ int main() {
 
     auto duration_fast = std::chrono::duration_cast<std::chrono::milliseconds>(end_fast - start_fast);
 
-    std::cout << "\n⏱  Fast method completed in: " << duration_fast.count() << " ms\n";
+    std::cout << "\n[TIME]  Fast method completed in: " << duration_fast.count() << " ms\n";
 
     PrintLibrarySummary(library_fast, "Fast Method Results");
     PrintFirstArtists(library_fast, 5);
@@ -444,7 +444,7 @@ int main() {
         if (library_slow) {
             auto duration_slow = std::chrono::duration_cast<std::chrono::milliseconds>(end_slow - start_slow);
 
-            std::cout << "\n⏱  Slow method completed in: " << duration_slow.count() << " ms\n";
+            std::cout << "\n[TIME]  Slow method completed in: " << duration_slow.count() << " ms\n";
 
             PrintLibrarySummary(library_slow, "Slow Method Results");
 
@@ -474,7 +474,7 @@ int main() {
     std::cout << "Disconnecting device...\n";
     device.Disconnect();
 
-    std::cout << "\n✓ Test complete!\n";
+    std::cout << "\n[OK] Test complete!\n";
     std::cout << "========================================\n";
 
     return 0;

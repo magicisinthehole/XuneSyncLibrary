@@ -51,47 +51,47 @@ bool NetworkManager::InitializeHTTPSubsystem() {
         // HTTP trigger command (pcap shows single call with 258B data)
         Log("  → Sending 0x9231() - HTTP init trigger");
         mtp_session_->Operation9231();
-        Log("  ✓ 0x9231 complete");
+        Log("  [OK] 0x9231 complete");
 
         // Sync operations
         Log("  → Sending 0x9217(1)");
         mtp_session_->Operation9217(1);
-        Log("  ✓ 0x9217 complete");
+        Log("  [OK] 0x9217 complete");
 
         Log("  → Sending 0x9218(0, 0, 5000)");
         mtp_session_->Operation9218(0, 0, 5000);
-        Log("  ✓ 0x9218 complete");
+        Log("  [OK] 0x9218 complete");
 
         // Second sync
         Log("  → Sending 0x9217(1) again");
         mtp_session_->Operation9217(1);
-        Log("  ✓ 0x9217 complete");
+        Log("  [OK] 0x9217 complete");
 
         // NOTE: 0x9214 is part of MTPZ auth, not HTTP init - skip it here
 
         Log("  → Sending 0x9219(0, 0, 5000)");
         mtp_session_->Operation9219(0, 0, 5000);
-        Log("  ✓ 0x9219 complete");
+        Log("  [OK] 0x9219 complete");
 
         Log("  → Sending 0x922f");
         mtp::ByteArray empty;
         mtp_session_->Operation922f(empty);
-        Log("  ✓ 0x922f complete");
+        Log("  [OK] 0x922f complete");
 
         // Network subsystem setup
         Log("  → Sending 0x922b(3, 1, 0)");
         mtp_session_->Operation922b(3, 1, 0);
-        Log("  ✓ 0x922b complete");
+        Log("  [OK] 0x922b complete");
 
         // Enable wireless/network sync
         Log("  → Sending 0x9230(1)");
         mtp_session_->Operation9230(1);
-        Log("  ✓ 0x9230 complete");
+        Log("  [OK] 0x9230 complete");
 
         // After this, the device will send "CLIENT" via Op922d when ready.
         // TriggerNetworkMode() polls for this signal before sending "CLIENTSERVER".
 
-        Log("✓ HTTP subsystem initialization complete");
+        Log("[OK] HTTP subsystem initialization complete");
         return true;
 
     } catch (const std::exception& e) {
@@ -150,7 +150,7 @@ void NetworkManager::EnableNetworkPolling() {
 
     Log("Enabling network polling...");
     http_interceptor_->EnableNetworkPolling();
-    Log("  ✓ Network polling enabled — C# drives via PollNetworkData()");
+    Log("  [OK] Network polling enabled — C# drives via PollNetworkData()");
 }
 
 int NetworkManager::PollNetworkData(int timeout_ms) {
@@ -226,7 +226,7 @@ void NetworkManager::TriggerNetworkMode() {
         poll_count++;
 
         if (response.size() == 6 && response == client_sig) {
-            Log("  ✓ Device sent CLIENT (poll " + std::to_string(poll_count) + ")");
+            Log("  [OK] Device sent CLIENT (poll " + std::to_string(poll_count) + ")");
             found_client = true;
         } else if (!response.empty()) {
             VerboseLog("  → Poll " + std::to_string(poll_count) + ": " +
@@ -240,7 +240,7 @@ void NetworkManager::TriggerNetworkMode() {
 
     if (!found_client) {
         if (shutdown_requested_.load(std::memory_order_relaxed)) return;
-        Log("  ✗ Device did not send CLIENT after " + std::to_string(max_polls) + " polls");
+        Log("  [FAIL] Device did not send CLIENT after " + std::to_string(max_polls) + " polls");
         throw std::runtime_error("Device did not signal readiness for network mode");
     }
 
@@ -248,7 +248,7 @@ void NetworkManager::TriggerNetworkMode() {
     const char* trigger_str = "CLIENTSERVER";
     mtp::ByteArray trigger_payload(trigger_str, trigger_str + 12);
     mtp_session_->Operation922c(trigger_payload, 3, 3);
-    Log("  ✓ CLIENTSERVER sent");
+    Log("  [OK] CLIENTSERVER sent");
 
     Log("Polling for device LCP Config-Request...");
     mtp::ByteArray device_lcp;
@@ -260,7 +260,7 @@ void NetworkManager::TriggerNetworkMode() {
         poll_count++;
 
         if (!response.empty() && PPPParser::IsValidFrame(response)) {
-            Log("  ✓ Received PPP frame: " + std::to_string(response.size()) + " bytes (poll " +
+            Log("  [OK] Received PPP frame: " + std::to_string(response.size()) + " bytes (poll " +
                 std::to_string(poll_count) + ")");
             device_lcp = response;
             found_valid_lcp = true;
@@ -276,11 +276,11 @@ void NetworkManager::TriggerNetworkMode() {
 
     if (!found_valid_lcp) {
         if (shutdown_requested_.load(std::memory_order_relaxed)) return;
-        Log("  ✗ Device did not send LCP Config-Request after " + std::to_string(max_polls) + " polls");
+        Log("  [FAIL] Device did not send LCP Config-Request after " + std::to_string(max_polls) + " polls");
         throw std::runtime_error("Device did not enter network mode");
     }
 
-    Log("  ✓ Device LCP Config-Request received: " + std::to_string(device_lcp.size()) + " bytes");
+    Log("  [OK] Device LCP Config-Request received: " + std::to_string(device_lcp.size()) + " bytes");
     Log("    Data: " + format_hex(device_lcp, 50));
 
     Log("Sending LCP response...");
@@ -294,11 +294,11 @@ void NetworkManager::TriggerNetworkMode() {
 
     mtp::ByteArray lcp_response_payload(lcp_response_data, lcp_response_data + sizeof(lcp_response_data));
     mtp_session_->Operation922c(lcp_response_payload, 3, 3);
-    Log("  ✓ LCP response sent");
+    Log("  [OK] LCP response sent");
 
     Log("Polling for device LCP reply...");
     mtp::ByteArray device_lcp_reply = mtp_session_->Operation922d(3, 3);
-    Log("  ✓ Device LCP reply received: " + std::to_string(device_lcp_reply.size()) + " bytes");
+    Log("  [OK] Device LCP reply received: " + std::to_string(device_lcp_reply.size()) + " bytes");
     Log("    Data: " + format_hex(device_lcp_reply, 50));
 
     Log("Checking for device IPCP Config-Request in LCP reply...");
@@ -308,7 +308,7 @@ void NetworkManager::TriggerNetworkMode() {
 
     if (!device_lcp_reply.empty() &&
         PPPParser_ContainsIPCPCode(device_lcp_reply, IPCPParser::IPCP_CODE_CONFIG_REQUEST)) {
-        Log("  ✓ Found IPCP Config-Request in LCP reply message!");
+        Log("  [OK] Found IPCP Config-Request in LCP reply message!");
         device_ipcp_request = device_lcp_reply;
         found_device_ipcp_request = true;
     }
@@ -324,7 +324,7 @@ void NetworkManager::TriggerNetworkMode() {
 
         if (!response.empty() && PPPParser::IsValidFrame(response) &&
             PPPParser_ContainsIPCPCode(response, IPCPParser::IPCP_CODE_CONFIG_REQUEST)) {
-            Log("  ✓ Received device IPCP Config-Request: " + std::to_string(response.size()) + " bytes (poll " +
+            Log("  [OK] Received device IPCP Config-Request: " + std::to_string(response.size()) + " bytes (poll " +
                 std::to_string(poll_count) + ")");
             Log("    Data: " + format_hex(response, 50));
             device_ipcp_request = response;
@@ -338,7 +338,7 @@ void NetworkManager::TriggerNetworkMode() {
 
     if (!found_device_ipcp_request) {
         if (shutdown_requested_.load(std::memory_order_relaxed)) return;
-        Log("  ✗ Device did not send IPCP Config-Request after " + std::to_string(max_polls) + " polls");
+        Log("  [FAIL] Device did not send IPCP Config-Request after " + std::to_string(max_polls) + " polls");
         throw std::runtime_error("Device IPCP negotiation failed");
     }
 
@@ -426,7 +426,7 @@ void NetworkManager::TriggerNetworkMode() {
         VerboseLog("  → CCP Config-Request");
         Log("  → Config-Nak suggesting device use " + IPParser::IPToString(device_ip));
         mtp_session_->Operation922c(initial_ipcp_payload, 3, 3);
-        Log("  ✓ Initial IPCP sent");
+        Log("  [OK] Initial IPCP sent");
 
         // Step 8: Wait for device's Config-Reject + NEW Config-Request
         // Per Windows capture: Device sends Config-Reject (ID=1, rejecting compression)
@@ -447,7 +447,7 @@ void NetworkManager::TriggerNetworkMode() {
                 IPCPParser::IPCPPacket reject_packet;
                 if (PPPParser_FindIPCPFrame(response, IPCPParser::IPCP_CODE_CONFIG_REJECT, reject_packet)) {
                     found_config_reject = true;
-                    Log("  ✓ Received Config-Reject (ID=" + std::to_string(reject_packet.identifier) +
+                    Log("  [OK] Received Config-Reject (ID=" + std::to_string(reject_packet.identifier) +
                         ") - device rejecting compression option");
                 }
 
@@ -458,7 +458,7 @@ void NetworkManager::TriggerNetworkMode() {
                     new_request_id = new_config_request.identifier;
                     device_new_request = response;
                     found_new_request = true;
-                    Log("  ✓ Received device's new Config-Request (ID=" + std::to_string(new_request_id) +
+                    Log("  [OK] Received device's new Config-Request (ID=" + std::to_string(new_request_id) +
                         "): " + std::to_string(response.size()) + " bytes (poll " + std::to_string(poll_count) + ")");
                     Log("    Data: " + format_hex(response, 50));
                 }
@@ -471,7 +471,7 @@ void NetworkManager::TriggerNetworkMode() {
 
         if (!found_new_request) {
             if (shutdown_requested_.load(std::memory_order_relaxed)) return;
-            Log("  ✗ Device did not send new IPCP Config-Request after Config-Nak");
+            Log("  [FAIL] Device did not send new IPCP Config-Request after Config-Nak");
             throw std::runtime_error("Device IPCP negotiation failed after Config-Nak");
         }
 
@@ -515,7 +515,7 @@ void NetworkManager::TriggerNetworkMode() {
         Log("  → Our Config-Request (ID=2) for " + IPParser::IPToString(host_ip) + " (no compression)");
         Log("  → Config-Ack for device's Config-Request (ID=" + std::to_string(device_request.identifier) + ")");
         mtp_session_->Operation922c(second_ipcp_payload, 3, 3);
-        Log("  ✓ Second IPCP Config-Request + Config-Ack sent");
+        Log("  [OK] Second IPCP Config-Request + Config-Ack sent");
     } else {
         // Device sent valid IP - send Config-Request + CCP + Config-Ack
         VerboseLog("Building initial IPCP response (Config-Request + CCP + Config-Ack)...");
@@ -538,7 +538,7 @@ void NetworkManager::TriggerNetworkMode() {
         VerboseLog("  → CCP Config-Request");
         Log("  → Config-Ack for device's Config-Request");
         mtp_session_->Operation922c(initial_ipcp_payload, 3, 3);
-        Log("  ✓ Initial IPCP sent");
+        Log("  [OK] Initial IPCP sent");
     }
 
     // Step 10: Poll for device's Config-Ack to our Config-Request
@@ -557,7 +557,7 @@ void NetworkManager::TriggerNetworkMode() {
             IPCPParser::IPCPPacket ack_packet;
             if (PPPParser_FindIPCPFrame(response, IPCPParser::IPCP_CODE_CONFIG_ACK, ack_packet) &&
                 (ack_packet.identifier == 0x01 || ack_packet.identifier == 0x02)) {
-                Log("  ✓ Received device IPCP Config-Ack (ID=" + std::to_string(ack_packet.identifier) +
+                Log("  [OK] Received device IPCP Config-Ack (ID=" + std::to_string(ack_packet.identifier) +
                     "): " + std::to_string(response.size()) + " bytes (poll " + std::to_string(poll_count) + ")");
                 Log("    Data: " + format_hex(response, 50));
                 device_config_ack = response;
@@ -572,11 +572,11 @@ void NetworkManager::TriggerNetworkMode() {
 
     if (!found_config_ack) {
         if (shutdown_requested_.load(std::memory_order_relaxed)) return;
-        Log("  ✗ Device did not send IPCP Config-Ack after " + std::to_string(max_polls) + " polls");
+        Log("  [FAIL] Device did not send IPCP Config-Ack after " + std::to_string(max_polls) + " polls");
         throw std::runtime_error("Device did not complete IPCP negotiation");
     }
 
-    Log("✓ Network mode fully established - Bidirectional LCP and IPCP handshakes complete!");
+    Log("[OK] Network mode fully established - Bidirectional LCP and IPCP handshakes complete!");
 }
 
 USBHandlesWithEndpoints NetworkManager::ExtractUSBHandles() {
@@ -631,7 +631,7 @@ USBHandlesWithEndpoints NetworkManager::ExtractUSBHandles() {
         throw std::runtime_error("Failed to discover HTTP endpoints 0x01 IN/OUT");
     }
 
-    Log("✓ USB handles and endpoints extracted");
+    Log("[OK] USB handles and endpoints extracted");
     Log("  IMPORTANT: After MTP disconnect, you must re-claim the interface");
     Log("  Call usb_device->ClaimInterface(usb_interface) to regain access");
 

@@ -123,7 +123,7 @@ bool ExportLibraryToJson(const zmdb_legacy::ZMDBLibrary& library, const std::str
 
     json_file.close();
 
-    std::cout << "✓ Exported library to: " << output_file << "\n";
+    std::cout << "[OK] Exported library to: " << output_file << "\n";
     std::cout << "  Artists: " << library.artist_count << "\n";
     std::cout << "  Albums: " << library.album_count << "\n";
     std::cout << "  Tracks: " << library.track_count << "\n";
@@ -252,7 +252,7 @@ int main(int argc, char* argv[]) {
             return 1;
         }
 
-        std::cout << "✓ Loaded " << zmdb_data.size() << " bytes\n";
+        std::cout << "[OK] Loaded " << zmdb_data.size() << " bytes\n";
 
         // Use override or default to Keel (Zune 30)
         device_family = device_type_override.empty() ? zune::DeviceFamily::Keel : parseDeviceType(device_type_override);
@@ -277,7 +277,7 @@ int main(int argc, char* argv[]) {
             return 1;
         }
 
-        std::cout << "\n✓ Connected successfully!\n";
+        std::cout << "\n[OK] Connected successfully!\n";
 
         // Get device info
         std::string device_name = device.GetName();
@@ -300,13 +300,13 @@ int main(int argc, char* argv[]) {
             return 1;
         }
 
-        std::cout << "✓ Retrieved zmdb: " << zmdb_data.size() << " bytes\n";
+        std::cout << "[OK] Retrieved zmdb: " << zmdb_data.size() << " bytes\n";
 
         // Save zmdb binary for debugging
         std::ofstream zmdb_file("/tmp/device_zmdb.bin", std::ios::binary);
         zmdb_file.write(reinterpret_cast<const char*>(zmdb_data.data()), zmdb_data.size());
         zmdb_file.close();
-        std::cout << "✓ Saved zmdb to /tmp/device_zmdb.bin\n";
+        std::cout << "[OK] Saved zmdb to /tmp/device_zmdb.bin\n";
 
         device.Disconnect();
     }
@@ -333,7 +333,7 @@ int main(int argc, char* argv[]) {
     }
 
     std::cout << "\n========================================\n";
-    std::cout << "✓ Test complete!\n";
+    std::cout << "[OK] Test complete!\n";
     std::cout << "========================================\n";
 
     return 0;

@@ -142,7 +142,7 @@ bool ZuneDevice::ConnectUSB() {
             Log("Error: No MTP device found on USB");
             return false;
         }
-        Log("  ✓ Device found");
+        Log("  [OK] Device found");
 
         Log("Opening MTP session...");
         mtp_session_ = device_->OpenSession(1);
@@ -150,7 +150,7 @@ bool ZuneDevice::ConnectUSB() {
             Log("Error: Failed to open MTP session");
             return false;
         }
-        Log("  ✓ Session opened");
+        Log("  [OK] Session opened");
 
         // NOTE: Do NOT call Operation1002 here - HTTP init happens later via InitializeHTTPSubsystem()
         // The Windows Zune software does NOT call Operation1002 during initial connection
@@ -158,11 +158,11 @@ bool ZuneDevice::ConnectUSB() {
         Log("Initializing MTPZ authentication...");
         if (!mtpz_data_path_.empty()) {
             if (!MtpzDataExists(mtpz_data_path_, [this](const std::string& msg) { this->Log(msg); })) {
-                Log("  ⚠ MTPZ keys unavailable — device may deny data read operations");
+                Log("  [WARN] MTPZ keys unavailable — device may deny data read operations");
             }
         }
         cli_session_ = std::make_shared<cli::Session>(mtp_session_, false, mtpz_data_path_);
-        Log("  ✓ MTPZ session initialized");
+        Log("  [OK] MTPZ session initialized");
 
         // Initialize NetworkManager
         network_manager_ = std::make_unique<NetworkManager>(mtp_session_, [this](const std::string& msg) {
@@ -347,13 +347,13 @@ int ZuneDevice::EstablishSyncPairing(const std::string& device_name) {
         OutputStream stream(driver_data);
         stream << driver_str;
         mtp_session_->SetDeviceProperty((DeviceProperty)0xd406, driver_data);
-        Log("  ✓ Property 0xd406 set");
+        Log("  [OK] Property 0xd406 set");
 
         Log("Querying property descriptors...");
         try { mtp_session_->GetDevicePropertyDesc((DeviceProperty)0xd22f); } catch (const std::exception& e) { Log("  → Failed to query 0xd22f (non-critical): " + std::string(e.what())); }
         try { mtp_session_->GetDevicePropertyDesc((DeviceProperty)0xd402); } catch (const std::exception& e) { Log("  → Failed to query 0xd402 (non-critical): " + std::string(e.what())); }
         try { mtp_session_->GetDevicePropertyDesc((DeviceProperty)0x5002); } catch (const std::exception& e) { Log("  → Failed to query 0x5002 (non-critical): " + std::string(e.what())); }
-        Log("  ✓ Queried initial descriptors");
+        Log("  [OK] Queried initial descriptors");
 
         // Set device name if provided
         if (!device_name.empty()) {
@@ -362,7 +362,7 @@ int ZuneDevice::EstablishSyncPairing(const std::string& device_name) {
             OutputStream name_stream(name_data);
             name_stream << device_name;
             mtp_session_->SetDeviceProperty((DeviceProperty)0xd402, name_data);
-            Log("  ✓ Device name set to: \"" + device_name + "\"");
+            Log("  [OK] Device name set to: \"" + device_name + "\"");
         }
 
         Log("Querying pairing property descriptors...");
@@ -371,7 +371,7 @@ int ZuneDevice::EstablishSyncPairing(const std::string& device_name) {
         try { mtp_session_->GetDevicePropertyDesc((DeviceProperty)0xd21c); } catch (const std::exception& e) { Log("  → Failed to query 0xd21c (non-critical): " + std::string(e.what())); }
         try { mtp_session_->GetDevicePropertyDesc((DeviceProperty)0xd225); } catch (const std::exception& e) { Log("  → Failed to query 0xd225 (non-critical): " + std::string(e.what())); }
         try { mtp_session_->GetDevicePropertyDesc((DeviceProperty)0xd401); } catch (const std::exception& e) { Log("  → Failed to query 0xd401 (non-critical): " + std::string(e.what())); }
-        Log("  ✓ Queried pairing descriptors");
+        Log("  [OK] Queried pairing descriptors");
 
         Log("Setting pairing properties...");
 
@@ -383,54 +383,54 @@ int ZuneDevice::EstablishSyncPairing(const std::string& device_name) {
         Log("  Generated new sync partner GUID: " + sync_partner_guid);
 
         cli_session_->SetDeviceProp("d225", "{00000000-0000-0000-0000-000000000000}");
-        Log("  ✓ Set property 0xd225 (Null GUID)");
+        Log("  [OK] Set property 0xd225 (Null GUID)");
 
         ByteArray prop_d21c = {0x00};
         mtp_session_->SetDeviceProperty((DeviceProperty)0xd21c, prop_d21c);
-        Log("  ✓ Set property 0xd21c");
+        Log("  [OK] Set property 0xd21c");
 
         cli_session_->SetDeviceProp("d401", sync_partner_guid);
-        Log("  ✓ Set property 0xd401 (SynchronizationPartner) = " + sync_partner_guid + " ⭐ KEY PROPERTY");
+        Log("  [OK] Set property 0xd401 (SynchronizationPartner) = " + sync_partner_guid + " * KEY PROPERTY");
 
         // Set remaining properties from embedded data
         mtp_session_->GetDevicePropertyDesc((DeviceProperty)0xd230);
         ByteArray prop_d230(prop_d230_data, prop_d230_data + sizeof(prop_d230_data));
         mtp_session_->SetDeviceProperty((DeviceProperty)0xd230, prop_d230);
-        Log("  ✓ Set property 0xd230");
+        Log("  [OK] Set property 0xd230");
 
         mtp_session_->GetDevicePropertyDesc((DeviceProperty)0xd229);
         ByteArray prop_d229(prop_d229_data, prop_d229_data + sizeof(prop_d229_data));
         mtp_session_->SetDeviceProperty((DeviceProperty)0xd229, prop_d229);
-        Log("  ✓ Set property 0xd229");
+        Log("  [OK] Set property 0xd229");
 
         mtp_session_->GetDevicePropertyDesc((DeviceProperty)0xd22a);
         ByteArray prop_d22a(prop_d22a_data, prop_d22a_data + sizeof(prop_d22a_data));
         mtp_session_->SetDeviceProperty((DeviceProperty)0xd22a, prop_d22a);
-        Log("  ✓ Set property 0xd22a");
+        Log("  [OK] Set property 0xd22a");
 
         Log("Running final sync operations...");
         mtp_session_->Operation9224();
-        Log("  ✓ Operation 0x9224 complete");
+        Log("  [OK] Operation 0x9224 complete");
 
         mtp_session_->GetDeviceProperty((DeviceProperty)0xd217);
         mtp_session_->GetDeviceProperty((DeviceProperty)0xd217);
         mtp_session_->GetDeviceProperty((DeviceProperty)0xd217);
-        Log("  ✓ Property 0xd217 read 3x");
+        Log("  [OK] Property 0xd217 read 3x");
 
         mtp_session_->Operation9217(1);
-        Log("  ✓ Operation 0x9217(1) complete");
+        Log("  [OK] Operation 0x9217(1) complete");
 
         try {
             mtp_session_->Operation9227_Init();
-            Log("  ✓ Operation 0x9227 succeeded");
+            Log("  [OK] Operation 0x9227 succeeded");
         } catch (const std::exception& e) {
             Log("  → Operation 0x9227 failed (expected): " + std::string(e.what()));
         }
 
         mtp_session_->Operation9218(0, 0, 5000);
-        Log("  ✓ Operation 0x9218(0, 0, 5000) complete");
+        Log("  [OK] Operation 0x9218(0, 0, 5000) complete");
         
-        Log("\n✓ Phase 1 Complete!");
+        Log("\n[OK] Phase 1 Complete!");
         return 0;
 
     } catch (const std::exception& e) {
@@ -467,7 +467,7 @@ std::string ZuneDevice::EstablishWirelessPairing(const std::string& ssid, const 
         Log("Enabling wireless sync...");
         mtp_session_->Operation9230(1);
 
-        Log("\n✓ Phase 2 Complete!");
+        Log("\n[OK] Phase 2 Complete!");
         return session_guid_;
 
     } catch (const std::exception& e) {
@@ -484,7 +484,7 @@ int ZuneDevice::DisableWireless() {
     try {
         Log("Disabling wireless sync...");
         cli_session_->DisableWireless();
-        Log("✓ Wireless sync disabled");
+        Log("[OK] Wireless sync disabled");
         return 0;
     } catch (const std::exception& e) {
         Log("Error disabling wireless: " + std::string(e.what()));

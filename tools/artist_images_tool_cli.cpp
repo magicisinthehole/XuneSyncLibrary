@@ -125,7 +125,7 @@ int establish_network_mode(ZuneDevice& device) {
             network_mode_success = true;
             device.EnableNetworkPolling();
 
-            std::cout << "✓ Network mode established" << std::endl;
+            std::cout << "[OK] Network mode established" << std::endl;
             return 0;
 
         } catch (const std::exception& e) {
@@ -262,7 +262,7 @@ void operation_retrofit_artist(ZuneDevice& device) {
     try {
         int result = device.RetrofitArtistGuid(selected_artist_name, guid);
         if (result == 0) {
-            std::cout << "✓ Retrofit successful" << std::endl;
+            std::cout << "[OK] Retrofit successful" << std::endl;
             std::cout << "Device will automatically fetch metadata from server" << std::endl;
         } else {
             std::cerr << "ERROR: Retrofit failed with code " << result << std::endl;
@@ -473,7 +473,7 @@ void operation_upload_track(ZuneDevice& device) {
         );
 
         if (result == 0) {
-            std::cout << "✓ Track uploaded successfully" << std::endl;
+            std::cout << "[OK] Track uploaded successfully" << std::endl;
         } else {
             std::cerr << "ERROR: Upload failed with code " << result << std::endl;
         }
@@ -504,7 +504,7 @@ int main() {
         std::cerr << "ERROR: Failed to connect to device via USB" << std::endl;
         return 1;
     }
-    std::cout << "✓ Connected to device: " << device.GetName() << std::endl;
+    std::cout << "[OK] Connected to device: " << device.GetName() << std::endl;
 
     // Step 2: Configure HTTP interceptor
     std::cout << std::endl;
@@ -525,7 +525,7 @@ int main() {
         config.proxy_config.catalog_server = "http://" + server_ip;
         config.server_ip = server_ip;
 
-        std::cout << "✓ Proxy mode configured" << std::endl;
+        std::cout << "[OK] Proxy mode configured" << std::endl;
     } else if (mode_choice == "2") {
         // Static mode
         std::string data_dir = read_input("Artist data directory (press Enter for default): ");
@@ -537,11 +537,11 @@ int main() {
         config.static_config.data_directory = data_dir;
         config.static_config.test_mode = false;
 
-        std::cout << "✓ Static mode configured" << std::endl;
+        std::cout << "[OK] Static mode configured" << std::endl;
     } else {
         // Disabled mode
         config.mode = InterceptionMode::Disabled;
-        std::cout << "✓ Interception disabled" << std::endl;
+        std::cout << "[OK] Interception disabled" << std::endl;
     }
 
     // Step 3: Initialize HTTP subsystem
@@ -551,14 +551,14 @@ int main() {
         std::cerr << "ERROR: Failed to initialize HTTP subsystem" << std::endl;
         return 1;
     }
-    std::cout << "✓ HTTP subsystem initialized" << std::endl;
+    std::cout << "[OK] HTTP subsystem initialized" << std::endl;
 
     // Step 4: Start HTTP interceptor
     if (config.mode != InterceptionMode::Disabled) {
         std::cout << "Starting HTTP interceptor..." << std::endl;
         try {
             device.StartHTTPInterceptor(config);
-            std::cout << "✓ HTTP interceptor started" << std::endl;
+            std::cout << "[OK] HTTP interceptor started" << std::endl;
         } catch (const std::exception& e) {
             std::cerr << "ERROR: Failed to start HTTP interceptor: " << e.what() << std::endl;
             return 1;
@@ -597,7 +597,7 @@ int main() {
     std::cout << "Shutting down..." << std::endl;
     device.StopHTTPInterceptor();
     device.Disconnect();
-    std::cout << "✓ Shutdown complete" << std::endl;
+    std::cout << "[OK] Shutdown complete" << std::endl;
 
     return 0;
 }

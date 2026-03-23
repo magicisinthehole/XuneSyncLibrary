@@ -218,7 +218,7 @@ int main(int argc, char** argv) {
             return 1;
         }
 
-        std::cout << "✓ HTTP interceptor running" << std::endl;
+        std::cout << "[OK] HTTP interceptor running" << std::endl;
         std::cout << std::endl;
 
         // === ALWAYS TRIGGER NETWORK MODE FIRST ===
@@ -240,7 +240,7 @@ int main(int argc, char** argv) {
                     network_mode_success = true;
                     device.EnableNetworkPolling();
 
-                    std::cout << "✓ Network mode established" << std::endl;
+                    std::cout << "[OK] Network mode established" << std::endl;
                     std::cout << "Device should now start HTTP metadata requests for " << retrofit_artist << std::endl;
                     std::cout << std::endl;
 
@@ -258,7 +258,7 @@ int main(int argc, char** argv) {
                 return 1;
             }
 
-        std::cout << "✓ Network mode established" << std::endl;
+        std::cout << "[OK] Network mode established" << std::endl;
         std::cout << std::endl;
 
         // === RETROFIT MODE: Modify existing artist to add GUID ===
@@ -315,11 +315,11 @@ int main(int argc, char** argv) {
             std::cout << std::endl;
             std::cout << "Stopping HTTP interceptor..." << std::endl;
             device.StopHTTPInterceptor();
-            std::cout << "✓ Interceptor stopped" << std::endl;
+            std::cout << "[OK] Interceptor stopped" << std::endl;
 
             std::cout << "Disconnecting from device..." << std::endl;
             device.Disconnect();
-            std::cout << "✓ Disconnected" << std::endl;
+            std::cout << "[OK] Disconnected" << std::endl;
 
             std::cout << std::endl;
             std::cout << "Retrofit test completed successfully!" << std::endl;
@@ -413,7 +413,7 @@ int main(int argc, char** argv) {
                 );
 
                 if (result == 0) {
-                    std::cout << "✓ Track uploaded successfully!" << std::endl;
+                    std::cout << "[OK] Track uploaded successfully!" << std::endl;
                     std::cout << std::endl;
                     std::cout << "NOTE: Watch for HTTP requests for artist: " << artist << std::endl;
                     std::cout << std::endl;
@@ -423,7 +423,7 @@ int main(int argc, char** argv) {
                         std::cout << "=== Strategy: Delay After Upload ===" << std::endl;
                         std::cout << "Waiting " << delay_after_upload << " seconds for device to settle..." << std::endl;
                         std::this_thread::sleep_for(std::chrono::seconds(delay_after_upload));
-                        std::cout << "✓ Delay complete" << std::endl;
+                        std::cout << "[OK] Delay complete" << std::endl;
                         std::cout << std::endl;
                     }
 
@@ -441,7 +441,7 @@ int main(int argc, char** argv) {
                             std::cerr << "ERROR: Failed to re-initialize HTTP subsystem" << std::endl;
                             return 1;
                         }
-                        std::cout << "✓ HTTP subsystem re-initialized" << std::endl;
+                        std::cout << "[OK] HTTP subsystem re-initialized" << std::endl;
 
                         // Restart interceptor
                         device.StartHTTPInterceptor(config);
@@ -449,7 +449,7 @@ int main(int argc, char** argv) {
                             std::cerr << "ERROR: Failed to restart HTTP interceptor" << std::endl;
                             return 1;
                         }
-                        std::cout << "✓ HTTP interceptor restarted" << std::endl;
+                        std::cout << "[OK] HTTP interceptor restarted" << std::endl;
                         std::cout << std::endl;
 
                         // Note: Network mode was already established at the beginning
@@ -494,11 +494,11 @@ int main(int argc, char** argv) {
         std::cout << std::endl;
         std::cout << "Stopping HTTP interceptor..." << std::endl;
         device.StopHTTPInterceptor();
-        std::cout << "✓ Interceptor stopped" << std::endl;
+        std::cout << "[OK] Interceptor stopped" << std::endl;
 
         std::cout << "Disconnecting from device..." << std::endl;
         device.Disconnect();
-        std::cout << "✓ Disconnected" << std::endl;
+        std::cout << "[OK] Disconnected" << std::endl;
 
         std::cout << std::endl;
         std::cout << "Test completed successfully!" << std::endl;

@@ -1175,7 +1175,7 @@ void ZuneHTTPInterceptor::DrainResponseQueue() {
                     remaining_frames = response_queue_.size();
                 }
 
-                VerboseLog("  ✓ Sent " + std::to_string(combined_payload.size()) + " bytes via 0x922c" +
+                VerboseLog("  [OK] Sent " + std::to_string(combined_payload.size()) + " bytes via 0x922c" +
                     " (send #" + std::to_string(consecutive_sends) + ")" +
                     (remaining_frames == 0 ? "" : " (" + std::to_string(remaining_frames) + " frames remaining)"));
 

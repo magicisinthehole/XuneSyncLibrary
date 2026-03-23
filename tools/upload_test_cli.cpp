@@ -162,8 +162,8 @@ void log_phase(const std::string& name) {
 }
 
 void log_op(const std::string& desc) { log_ts("  " + desc); }
-void log_ok(const std::string& desc) { log_ts("    ✓ " + desc); }
-void log_warn(const std::string& desc) { log_ts("    ⚠ " + desc); }
+void log_ok(const std::string& desc) { log_ts("    [OK] " + desc); }
+void log_warn(const std::string& desc) { log_ts("    [WARN] " + desc); }
 
 std::string hex(uint32_t v) {
     std::ostringstream ss;

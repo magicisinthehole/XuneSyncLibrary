@@ -101,9 +101,9 @@ int main() {
             }
         }
 
-        std::cout << "✅ IPCP test PASSED\n" << std::endl;
+        std::cout << "[OK] IPCP test PASSED\n" << std::endl;
     } else {
-        std::cout << "❌ ERROR: No response generated\n" << std::endl;
+        std::cout << "[FAIL] ERROR: No response generated\n" << std::endl;
     }
 
     // ===== Test 2: DNS Query =====
@@ -215,15 +215,15 @@ int main() {
                       << " (should be 192.168.0.30)" << std::endl;
 
             if (resolved_ip == 0xC0A8001E) {  // 192.168.0.30
-                std::cout << "✅ DNS test PASSED - Correctly resolves to 192.168.0.30\n" << std::endl;
+                std::cout << "[OK] DNS test PASSED - Correctly resolves to 192.168.0.30\n" << std::endl;
             } else {
-                std::cout << "❌ DNS test FAILED - Wrong IP address!\n" << std::endl;
+                std::cout << "[FAIL] DNS test FAILED - Wrong IP address!\n" << std::endl;
             }
         } else {
-            std::cout << "❌ DNS test FAILED - Invalid DNS response format\n" << std::endl;
+            std::cout << "[FAIL] DNS test FAILED - Invalid DNS response format\n" << std::endl;
         }
     } else {
-        std::cout << "❌ ERROR: No response generated\n" << std::endl;
+        std::cout << "[FAIL] ERROR: No response generated\n" << std::endl;
     }
 
     std::cout << "========================================" << std::endl;

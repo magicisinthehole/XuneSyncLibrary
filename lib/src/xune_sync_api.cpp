@@ -15,6 +15,12 @@
 #include <cli/PosixStreams.h>
 #include <usb/Context.h>
 
+#ifdef __APPLE__
+#include <IOKit/IOKitLib.h>
+#include <IOKit/usb/IOUSBLib.h>
+#include <CoreFoundation/CoreFoundation.h>
+#endif
+
 static std::unique_ptr<ssdp::SSDPDiscovery> g_discovery;
 
 extern "C" {
@@ -460,31 +466,58 @@ XUNE_SYNC_API bool zune_device_find_on_usb(const char** uuid, const char** devic
 XUNE_SYNC_API bool zune_device_detect_on_usb() {
     static bool last_detected = false;
 
+#ifdef __APPLE__
+    // Pure IORegistry match — no plugin interfaces, no user-client allocation.
+    // Avoids kIOReturnNoResources errors on suspended devices after sleep/wake.
+    auto check_pid = [](uint16_t pid) -> bool {
+        CFMutableDictionaryRef match = IOServiceMatching(kIOUSBDeviceClassName);
+        if (!match) return false;
+
+        CFNumberRef vid_cf = nullptr, pid_cf = nullptr;
+        int vid_val = 0x045E, pid_val = pid;
+        vid_cf = CFNumberCreate(nullptr, kCFNumberIntType, &vid_val);
+        pid_cf = CFNumberCreate(nullptr, kCFNumberIntType, &pid_val);
+        CFDictionarySetValue(match, CFSTR(kUSBVendorID), vid_cf);
+        CFDictionarySetValue(match, CFSTR(kUSBProductID), pid_cf);
+        CFRelease(vid_cf);
+        CFRelease(pid_cf);
+
+        // IOServiceGetMatchingService consumes the match dict reference
+        io_service_t service = IOServiceGetMatchingService(kIOMasterPortDefault, match);
+        if (service != IO_OBJECT_NULL) {
+            IOObjectRelease(service);
+            return true;
+        }
+        return false;
+    };
+
+    bool found = check_pid(0x0710) || check_pid(0x063e);
+#else
+    bool found = false;
     try {
         mtp::usb::ContextPtr ctx = std::make_shared<mtp::usb::Context>();
-        auto devices = ctx->GetDevices();
-
-        for (auto desc : devices) {
+        for (auto desc : ctx->GetDevices()) {
             if (desc->GetVendorId() == 0x045E) {
                 auto pid = desc->GetProductId();
                 if (pid == 0x0710 || pid == 0x063e) {
-                    if (!last_detected) {
-                        fprintf(stderr, "[zune_usb_discovery] Zune detected (PID=0x%04x)\n", pid);
-                        last_detected = true;
-                    }
-                    return true;
+                    found = true;
+                    break;
                 }
             }
-        }
-
-        if (last_detected) {
-            fprintf(stderr, "[zune_usb_discovery] Zune no longer detected\n");
-            last_detected = false;
         }
     } catch (const std::exception& e) {
         fprintf(stderr, "[zune_usb_discovery] Detection error: %s\n", e.what());
     }
-    return false;
+#endif
+
+    if (found && !last_detected) {
+        fprintf(stderr, "[zune_usb_discovery] Zune detected\n");
+        last_detected = true;
+    } else if (!found && last_detected) {
+        fprintf(stderr, "[zune_usb_discovery] Zune no longer detected\n");
+        last_detected = false;
+    }
+    return found;
 }
 
 // ============================================================================
