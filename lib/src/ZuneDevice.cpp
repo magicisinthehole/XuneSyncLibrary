@@ -1140,6 +1140,7 @@ bool ZuneDevice::EnableTrustedFiles() {
 }
 
 
+
 bool ZuneDevice::DisableTrustedFiles() {
     if (!IsConnected() || !cli_session_) return false;
 

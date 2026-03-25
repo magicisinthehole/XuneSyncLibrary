@@ -1272,6 +1272,29 @@ target_compile_options(upload_test_cli PRIVATE
     -Wno-unused-parameter
 )
 
+# XNA Deploy Test CLI
+add_executable(xna_deploy_test_cli tools/xna_deploy_test_cli.cpp)
+
+target_include_directories(xna_deploy_test_cli PRIVATE
+    ${CMAKE_SOURCE_DIR}/vendor/android-file-transfer-linux
+    ${CMAKE_SOURCE_DIR}/vendor/android-file-transfer-linux/mtp/backend/posix
+    ${CMAKE_SOURCE_DIR}/vendor/android-file-transfer-linux/mtp/backend/darwin
+    ${OPENSSL_INCLUDE_DIR}
+)
+
+target_link_libraries(xna_deploy_test_cli
+    ${AFTL_LIBRARY}
+    ${OPENSSL_CRYPTO_LIBRARY}
+    ${CMAKE_THREAD_LIBS_INIT}
+    ${PLATFORM_LIBRARIES}
+)
+
+target_compile_options(xna_deploy_test_cli PRIVATE
+    -Wall
+    -Wextra
+    -Wno-unused-parameter
+)
+
 endif() # ZUNE_BUILD_TOOLS
 
 # =============================================================================
