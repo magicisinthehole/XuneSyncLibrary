@@ -3,9 +3,7 @@
 #include "../ppp/PPPFrameBuilder.h"
 #include "HTTPParser.h"
 #include "HttpClient.h"
-#include "StaticModeHandler.h"
-#include "ProxyModeHandler.h"
-#include "HybridModeHandler.h"
+#include "MetadataRequestHandler.h"
 #include "../handlers/CCPHandler.h"
 #include "../handlers/DNSHandler.h"
 #include "../tcp/TCPConnectionManager.h"
@@ -142,48 +140,21 @@ void ZuneHTTPInterceptor::Start(const InterceptorConfig& config) {
     dns_handler_ = std::make_unique<DNSHandler>(dns_hostname_map_);
     dns_handler_->SetLogCallback(log_callback_);
 
-    // Initialize mode-specific handler
-    if (config_.mode == InterceptionMode::Static) {
-        Log("Initializing static mode handler: " + config_.static_config.data_directory);
-        if (config_.static_config.test_mode) {
-            Log("  Test mode enabled - all UUIDs redirect to 00000000-0000-0000-0000-000000000000");
-        }
-        static_handler_ = std::make_unique<StaticModeHandler>(
-            config_.static_config.data_directory,
-            config_.static_config.test_mode);
-        static_handler_->SetLogCallback(log_callback_);
-    }
-    else if (config_.mode == InterceptionMode::Proxy) {
-        Log("Initializing proxy mode handler");
-        ProxyModeHandler::ProxyConfig proxy_config;
-        proxy_config.catalog_server = config_.proxy_config.catalog_server;
-        proxy_config.image_server = config_.proxy_config.image_server;
-        proxy_config.art_server = config_.proxy_config.art_server;
-        proxy_config.mix_server = config_.proxy_config.mix_server;
-        proxy_config.timeout_ms = config_.proxy_config.timeout_ms;
+    // Initialize metadata request handler
+    if (config_.mode != InterceptionMode::Disabled) {
+        Log("Initializing metadata handler in " + std::string(
+            config_.mode == InterceptionMode::Static ? "static" :
+            config_.mode == InterceptionMode::Proxy ? "proxy" : "hybrid") + " mode");
 
-        proxy_handler_ = std::make_unique<ProxyModeHandler>(proxy_config);
-        proxy_handler_->SetLogCallback(log_callback_);
-    }
-    else if (config_.mode == InterceptionMode::Hybrid) {
-        Log("Initializing hybrid mode handler");
-        hybrid_handler_ = std::make_unique<HybridModeHandler>(
-            config_.proxy_config.catalog_server,
-            config_.proxy_config.image_server,
-            config_.proxy_config.art_server,
-            config_.proxy_config.mix_server,
-            config_.proxy_config.timeout_ms);
-        hybrid_handler_->SetLogCallback(log_callback_);
+        metadata_handler_ = std::make_unique<MetadataRequestHandler>(
+            config_.mode, config_.proxy_config);
+        metadata_handler_->SetLogCallback(log_callback_);
 
-        // Set callbacks (will be nullptr if not registered from C# yet)
-        // Lock to safely read callback pointers
         {
             std::lock_guard<std::mutex> lock(callback_mutex_);
-            hybrid_handler_->SetPathResolverCallback(path_resolver_callback_, path_resolver_user_data_);
-            hybrid_handler_->SetCacheStorageCallback(cache_storage_callback_, cache_storage_user_data_);
+            metadata_handler_->SetPathResolverCallback(path_resolver_callback_, path_resolver_user_data_);
+            metadata_handler_->SetCacheStorageCallback(cache_storage_callback_, cache_storage_user_data_);
         }
-
-        Log("Hybrid mode handler initialized with proxy server: " + config_.proxy_config.catalog_server);
     }
 
     // Note: C# drives polling via PollOnce() after EnableNetworkPolling() sets the flag.
@@ -231,8 +202,7 @@ void ZuneHTTPInterceptor::Stop() {
     // No monitoring thread to join — C# drives polling via PollOnce()
 
     // Clean up handlers
-    static_handler_.reset();
-    proxy_handler_.reset();
+    metadata_handler_.reset();
     ppp_parser_.reset();
     http_parser_.reset();
 
@@ -834,13 +804,8 @@ void ZuneHTTPInterceptor::RequestWorkerThread() {
                 simple_request.query_params = HTTPParser::ParseQueryString(request.query_string.substr(1));
             }
 
-            // Route to appropriate handler
-            if (config_.mode == InterceptionMode::Static && static_handler_) {
-                response = static_handler_->HandleRequest(simple_request);
-            } else if (config_.mode == InterceptionMode::Proxy && proxy_handler_) {
-                response = proxy_handler_->HandleRequest(simple_request);
-            } else if (config_.mode == InterceptionMode::Hybrid && hybrid_handler_) {
-                response = hybrid_handler_->HandleRequest(simple_request);
+            if (metadata_handler_) {
+                response = metadata_handler_->HandleRequest(simple_request);
             } else {
                 response = HTTPParser::BuildErrorResponse(503, "Service not configured");
             }
@@ -1368,9 +1333,8 @@ void ZuneHTTPInterceptor::SetPathResolverCallback(PathResolverCallback callback,
     path_resolver_callback_ = callback;
     path_resolver_user_data_ = user_data;
 
-    // Forward to HybridModeHandler if it exists
-    if (hybrid_handler_) {
-        hybrid_handler_->SetPathResolverCallback(callback, user_data);
+    if (metadata_handler_) {
+        metadata_handler_->SetPathResolverCallback(callback, user_data);
     }
 }
 
@@ -1380,8 +1344,7 @@ void ZuneHTTPInterceptor::SetCacheStorageCallback(CacheStorageCallback callback,
     cache_storage_callback_ = callback;
     cache_storage_user_data_ = user_data;
 
-    // Forward to HybridModeHandler if it exists
-    if (hybrid_handler_) {
-        hybrid_handler_->SetCacheStorageCallback(callback, user_data);
+    if (metadata_handler_) {
+        metadata_handler_->SetCacheStorageCallback(callback, user_data);
     }
 }

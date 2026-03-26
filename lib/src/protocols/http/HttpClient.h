@@ -11,8 +11,7 @@
  * HttpClient
  *
  * Shared HTTP client for making proxied requests using libcurl.
- * Consolidates duplicate curl code from ProxyModeHandler, HybridModeHandler,
- * and ZuneHTTPInterceptor.
+ * Shared HTTP client used by MetadataRequestHandler for proxied requests.
  *
  * Features:
  * - Thread-safe curl handle management

@@ -1,6 +1,6 @@
-#include "HybridModeHandler.h"
+#include "MetadataRequestHandler.h"
 #include "HttpClient.h"
-#include "HTTPParser.h"
+#include "ZuneHTTPInterceptor.h"  // InterceptionMode, ProxyModeConfig
 #include <fstream>
 #include <sstream>
 #include <algorithm>
@@ -28,61 +28,122 @@ bool IsImageEndpoint(EndpointType type) {
     return type == EndpointType::Artwork || type == EndpointType::DeviceBackgroundImage;
 }
 
-HybridModeHandler::HybridModeHandler(
-    const std::string& proxy_catalog_server,
-    const std::string& proxy_image_server,
-    const std::string& proxy_art_server,
-    const std::string& proxy_mix_server,
-    int proxy_timeout_ms)
-    : proxy_catalog_server_(proxy_catalog_server)
-    , proxy_image_server_(proxy_image_server.empty() ? proxy_catalog_server : proxy_image_server)
-    , proxy_art_server_(proxy_art_server.empty() ? proxy_catalog_server : proxy_art_server)
-    , proxy_mix_server_(proxy_mix_server.empty() ? proxy_catalog_server : proxy_mix_server)
-    , proxy_timeout_ms_(proxy_timeout_ms)
+MetadataRequestHandler::MetadataRequestHandler(
+    InterceptionMode mode,
+    const ProxyModeConfig& proxy_config)
+    : mode_(mode)
 {
-    // Create HttpClient with server configuration
-    HttpClient::ServerConfig config;
-    config.catalog_server = proxy_catalog_server_;
-    config.image_server = proxy_image_server_;
-    config.art_server = proxy_art_server_;
-    config.mix_server = proxy_mix_server_;
-    config.timeout_ms = proxy_timeout_ms_;
+    if (mode != InterceptionMode::Static) {
+        HttpClient::ServerConfig config;
+        config.catalog_server = proxy_config.catalog_server;
+        config.image_server = proxy_config.image_server.empty() ? proxy_config.catalog_server : proxy_config.image_server;
+        config.art_server = proxy_config.art_server.empty() ? proxy_config.catalog_server : proxy_config.art_server;
+        config.mix_server = proxy_config.mix_server.empty() ? proxy_config.catalog_server : proxy_config.mix_server;
+        config.timeout_ms = proxy_config.timeout_ms;
 
-    http_client_ = std::make_unique<HttpClient>(config);
+        http_client_ = std::make_unique<HttpClient>(config);
+    }
 }
 
-HybridModeHandler::~HybridModeHandler() = default;
+MetadataRequestHandler::~MetadataRequestHandler() = default;
 
-HTTPParser::HTTPResponse HybridModeHandler::HandleRequest(const HTTPParser::HTTPRequest& request) {
-    // Handle Microsoft connectivity check endpoint
+HTTPParser::HTTPResponse MetadataRequestHandler::HandleRequest(const HTTPParser::HTTPRequest& request) {
     if (HttpClient::IsConnectivityCheck(request.path)) {
         Log("Connectivity check: " + request.method + " " + request.path + " -> returning 200 OK");
         return HttpClient::BuildConnectivityResponse();
     }
-
-    std::string host = request.GetHeader("Host");
-    std::string server = http_client_->SelectServer(host);
-
-    if (server.empty()) {
-        Log("Error: No proxy server configured for host: " + host);
-        return HTTPParser::BuildErrorResponse(502, "No proxy server configured");
-    }
-
-    std::string full_url = HttpClient::BuildURL(server, request.path, request.query_params);
-
-    Log("Hybrid mode: " + request.method + " " + full_url);
 
     if (request.method != "GET") {
         Log("Warning: Unsupported HTTP method: " + request.method);
         return HTTPParser::BuildErrorResponse(405, "Method not allowed");
     }
 
-    // Extract artist UUID and endpoint information using HTTPParser
     std::string artist_uuid = HTTPParser::ExtractArtistUUID(request.path);
     auto endpoint_type = DetermineEndpointType(request.path);
     std::string resource_id = HTTPParser::ExtractImageUUID(request.path);
 
-    // Step 1: Try to serve from local cache (if callback is set)
+    std::string full_url;
+    std::string server;
+    if (http_client_) {
+        std::string host = request.GetHeader("Host");
+        server = http_client_->SelectServer(host);
+        if (server.empty()) {
+            Log("Error: No proxy server configured for host: " + host);
+            return HTTPParser::BuildErrorResponse(502, "No proxy server configured");
+        }
+        full_url = HttpClient::BuildURL(server, request.path, request.query_params);
+        Log(std::string(mode_ == InterceptionMode::Proxy ? "Proxy" : "Hybrid") +
+            " mode: " + request.method + " " + full_url);
+    } else {
+        Log("Static mode: " + request.method + " " + request.path);
+    }
+
+    switch (mode_) {
+        case InterceptionMode::Static:
+            return HandleStatic(artist_uuid, endpoint_type, resource_id);
+        case InterceptionMode::Proxy:
+            return HandleProxy(request, full_url, artist_uuid, endpoint_type, resource_id);
+        case InterceptionMode::Hybrid:
+            return HandleHybrid(request, full_url, server, artist_uuid, endpoint_type, resource_id);
+        default:
+            return HTTPParser::BuildErrorResponse(503, "Service not configured");
+    }
+}
+
+// ── Static Mode ──────────────────────────────────────────────────────────
+
+HTTPParser::HTTPResponse MetadataRequestHandler::HandleStatic(
+    const std::string& artist_uuid,
+    EndpointType endpoint_type,
+    const std::string& resource_id) {
+
+    if (!path_resolver_callback_) {
+        Log("Static mode: no path resolver callback registered");
+        return HTTPParser::BuildErrorResponse(503, "Path resolver not configured");
+    }
+
+    if (artist_uuid.empty() && resource_id.empty()) {
+        return HTTPParser::BuildErrorResponse(400, "No artist UUID or resource ID in request");
+    }
+
+    auto response = TryServeFromLocal(artist_uuid, endpoint_type, resource_id);
+    if (response.status_code != 0) {
+        return response;
+    }
+
+    Log("Static mode: file not found locally, returning 404");
+    return HTTPParser::BuildErrorResponse(404, "Not found");
+}
+
+// ── Proxy Mode ───────────────────────────────────────────────────────────
+
+HTTPParser::HTTPResponse MetadataRequestHandler::HandleProxy(
+    const HTTPParser::HTTPRequest& request,
+    const std::string& full_url,
+    const std::string& artist_uuid,
+    EndpointType endpoint_type,
+    const std::string& resource_id) {
+
+    auto response = http_client_->PerformGET(full_url, request.headers);
+
+    if (cache_storage_callback_ && response.status_code >= 200 && response.status_code < 300
+        && (!artist_uuid.empty() || !resource_id.empty())) {
+        CacheResponse(artist_uuid, endpoint_type, resource_id, response);
+    }
+
+    return response;
+}
+
+// ── Hybrid Mode ──────────────────────────────────────────────────────────
+
+HTTPParser::HTTPResponse MetadataRequestHandler::HandleHybrid(
+    const HTTPParser::HTTPRequest& request,
+    const std::string& full_url,
+    const std::string& server,
+    const std::string& artist_uuid,
+    EndpointType endpoint_type,
+    const std::string& resource_id) {
+
     if (path_resolver_callback_ && (!artist_uuid.empty() || !resource_id.empty())) {
         auto local_response = TryServeFromLocal(artist_uuid, endpoint_type, resource_id);
         if (local_response.status_code != 0) {
@@ -91,7 +152,6 @@ HTTPParser::HTTPResponse HybridModeHandler::HandleRequest(const HTTPParser::HTTP
         }
     }
 
-    // Step 2: Local file not found or callback not set -> proxy to server
     bool is_image = IsImageEndpoint(endpoint_type);
     bool can_cache = cache_storage_callback_ && (!artist_uuid.empty() || !resource_id.empty());
 
@@ -107,7 +167,6 @@ HTTPParser::HTTPResponse HybridModeHandler::HandleRequest(const HTTPParser::HTTP
         if (proxy_response.status_code >= 200 && proxy_response.status_code < 300) {
             CacheResponse(artist_uuid, endpoint_type, resource_id, proxy_response);
 
-            // Serve the device-sized version that CacheStorage just created
             auto local_response = TryServeFromLocal(artist_uuid, endpoint_type, resource_id);
             if (local_response.status_code != 0) {
                 Log("Serving device-sized version after full-res cache");
@@ -118,7 +177,6 @@ HTTPParser::HTTPResponse HybridModeHandler::HandleRequest(const HTTPParser::HTTP
         return proxy_response;
     }
 
-    // Non-image or no callbacks: proxy with original parameters
     Log("No local file, proxying to server");
     auto proxy_response = http_client_->PerformGET(full_url, request.headers);
 
@@ -129,28 +187,30 @@ HTTPParser::HTTPResponse HybridModeHandler::HandleRequest(const HTTPParser::HTTP
     return proxy_response;
 }
 
-void HybridModeHandler::SetPathResolverCallback(PathResolverCallback callback, void* user_data) {
+// ── Shared Implementation ────────────────────────────────────────────────
+
+void MetadataRequestHandler::SetPathResolverCallback(PathResolverCallback callback, void* user_data) {
     path_resolver_callback_ = callback;
     path_resolver_user_data_ = user_data;
 }
 
-void HybridModeHandler::SetCacheStorageCallback(CacheStorageCallback callback, void* user_data) {
+void MetadataRequestHandler::SetCacheStorageCallback(CacheStorageCallback callback, void* user_data) {
     cache_storage_callback_ = callback;
     cache_storage_user_data_ = user_data;
 }
 
-void HybridModeHandler::SetLogCallback(LogCallback callback) {
+void MetadataRequestHandler::SetLogCallback(LogCallback callback) {
     log_callback_ = callback;
     if (http_client_) {
         http_client_->SetLogCallback(callback);
     }
 }
 
-bool HybridModeHandler::TestConnection() {
+bool MetadataRequestHandler::TestConnection() {
     return http_client_ && http_client_->TestConnection();
 }
 
-HTTPParser::HTTPResponse HybridModeHandler::TryServeFromLocal(
+HTTPParser::HTTPResponse MetadataRequestHandler::TryServeFromLocal(
     const std::string& artist_uuid,
     EndpointType endpoint_type,
     const std::string& resource_id) {
@@ -179,7 +239,6 @@ HTTPParser::HTTPResponse HybridModeHandler::TryServeFromLocal(
         return response;
     }
 
-    // Build successful response
     response.status_code = 200;
     response.status_message = "OK";
     response.body = file_data;
@@ -212,7 +271,7 @@ HTTPParser::HTTPResponse HybridModeHandler::TryServeFromLocal(
     return response;
 }
 
-void HybridModeHandler::CacheResponse(
+void MetadataRequestHandler::CacheResponse(
     const std::string& artist_uuid,
     EndpointType endpoint_type,
     const std::string& resource_id,
@@ -224,7 +283,7 @@ void HybridModeHandler::CacheResponse(
 
     std::string content_type = "application/octet-stream";
     for (const auto& [key, value] : response.headers) {
-        if (key == "Content-Type" || key == "content-type" || key == "Content-type") {
+        if (key == "content-type") {
             content_type = value;
             break;
         }
@@ -252,7 +311,7 @@ void HybridModeHandler::CacheResponse(
     }
 }
 
-EndpointType HybridModeHandler::DetermineEndpointType(const std::string& path) {
+EndpointType MetadataRequestHandler::DetermineEndpointType(const std::string& path) {
     if (path.find("/biography") != std::string::npos)
         return EndpointType::Biography;
     if (path.find("/deviceBackgroundImage") != std::string::npos)
@@ -272,7 +331,7 @@ EndpointType HybridModeHandler::DetermineEndpointType(const std::string& path) {
     return EndpointType::Unknown;
 }
 
-mtp::ByteArray HybridModeHandler::ReadFile(const std::string& file_path) {
+mtp::ByteArray MetadataRequestHandler::ReadFile(const std::string& file_path) {
     std::ifstream file(file_path, std::ios::binary | std::ios::ate);
     if (!file.is_open()) {
         return mtp::ByteArray();
@@ -294,7 +353,7 @@ mtp::ByteArray HybridModeHandler::ReadFile(const std::string& file_path) {
     return buffer;
 }
 
-std::string HybridModeHandler::GetCurrentHttpDate() {
+std::string MetadataRequestHandler::GetCurrentHttpDate() {
     auto now = std::chrono::system_clock::now();
     auto now_time_t = std::chrono::system_clock::to_time_t(now);
 
@@ -306,7 +365,7 @@ std::string HybridModeHandler::GetCurrentHttpDate() {
     return std::string(buffer);
 }
 
-std::string HybridModeHandler::GetFileModificationDate(const std::string& file_path) {
+std::string MetadataRequestHandler::GetFileModificationDate(const std::string& file_path) {
     struct stat file_stat;
     if (stat(file_path.c_str(), &file_stat) != 0) {
         return GetCurrentHttpDate();
@@ -320,7 +379,7 @@ std::string HybridModeHandler::GetFileModificationDate(const std::string& file_p
     return std::string(buffer);
 }
 
-std::string HybridModeHandler::GenerateETag(const std::string& file_path, size_t file_size) {
+std::string MetadataRequestHandler::GenerateETag(const std::string& file_path, size_t file_size) {
     struct stat file_stat;
     if (stat(file_path.c_str(), &file_stat) != 0) {
         return "\"" + std::to_string(file_size) + "\"";
@@ -335,7 +394,7 @@ std::string HybridModeHandler::GenerateETag(const std::string& file_path, size_t
     return etag.str();
 }
 
-std::string HybridModeHandler::GetContentType(const std::string& file_path) {
+std::string MetadataRequestHandler::GetContentType(const std::string& file_path) {
     size_t dot_pos = file_path.find_last_of('.');
     if (dot_pos == std::string::npos) {
         return "application/octet-stream";
@@ -355,8 +414,8 @@ std::string HybridModeHandler::GetContentType(const std::string& file_path) {
     return "application/octet-stream";
 }
 
-void HybridModeHandler::Log(const std::string& message) {
+void MetadataRequestHandler::Log(const std::string& message) {
     if (log_callback_) {
-        log_callback_("[HybridModeHandler] " + message);
+        log_callback_("[MetadataRequestHandler] " + message);
     }
 }

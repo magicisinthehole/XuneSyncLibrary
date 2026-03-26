@@ -19,9 +19,7 @@
 #include <usb/Interface.h>
 
 // Forward declarations
-class StaticModeHandler;
-class ProxyModeHandler;
-class HybridModeHandler;
+class MetadataRequestHandler;
 class PPPParser;
 class CCPHandler;
 class DNSHandler;
@@ -39,11 +37,6 @@ enum class InterceptionMode {
 };
 
 // Configuration structures
-struct StaticModeConfig {
-    std::string data_directory;  // Path to artist_data folder
-    bool test_mode = false;      // If true, redirect all UUIDs to 00000000-0000-0000-0000-000000000000
-};
-
 struct ProxyModeConfig {
     std::string catalog_server;  // e.g. "http://192.168.0.30" or "http://192.168.0.30:80"
     std::string image_server;    // Can be empty to use catalog_server
@@ -54,7 +47,6 @@ struct ProxyModeConfig {
 
 struct InterceptorConfig {
     InterceptionMode mode = InterceptionMode::Disabled;
-    StaticModeConfig static_config;
     ProxyModeConfig proxy_config;
     std::string server_ip;  // IP address for DNS resolution (e.g., "192.168.0.30")
 };
@@ -234,9 +226,7 @@ private:
     std::unique_ptr<TCPConnectionManager> tcp_manager_;  // SINGLE SOURCE OF TRUTH for TCP state
 
     // Mode handlers
-    std::unique_ptr<StaticModeHandler> static_handler_;
-    std::unique_ptr<ProxyModeHandler> proxy_handler_;
-    std::unique_ptr<HybridModeHandler> hybrid_handler_;
+    std::unique_ptr<MetadataRequestHandler> metadata_handler_;
 
     // Configuration mutex
     mutable std::mutex config_mutex_;

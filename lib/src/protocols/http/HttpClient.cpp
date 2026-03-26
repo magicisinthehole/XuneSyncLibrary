@@ -32,7 +32,9 @@ static size_t HeaderCallback(char* buffer, size_t size, size_t nitems, void* use
     // Parse "Key: Value" format
     size_t colon_pos = header_line.find(':');
     if (colon_pos != std::string::npos) {
+        // RFC 7230 §3.2 — header field names are case-insensitive
         std::string key = header_line.substr(0, colon_pos);
+        std::transform(key.begin(), key.end(), key.begin(), ::tolower);
         std::string value = header_line.substr(colon_pos + 1);
 
         // Trim leading whitespace from value
@@ -242,20 +244,15 @@ HTTPParser::HTTPResponse HttpClient::ParseResponse(
     response.status_message = HTTPParser::GetStatusMessage(status_code);
     response.body = response_data;
 
-    // Remove headers that libcurl already processed
-    headers.erase("Transfer-Encoding");
+    // Remove headers that libcurl already processed (keys are lowercase from HeaderCallback)
     headers.erase("transfer-encoding");
-    headers.erase("Content-Length");
     headers.erase("content-length");
 
     response.headers = headers;
 
-    // Set correct Content-Length (libcurl decoded chunked data)
     response.SetContentLength(response_data.size());
 
-    // Detect content type if not provided
-    if (headers.find("Content-Type") == headers.end() &&
-        headers.find("content-type") == headers.end()) {
+    if (headers.find("content-type") == headers.end()) {
         std::string detected_type = DetectContentType(response_data);
         if (!detected_type.empty()) {
             response.SetContentType(detected_type);

@@ -533,41 +533,20 @@ XUNE_SYNC_API int zune_device_start_artist_metadata_interceptor(
     auto* device = static_cast<ZuneDevice*>(handle);
 
     try {
-        // Convert C config to C++ config
         InterceptorConfig cpp_config;
         cpp_config.mode = static_cast<InterceptionMode>(config->mode);
 
-        if (config->mode == ZUNE_ARTIST_METADATA_MODE_STATIC) {
-            cpp_config.static_config.data_directory =
-                config->static_data_directory ? config->static_data_directory : "./artist_data";
-        }
-        else if (config->mode == ZUNE_ARTIST_METADATA_MODE_PROXY) {
-            cpp_config.proxy_config.catalog_server =
-                config->proxy_catalog_server ? config->proxy_catalog_server : "";
-            cpp_config.proxy_config.image_server =
-                config->proxy_image_server ? config->proxy_image_server : cpp_config.proxy_config.catalog_server;
-            cpp_config.proxy_config.art_server =
-                config->proxy_art_server ? config->proxy_art_server : cpp_config.proxy_config.catalog_server;
-            cpp_config.proxy_config.mix_server =
-                config->proxy_mix_server ? config->proxy_mix_server : cpp_config.proxy_config.catalog_server;
-            cpp_config.proxy_config.timeout_ms =
-                config->proxy_timeout_ms > 0 ? config->proxy_timeout_ms : 5000;
-        }
-        else if (config->mode == ZUNE_ARTIST_METADATA_MODE_HYBRID) {
-            // Hybrid mode requires proxy configuration (for fallback)
-            cpp_config.proxy_config.catalog_server =
-                config->proxy_catalog_server ? config->proxy_catalog_server : "";
-            cpp_config.proxy_config.image_server =
-                config->proxy_image_server ? config->proxy_image_server : cpp_config.proxy_config.catalog_server;
-            cpp_config.proxy_config.art_server =
-                config->proxy_art_server ? config->proxy_art_server : cpp_config.proxy_config.catalog_server;
-            cpp_config.proxy_config.mix_server =
-                config->proxy_mix_server ? config->proxy_mix_server : cpp_config.proxy_config.catalog_server;
-            cpp_config.proxy_config.timeout_ms =
-                config->proxy_timeout_ms > 0 ? config->proxy_timeout_ms : 5000;
-        }
+        cpp_config.proxy_config.catalog_server =
+            config->proxy_catalog_server ? config->proxy_catalog_server : "";
+        cpp_config.proxy_config.image_server =
+            config->proxy_image_server ? config->proxy_image_server : cpp_config.proxy_config.catalog_server;
+        cpp_config.proxy_config.art_server =
+            config->proxy_art_server ? config->proxy_art_server : cpp_config.proxy_config.catalog_server;
+        cpp_config.proxy_config.mix_server =
+            config->proxy_mix_server ? config->proxy_mix_server : cpp_config.proxy_config.catalog_server;
+        cpp_config.proxy_config.timeout_ms =
+            config->proxy_timeout_ms > 0 ? config->proxy_timeout_ms : 5000;
 
-        // Set server IP for DNS resolution
         if (config->server_ip) {
             cpp_config.server_ip = config->server_ip;
         }
@@ -606,7 +585,6 @@ XUNE_SYNC_API int zune_device_get_artist_metadata_config(
 
         config->mode = static_cast<ZuneArtistMetadataMode>(cpp_config.mode);
 
-        config->static_data_directory = strdup(cpp_config.static_config.data_directory.c_str());
         config->proxy_catalog_server = strdup(cpp_config.proxy_config.catalog_server.c_str());
         config->proxy_image_server = strdup(cpp_config.proxy_config.image_server.c_str());
         config->proxy_art_server = strdup(cpp_config.proxy_config.art_server.c_str());
@@ -620,13 +598,6 @@ XUNE_SYNC_API int zune_device_get_artist_metadata_config(
     }
 }
 
-XUNE_SYNC_API ZuneArtistMetadataConfig zune_artist_metadata_config_static(const char* data_directory) {
-    ZuneArtistMetadataConfig config = {};
-    config.mode = ZUNE_ARTIST_METADATA_MODE_STATIC;
-    config.static_data_directory = strdup(data_directory);
-    return config;
-}
-
 XUNE_SYNC_API ZuneArtistMetadataConfig zune_artist_metadata_config_proxy(const char* server_base_url) {
     ZuneArtistMetadataConfig config = {};
     config.mode = ZUNE_ARTIST_METADATA_MODE_PROXY;
@@ -638,10 +609,6 @@ XUNE_SYNC_API ZuneArtistMetadataConfig zune_artist_metadata_config_proxy(const c
 XUNE_SYNC_API void zune_artist_metadata_config_free(ZuneArtistMetadataConfig* config) {
     if (!config) return;
 
-    if (config->static_data_directory) {
-        free((void*)config->static_data_directory);
-        config->static_data_directory = nullptr;
-    }
     if (config->proxy_catalog_server) {
         free((void*)config->proxy_catalog_server);
         config->proxy_catalog_server = nullptr;

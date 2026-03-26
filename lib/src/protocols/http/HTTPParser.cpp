@@ -248,41 +248,6 @@ std::string HTTPParser::ExtractImageUUID(const std::string& path) {
     return "";
 }
 
-std::string HTTPParser::DetermineEndpointType(const std::string& host, const std::string& path) {
-    std::string lower_path = ToLower(path);
-
-    // Check specific subresources first (most specific to least specific)
-    if (lower_path.find("/devicebackgroundimage") != std::string::npos) {
-        return "background";
-    } else if (lower_path.find("/similarartists") != std::string::npos) {
-        return "similar";
-    } else if (lower_path.find("/biography") != std::string::npos) {
-        return "biography";
-    } else if (lower_path.find("/images") != std::string::npos) {
-        // Must check /images before /image to avoid false positives
-        return "images";
-    } else if (lower_path.find("/image/") != std::string::npos) {
-        // Match /v3.0/en-US/image/{uuid}
-        return "image";
-    } else if (lower_path.find("/albums") != std::string::npos) {
-        return "albums";
-    } else if (lower_path.find("/tracks") != std::string::npos) {
-        return "tracks";
-    }
-
-    // Check for base artist endpoint (ends with UUID, no subresource)
-    // Patterns: /v3.0/model/artist/{uuid} or /v3.0/en-US/music/artist/{uuid}
-    if (lower_path.find("/artist/") != std::string::npos) {
-        // Extract UUID pattern: {uuid} or ends with query params
-        std::regex artist_endpoint_regex(R"(/artist/[0-9a-f-]+(?:\?|$))", std::regex::icase);
-        if (std::regex_search(lower_path, artist_endpoint_regex)) {
-            return "artist_overview";
-        }
-    }
-
-    return "unknown";
-}
-
 // ============================================================================
 // Private Helper Methods
 // ============================================================================

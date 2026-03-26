@@ -8,6 +8,8 @@
 
 // Forward declarations
 class HttpClient;
+enum class InterceptionMode;
+struct ProxyModeConfig;
 
 enum class EndpointType {
     Overview,
@@ -25,19 +27,14 @@ const char* EndpointTypeToString(EndpointType type);
 bool IsImageEndpoint(EndpointType type);
 
 /**
- * HybridModeHandler
+ * Unified handler for all artist metadata interception modes.
  *
- * Handles HTTP requests in hybrid mode:
- * 1. Calls C# path resolver callback to check for local files
- * 2. If found locally → serves file
- * 3. If not found → proxies to HTTP server (via HttpClient)
- * 4. If proxied → calls C# cache storage callback to cache response
+ * - Static:  Resolve via C# callbacks only, 404 on miss.
+ * - Proxy:   Forward to HTTP server, no local resolution.
+ * - Hybrid:  Try local via callbacks, proxy on miss, cache response.
  */
-class HybridModeHandler {
+class MetadataRequestHandler {
 public:
-    /**
-     * Path resolver callback - resolves artist UUID to local file path
-     */
     using PathResolverCallback = const char* (*)(
         const char* artist_uuid,
         const char* endpoint_type,
@@ -45,9 +42,6 @@ public:
         void* user_data
     );
 
-    /**
-     * Cache storage callback - stores proxy response to local filesystem
-     */
     using CacheStorageCallback = bool (*)(
         const char* artist_uuid,
         const char* endpoint_type,
@@ -60,34 +54,40 @@ public:
 
     using LogCallback = std::function<void(const std::string& message)>;
 
-    /**
-     * Constructor
-     */
-    HybridModeHandler(
-        const std::string& proxy_catalog_server,
-        const std::string& proxy_image_server = "",
-        const std::string& proxy_art_server = "",
-        const std::string& proxy_mix_server = "",
-        int proxy_timeout_ms = 30000
-    );
+    /// @param mode Determines local/proxy/hybrid behavior
+    MetadataRequestHandler(InterceptionMode mode, const ProxyModeConfig& proxy_config);
 
-    ~HybridModeHandler();
+    ~MetadataRequestHandler();
 
-    /**
-     * Handle an HTTP request in hybrid mode
-     */
     HTTPParser::HTTPResponse HandleRequest(const HTTPParser::HTTPRequest& request);
 
     void SetPathResolverCallback(PathResolverCallback callback, void* user_data);
     void SetCacheStorageCallback(CacheStorageCallback callback, void* user_data);
     void SetLogCallback(LogCallback callback);
 
-    /**
-     * Test proxy server connectivity
-     */
     bool TestConnection();
 
 private:
+    HTTPParser::HTTPResponse HandleStatic(
+        const std::string& artist_uuid,
+        EndpointType endpoint_type,
+        const std::string& resource_id);
+
+    HTTPParser::HTTPResponse HandleProxy(
+        const HTTPParser::HTTPRequest& request,
+        const std::string& full_url,
+        const std::string& artist_uuid,
+        EndpointType endpoint_type,
+        const std::string& resource_id);
+
+    HTTPParser::HTTPResponse HandleHybrid(
+        const HTTPParser::HTTPRequest& request,
+        const std::string& full_url,
+        const std::string& server,
+        const std::string& artist_uuid,
+        EndpointType endpoint_type,
+        const std::string& resource_id);
+
     HTTPParser::HTTPResponse TryServeFromLocal(
         const std::string& artist_uuid,
         EndpointType endpoint_type,
@@ -107,20 +107,15 @@ private:
     std::string GetContentType(const std::string& file_path);
     void Log(const std::string& message);
 
-    // Configuration (kept for backwards compat with C# that might query these)
-    std::string proxy_catalog_server_;
-    std::string proxy_image_server_;
-    std::string proxy_art_server_;
-    std::string proxy_mix_server_;
-    int proxy_timeout_ms_;
+    InterceptionMode mode_;
 
-    // Callbacks
+    // Callbacks (used by Static + Hybrid)
     PathResolverCallback path_resolver_callback_ = nullptr;
     void* path_resolver_user_data_ = nullptr;
     CacheStorageCallback cache_storage_callback_ = nullptr;
     void* cache_storage_user_data_ = nullptr;
     LogCallback log_callback_;
 
-    // HttpClient (SINGLE SOURCE OF TRUTH for HTTP requests)
+    // HttpClient (used by Proxy + Hybrid)
     std::unique_ptr<HttpClient> http_client_;
 };

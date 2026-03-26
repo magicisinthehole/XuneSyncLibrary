@@ -192,10 +192,8 @@ add_library(xune_sync SHARED
     lib/src/protocols/ppp/PPPParser.cpp
     lib/src/protocols/ppp/PPPFrameBuilder.cpp
     lib/src/protocols/http/HTTPParser.cpp
-    lib/src/protocols/http/StaticModeHandler.cpp
-    lib/src/protocols/http/ProxyModeHandler.cpp
+    lib/src/protocols/http/MetadataRequestHandler.cpp
     lib/src/protocols/http/HttpClient.cpp
-    lib/src/protocols/http/HybridModeHandler.cpp
     lib/src/protocols/handlers/CCPHandler.cpp
     lib/src/protocols/handlers/DNSHandler.cpp
     lib/src/protocols/tcp/TCPConnectionManager.cpp
@@ -377,10 +375,8 @@ add_executable(test_library_json
     lib/src/protocols/ppp/PPPParser.cpp
     lib/src/protocols/ppp/PPPFrameBuilder.cpp
     lib/src/protocols/http/HTTPParser.cpp
-    lib/src/protocols/http/StaticModeHandler.cpp
-    lib/src/protocols/http/ProxyModeHandler.cpp
+    lib/src/protocols/http/MetadataRequestHandler.cpp
     lib/src/protocols/http/HttpClient.cpp
-    lib/src/protocols/http/HybridModeHandler.cpp
     lib/src/protocols/handlers/CCPHandler.cpp
     lib/src/protocols/handlers/DNSHandler.cpp
     lib/src/protocols/tcp/TCPConnectionManager.cpp
@@ -436,10 +432,8 @@ add_executable(test_zmdb_fast
     lib/src/protocols/ppp/PPPParser.cpp
     lib/src/protocols/ppp/PPPFrameBuilder.cpp
     lib/src/protocols/http/HTTPParser.cpp
-    lib/src/protocols/http/StaticModeHandler.cpp
-    lib/src/protocols/http/ProxyModeHandler.cpp
+    lib/src/protocols/http/MetadataRequestHandler.cpp
     lib/src/protocols/http/HttpClient.cpp
-    lib/src/protocols/http/HybridModeHandler.cpp
     lib/src/protocols/handlers/CCPHandler.cpp
     lib/src/protocols/handlers/DNSHandler.cpp
     lib/src/protocols/tcp/TCPConnectionManager.cpp
@@ -495,10 +489,8 @@ add_executable(test_zmdb_extractor
     lib/src/protocols/ppp/PPPParser.cpp
     lib/src/protocols/ppp/PPPFrameBuilder.cpp
     lib/src/protocols/http/HTTPParser.cpp
-    lib/src/protocols/http/StaticModeHandler.cpp
-    lib/src/protocols/http/ProxyModeHandler.cpp
+    lib/src/protocols/http/MetadataRequestHandler.cpp
     lib/src/protocols/http/HttpClient.cpp
-    lib/src/protocols/http/HybridModeHandler.cpp
     lib/src/protocols/handlers/CCPHandler.cpp
     lib/src/protocols/handlers/DNSHandler.cpp
     lib/src/protocols/tcp/TCPConnectionManager.cpp
@@ -554,10 +546,8 @@ add_executable(test_http_interceptor
     lib/src/protocols/ppp/PPPParser.cpp
     lib/src/protocols/ppp/PPPFrameBuilder.cpp
     lib/src/protocols/http/HTTPParser.cpp
-    lib/src/protocols/http/StaticModeHandler.cpp
-    lib/src/protocols/http/ProxyModeHandler.cpp
+    lib/src/protocols/http/MetadataRequestHandler.cpp
     lib/src/protocols/http/HttpClient.cpp
-    lib/src/protocols/http/HybridModeHandler.cpp
     lib/src/protocols/handlers/CCPHandler.cpp
     lib/src/protocols/handlers/DNSHandler.cpp
     lib/src/protocols/tcp/TCPConnectionManager.cpp
@@ -723,10 +713,8 @@ add_executable(test_http_monitor_boot
     lib/src/protocols/ppp/PPPParser.cpp
     lib/src/protocols/ppp/PPPFrameBuilder.cpp
     lib/src/protocols/http/HTTPParser.cpp
-    lib/src/protocols/http/StaticModeHandler.cpp
-    lib/src/protocols/http/ProxyModeHandler.cpp
+    lib/src/protocols/http/MetadataRequestHandler.cpp
     lib/src/protocols/http/HttpClient.cpp
-    lib/src/protocols/http/HybridModeHandler.cpp
     lib/src/protocols/handlers/CCPHandler.cpp
     lib/src/protocols/handlers/DNSHandler.cpp
     lib/src/protocols/tcp/TCPConnectionManager.cpp
@@ -782,10 +770,8 @@ add_executable(test_rating
     lib/src/protocols/ppp/PPPParser.cpp
     lib/src/protocols/ppp/PPPFrameBuilder.cpp
     lib/src/protocols/http/HTTPParser.cpp
-    lib/src/protocols/http/StaticModeHandler.cpp
-    lib/src/protocols/http/ProxyModeHandler.cpp
+    lib/src/protocols/http/MetadataRequestHandler.cpp
     lib/src/protocols/http/HttpClient.cpp
-    lib/src/protocols/http/HybridModeHandler.cpp
     lib/src/protocols/handlers/CCPHandler.cpp
     lib/src/protocols/handlers/DNSHandler.cpp
     lib/src/protocols/tcp/TCPConnectionManager.cpp
@@ -826,10 +812,8 @@ add_executable(test_network_stack
     lib/src/protocols/ppp/PPPParser.cpp
     lib/src/protocols/ppp/PPPFrameBuilder.cpp
     lib/src/protocols/http/HTTPParser.cpp
-    lib/src/protocols/http/StaticModeHandler.cpp
-    lib/src/protocols/http/ProxyModeHandler.cpp
+    lib/src/protocols/http/MetadataRequestHandler.cpp
     lib/src/protocols/http/HttpClient.cpp
-    lib/src/protocols/http/HybridModeHandler.cpp
     lib/src/protocols/handlers/CCPHandler.cpp
     lib/src/protocols/handlers/DNSHandler.cpp
     lib/src/protocols/tcp/TCPConnectionManager.cpp
@@ -872,10 +856,8 @@ add_executable(test_http_interceptor_integration
     lib/src/protocols/ppp/PPPParser.cpp
     lib/src/protocols/ppp/PPPFrameBuilder.cpp
     lib/src/protocols/http/HTTPParser.cpp
-    lib/src/protocols/http/StaticModeHandler.cpp
-    lib/src/protocols/http/ProxyModeHandler.cpp
+    lib/src/protocols/http/MetadataRequestHandler.cpp
     lib/src/protocols/http/HttpClient.cpp
-    lib/src/protocols/http/HybridModeHandler.cpp
 )
 
 target_include_directories(test_http_interceptor_integration PRIVATE
@@ -938,10 +920,8 @@ add_executable(artist_images_tool_cli
     lib/src/protocols/ppp/PPPParser.cpp
     lib/src/protocols/ppp/PPPFrameBuilder.cpp
     lib/src/protocols/http/HTTPParser.cpp
-    lib/src/protocols/http/StaticModeHandler.cpp
-    lib/src/protocols/http/ProxyModeHandler.cpp
+    lib/src/protocols/http/MetadataRequestHandler.cpp
     lib/src/protocols/http/HttpClient.cpp
-    lib/src/protocols/http/HybridModeHandler.cpp
     lib/src/protocols/handlers/CCPHandler.cpp
     lib/src/protocols/handlers/DNSHandler.cpp
     lib/src/protocols/tcp/TCPConnectionManager.cpp
@@ -997,10 +977,8 @@ add_executable(playlist_test_cli
     lib/src/protocols/ppp/PPPParser.cpp
     lib/src/protocols/ppp/PPPFrameBuilder.cpp
     lib/src/protocols/http/HTTPParser.cpp
-    lib/src/protocols/http/StaticModeHandler.cpp
-    lib/src/protocols/http/ProxyModeHandler.cpp
+    lib/src/protocols/http/MetadataRequestHandler.cpp
     lib/src/protocols/http/HttpClient.cpp
-    lib/src/protocols/http/HybridModeHandler.cpp
     lib/src/protocols/handlers/CCPHandler.cpp
     lib/src/protocols/handlers/DNSHandler.cpp
     lib/src/protocols/tcp/TCPConnectionManager.cpp
@@ -1055,10 +1033,8 @@ add_executable(audiobook_test_cli
     lib/src/protocols/ppp/PPPParser.cpp
     lib/src/protocols/ppp/PPPFrameBuilder.cpp
     lib/src/protocols/http/HTTPParser.cpp
-    lib/src/protocols/http/StaticModeHandler.cpp
-    lib/src/protocols/http/ProxyModeHandler.cpp
+    lib/src/protocols/http/MetadataRequestHandler.cpp
     lib/src/protocols/http/HttpClient.cpp
-    lib/src/protocols/http/HybridModeHandler.cpp
     lib/src/protocols/handlers/CCPHandler.cpp
     lib/src/protocols/handlers/DNSHandler.cpp
     lib/src/protocols/tcp/TCPConnectionManager.cpp
@@ -1116,10 +1092,8 @@ add_executable(sync_partnership_test_cli
     lib/src/protocols/ppp/PPPParser.cpp
     lib/src/protocols/ppp/PPPFrameBuilder.cpp
     lib/src/protocols/http/HTTPParser.cpp
-    lib/src/protocols/http/StaticModeHandler.cpp
-    lib/src/protocols/http/ProxyModeHandler.cpp
+    lib/src/protocols/http/MetadataRequestHandler.cpp
     lib/src/protocols/http/HttpClient.cpp
-    lib/src/protocols/http/HybridModeHandler.cpp
     lib/src/protocols/handlers/CCPHandler.cpp
     lib/src/protocols/handlers/DNSHandler.cpp
     lib/src/protocols/tcp/TCPConnectionManager.cpp
@@ -1176,10 +1150,8 @@ add_executable(erase_content_test_cli
     lib/src/protocols/ppp/PPPParser.cpp
     lib/src/protocols/ppp/PPPFrameBuilder.cpp
     lib/src/protocols/http/HTTPParser.cpp
-    lib/src/protocols/http/StaticModeHandler.cpp
-    lib/src/protocols/http/ProxyModeHandler.cpp
+    lib/src/protocols/http/MetadataRequestHandler.cpp
     lib/src/protocols/http/HttpClient.cpp
-    lib/src/protocols/http/HybridModeHandler.cpp
     lib/src/protocols/handlers/CCPHandler.cpp
     lib/src/protocols/handlers/DNSHandler.cpp
     lib/src/protocols/tcp/TCPConnectionManager.cpp
@@ -1235,10 +1207,8 @@ add_executable(upload_test_cli
     lib/src/protocols/ppp/PPPParser.cpp
     lib/src/protocols/ppp/PPPFrameBuilder.cpp
     lib/src/protocols/http/HTTPParser.cpp
-    lib/src/protocols/http/StaticModeHandler.cpp
-    lib/src/protocols/http/ProxyModeHandler.cpp
+    lib/src/protocols/http/MetadataRequestHandler.cpp
     lib/src/protocols/http/HttpClient.cpp
-    lib/src/protocols/http/HybridModeHandler.cpp
     lib/src/protocols/handlers/CCPHandler.cpp
     lib/src/protocols/handlers/DNSHandler.cpp
     lib/src/protocols/tcp/TCPConnectionManager.cpp

@@ -327,14 +327,14 @@ typedef enum {
     ZUNE_ARTIST_METADATA_MODE_HYBRID = 3     // Try local files first, proxy if not found, cache responses
 } ZuneArtistMetadataMode;
 
-/// Configuration for artist metadata interception
+/// Configuration for artist metadata interception.
+/// Static mode uses C# path resolver callbacks (no directory config needed).
+/// Proxy mode forwards to the configured HTTP server.
+/// Hybrid mode tries local callbacks first, falls back to proxy.
 typedef struct {
     ZuneArtistMetadataMode mode;
 
-    // Static mode configuration
-    const char* static_data_directory;  // Path to artist_data/ folder
-
-    // Proxy mode configuration
+    // Proxy configuration (used by Proxy + Hybrid modes)
     const char* proxy_catalog_server;   // e.g. "http://192.168.0.30"
     const char* proxy_image_server;     // Can be NULL to use catalog_server
     const char* proxy_art_server;       // Can be NULL to use catalog_server
@@ -374,13 +374,6 @@ XUNE_SYNC_API bool zune_device_is_artist_metadata_interceptor_running(
 XUNE_SYNC_API int zune_device_get_artist_metadata_config(
     zune_device_handle_t handle,
     ZuneArtistMetadataConfig* config
-);
-
-/// Helper: Create default static mode config
-/// @param data_directory Path to artist_data folder
-/// @return Configuration structure (caller must free strings with zune_artist_metadata_config_free)
-XUNE_SYNC_API ZuneArtistMetadataConfig zune_artist_metadata_config_static(
-    const char* data_directory
 );
 
 /// Helper: Create default proxy mode config

@@ -119,13 +119,7 @@ public:
      */
     static std::string ExtractImageUUID(const std::string& path);
 
-    /**
-     * Determine endpoint type from host and path
-     * @param host Host header value (e.g., "catalog.zune.net")
-     * @param path Request path
-     * @return Endpoint type ("biography", "images", "background", "image", "unknown")
-     */
-    static std::string DetermineEndpointType(const std::string& host, const std::string& path);
+
 
     /**
      * Get HTTP status message for code
