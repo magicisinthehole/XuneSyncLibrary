@@ -42,17 +42,16 @@ static const std::unordered_map<uint8_t, const char*> kDracoColors = {
 };
 
 // PAVO (FamilyID = 6) - Zune HD
-// Note: Pavo uses device byte0 directly (verified: byte0=1 -> Platinum)
 static const std::unordered_map<uint8_t, const char*> kPavoColors = {
-    {0, "Black"},
-    {1, "Platinum"},
-    {3, "Pink"},
-    {4, "Red"},
-    {5, "Blue"},
-    {6, "Purple"},
-    {7, "Magenta"},
-    {8, "Citron"},
-    {9, "Atomic"}
+    {1,  "Black"},
+    {2,  "Platinum"},
+    {4,  "Pink"},
+    {5,  "Red"},
+    {6,  "Blue"},
+    {7,  "Purple"},
+    {8,  "Magenta"},
+    {9,  "Citron"},
+    {10, "Atomic"}
 };
 
 const char* GetColorName(DeviceFamily family, uint8_t color_id) {
