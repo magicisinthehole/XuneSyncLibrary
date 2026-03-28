@@ -50,6 +50,12 @@ if(NOT EXISTS "${AFTL_LIBRARY}")
     if(UNIX AND NOT APPLE)
         list(APPEND AFTL_CMAKE_ARGS -DUSB_BACKEND_LIBUSB=ON)
     endif()
+    if(CMAKE_OSX_ARCHITECTURES)
+        list(APPEND AFTL_CMAKE_ARGS -DCMAKE_OSX_ARCHITECTURES=${CMAKE_OSX_ARCHITECTURES})
+    endif()
+    if(CMAKE_PREFIX_PATH)
+        list(APPEND AFTL_CMAKE_ARGS -DCMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH})
+    endif()
 
     execute_process(
         COMMAND ${CMAKE_COMMAND}
@@ -266,7 +272,14 @@ set(XUNE_DEVICES_RUNTIME_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../src/Xune.Infrastruc
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../src/Xune.Infrastructure.Devices")
     # Determine the runtime identifier based on platform and architecture
     if(APPLE)
-        if(CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64" OR CMAKE_OSX_ARCHITECTURES STREQUAL "arm64")
+        # CMAKE_OSX_ARCHITECTURES is the target arch (cross-compilation);
+        # CMAKE_SYSTEM_PROCESSOR is the host arch (native build).
+        if(CMAKE_OSX_ARCHITECTURES)
+            set(_target_arch "${CMAKE_OSX_ARCHITECTURES}")
+        else()
+            set(_target_arch "${CMAKE_SYSTEM_PROCESSOR}")
+        endif()
+        if(_target_arch MATCHES "arm64|aarch64")
             set(RUNTIME_ID "osx-arm64")
         else()
             set(RUNTIME_ID "osx-x64")
@@ -305,7 +318,13 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../src/Xune.Infrastructure.Devices")
         )
     elseif(APPLE)
         # Resolve actual dylib paths (pkg-config TAGLIB_LIBRARIES may be just "tag")
-        find_library(TAGLIB_DYLIB_PATH NAMES tag PATHS /opt/homebrew/lib /usr/local/lib NO_DEFAULT_PATH)
+        # CMAKE_PREFIX_PATH takes priority (cross-compilation), then standard Homebrew locations
+        if(CMAKE_PREFIX_PATH)
+            set(_taglib_search_paths "${CMAKE_PREFIX_PATH}/lib")
+        else()
+            set(_taglib_search_paths /opt/homebrew/lib /usr/local/lib)
+        endif()
+        find_library(TAGLIB_DYLIB_PATH NAMES tag PATHS ${_taglib_search_paths} NO_DEFAULT_PATH)
         if(NOT TAGLIB_DYLIB_PATH)
             set(TAGLIB_DYLIB_PATH "${TAGLIB_LIBRARIES}")
         endif()
