@@ -915,9 +915,11 @@ XUNE_SYNC_API uint32_t zune_upload_create_artist_metadata(
 // --- Track Operations ---
 
 /// Create track metadata object. Returns MTP handle or 0 on error.
+/// @param out_mtp_error If non-null, receives the MTP response code on failure (0 on success)
 XUNE_SYNC_API uint32_t zune_upload_create_track(
     zune_device_handle_t handle, uint32_t album_folder,
-    const ZuneTrackProps* props, uint16_t format_code, uint64_t file_size);
+    const ZuneTrackProps* props, uint16_t format_code, uint64_t file_size,
+    uint16_t* out_mtp_error);
 
 /// Upload audio data (must follow create_track immediately)
 XUNE_SYNC_API int zune_upload_send_audio(

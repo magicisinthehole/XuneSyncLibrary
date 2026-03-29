@@ -9,6 +9,7 @@
 #include <cstring>
 #include <iostream>
 #include <mtp/ptp/Device.h>
+#include <mtp/ptp/Response.h>
 #include <mtp/ptp/Session.h>
 #include <mtp/ptp/OutputStream.h>
 #include <mtp/ptp/ByteArrayObjectStream.h>
@@ -1438,9 +1439,11 @@ XUNE_SYNC_API uint32_t zune_upload_create_artist_metadata(
 
 XUNE_SYNC_API uint32_t zune_upload_create_track(
     zune_device_handle_t handle, uint32_t album_folder,
-    const ZuneTrackProps* props, uint16_t format_code, uint64_t file_size)
+    const ZuneTrackProps* props, uint16_t format_code, uint64_t file_size,
+    uint16_t* out_mtp_error)
 {
     UPLOAD_SESSION_GUARD_VAL(handle, 0);
+    if (out_mtp_error) *out_mtp_error = 0;
     if (!props) return 0;
     try {
         zune::TrackProperties tp;
@@ -1460,6 +1463,9 @@ XUNE_SYNC_API uint32_t zune_upload_create_track(
         return zune::MtpWriter::CreateTrack(
             _session, _device->GetDefaultStorageId(), album_folder,
             tp, format_code, file_size);
+    } catch (const mtp::InvalidResponseException& ex) {
+        if (out_mtp_error) *out_mtp_error = static_cast<uint16_t>(ex.Type);
+        return 0;
     } catch (...) { return 0; }
 }
 
