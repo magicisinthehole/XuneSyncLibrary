@@ -22,7 +22,7 @@ message(STATUS "Build tools: ${ZUNE_BUILD_TOOLS}")
 set(AFTL_ROOT "${CMAKE_SOURCE_DIR}/vendor/android-file-transfer-linux")
 set(AFTL_BUILD_DIR "${CMAKE_BINARY_DIR}/vendor/android-file-transfer-linux-build")
 if(WIN32)
-    set(AFTL_LIBRARY "${AFTL_BUILD_DIR}/mtp-ng-static.lib")
+    set(AFTL_LIBRARY "${AFTL_BUILD_DIR}/${CMAKE_BUILD_TYPE}/mtp-ng-static.lib")
 else()
     set(AFTL_LIBRARY "${AFTL_BUILD_DIR}/libmtp-ng-static.a")
 endif()
@@ -78,7 +78,7 @@ if(NOT EXISTS "${AFTL_LIBRARY}")
 
     # Build AFTL
     execute_process(
-        COMMAND ${CMAKE_COMMAND} --build ${AFTL_BUILD_DIR} --target mtp-ng-static
+        COMMAND ${CMAKE_COMMAND} --build ${AFTL_BUILD_DIR} --target mtp-ng-static --config ${CMAKE_BUILD_TYPE}
         RESULT_VARIABLE AFTL_BUILD_RESULT
     )
 
