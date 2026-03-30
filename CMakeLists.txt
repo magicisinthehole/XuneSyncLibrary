@@ -243,6 +243,10 @@ target_link_libraries(xune_sync
     ${PLATFORM_LIBRARIES}
 )
 
+if(WIN32)
+    target_compile_definitions(xune_sync PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+endif()
+
 # Link libusb for Linux USB backend (static in Docker, dynamic for local dev)
 if(UNIX AND NOT APPLE)
     find_library(LIBUSB_STATIC NAMES libusb-1.0.a
