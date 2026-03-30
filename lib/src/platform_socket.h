@@ -24,8 +24,9 @@
     #define PLATFORM_EINPROGRESS WSAEWOULDBLOCK
     #define PLATFORM_SHUT_RDWR SD_BOTH
 
-    // Winsock uses char* for setsockopt data, POSIX uses void*
+    // Winsock uses char* for setsockopt/getsockopt data, POSIX uses void*
     #define SETSOCKOPT_CAST(x) reinterpret_cast<const char*>(x)
+    #define GETSOCKOPT_CAST(x) reinterpret_cast<char*>(x)
 
     // SO_RCVTIMEO/SO_SNDTIMEO take DWORD (milliseconds) on Windows
     inline void platform_set_socket_timeout(socket_t s, int opt, int seconds) {
@@ -80,6 +81,7 @@
     #define PLATFORM_SHUT_RDWR SHUT_RDWR
 
     #define SETSOCKOPT_CAST(x) (x)
+    #define GETSOCKOPT_CAST(x) (x)
 
     inline void platform_set_socket_timeout(socket_t s, int opt, int seconds) {
         struct timeval tv;

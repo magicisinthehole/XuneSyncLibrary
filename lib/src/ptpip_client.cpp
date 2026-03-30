@@ -88,7 +88,7 @@ bool PTPIPClient::connect() {
                     // Check if connection succeeded
                     int so_error;
                     socklen_t len = sizeof(so_error);
-                    getsockopt(cmd_socket_, SOL_SOCKET, SO_ERROR, SETSOCKOPT_CAST(&so_error), &len);
+                    getsockopt(cmd_socket_, SOL_SOCKET, SO_ERROR, GETSOCKOPT_CAST(&so_error), &len);
 
                     if (so_error == 0) {
                         connected = true;
