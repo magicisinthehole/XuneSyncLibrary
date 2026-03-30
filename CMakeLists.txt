@@ -49,7 +49,6 @@ if(NOT EXISTS "${AFTL_LIBRARY}")
         -DBUILD_QT_UI=OFF
         -DBUILD_PYTHON=OFF
         -DBUILD_FUSE=OFF
-        -DBUILD_CLI=OFF
         -DBUILD_MTPZ=ON
     )
     if(UNIX AND NOT APPLE)
