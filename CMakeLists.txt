@@ -188,6 +188,7 @@ target_include_directories(aft-cli-static PUBLIC
 
 if(MSVC)
     target_compile_options(aft-cli-static PRIVATE /W3)
+    target_compile_definitions(aft-cli-static PRIVATE YY_NO_UNISTD_H NOMINMAX)
 else()
     target_compile_options(aft-cli-static PRIVATE -Wall -Wno-unused-parameter)
 endif()
