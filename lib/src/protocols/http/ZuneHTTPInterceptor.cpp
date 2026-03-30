@@ -14,10 +14,7 @@
 #include <sstream>
 #include <iomanip>
 #include <cstring>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netdb.h>
-#include <arpa/inet.h>
+#include "../../platform_socket.h"
 
 // --- Helper classes for bulk data streaming ---
 class ByteArrayInputStream : public mtp::IObjectInputStream {

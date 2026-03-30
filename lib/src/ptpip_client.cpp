@@ -3,18 +3,12 @@
  */
 
 #include "ptpip_client.h"
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <unistd.h>
-#include <fcntl.h>
 #include <algorithm>
 #include <cstring>
 #include <stdexcept>
 #include <iostream>
 #include <sstream>
 #include <iomanip>
-#include <errno.h>
 #include <thread>
 #include <chrono>
 
@@ -24,13 +18,14 @@ PTPIPClient::PTPIPClient(const std::string& host, const std::string& session_gui
     : host_(host)
     , session_guid_(session_guid)
     , pc_name_(pc_name)
-    , cmd_socket_(-1)
-    , event_socket_(-1)
+    , cmd_socket_(INVALID_SOCKET_VALUE)
+    , event_socket_(INVALID_SOCKET_VALUE)
     , connected_(false)
     , connection_number_(0)
     , session_id_(0)
     , transaction_id_(0)
 {
+    platform_socket_init();
 }
 
 PTPIPClient::~PTPIPClient() {
@@ -60,25 +55,24 @@ bool PTPIPClient::connect() {
             attempt++;
 
             // Create new socket for each attempt
-            if (cmd_socket_ >= 0) {
-                close(cmd_socket_);
+            if (cmd_socket_ != INVALID_SOCKET_VALUE) {
+                platform_close_socket(cmd_socket_);
             }
 
             cmd_socket_ = socket(AF_INET, SOCK_STREAM, 0);
-            if (cmd_socket_ < 0) {
+            if (cmd_socket_ == INVALID_SOCKET_VALUE) {
                 throw std::runtime_error("Failed to create command socket");
             }
 
             // Set socket to non-blocking
-            int flags = fcntl(cmd_socket_, F_GETFL, 0);
-            fcntl(cmd_socket_, F_SETFL, flags | O_NONBLOCK);
+            platform_set_nonblocking(cmd_socket_, true);
 
             int conn_result = ::connect(cmd_socket_, (struct sockaddr*)&server_addr, sizeof(server_addr));
 
             if (conn_result == 0) {
                 // Connected immediately
                 connected = true;
-            } else if (errno == EINPROGRESS) {
+            } else if (platform_socket_error() == PLATFORM_EINPROGRESS) {
                 // Connection in progress, wait with short timeout
                 fd_set write_fds;
                 FD_ZERO(&write_fds);
@@ -88,13 +82,13 @@ bool PTPIPClient::connect() {
                 timeout.tv_sec = 0;
                 timeout.tv_usec = 500000;  // 500ms
 
-                int select_result = select(cmd_socket_ + 1, NULL, &write_fds, NULL, &timeout);
+                int select_result = select(static_cast<int>(cmd_socket_) + 1, NULL, &write_fds, NULL, &timeout);
 
                 if (select_result > 0) {
                     // Check if connection succeeded
                     int so_error;
                     socklen_t len = sizeof(so_error);
-                    getsockopt(cmd_socket_, SOL_SOCKET, SO_ERROR, &so_error, &len);
+                    getsockopt(cmd_socket_, SOL_SOCKET, SO_ERROR, SETSOCKOPT_CAST(&so_error), &len);
 
                     if (so_error == 0) {
                         connected = true;
@@ -116,15 +110,11 @@ bool PTPIPClient::connect() {
         }
 
         // Set socket back to blocking mode
-        int flags = fcntl(cmd_socket_, F_GETFL, 0);
-        fcntl(cmd_socket_, F_SETFL, flags & ~O_NONBLOCK);
+        platform_set_nonblocking(cmd_socket_, false);
 
         // Set receive/send timeouts for ongoing communication
-        struct timeval io_timeout;
-        io_timeout.tv_sec = 30;
-        io_timeout.tv_usec = 0;
-        setsockopt(cmd_socket_, SOL_SOCKET, SO_RCVTIMEO, &io_timeout, sizeof(io_timeout));
-        setsockopt(cmd_socket_, SOL_SOCKET, SO_SNDTIMEO, &io_timeout, sizeof(io_timeout));
+        platform_set_socket_timeout(cmd_socket_, SO_RCVTIMEO, 30);
+        platform_set_socket_timeout(cmd_socket_, SO_SNDTIMEO, 30);
 
         std::cout << "  [OK] TCP connection established" << std::endl;
 
@@ -141,7 +131,7 @@ bool PTPIPClient::connect() {
         // 4. Connect event channel
         std::cout << "Connecting event channel..." << std::endl;
         event_socket_ = socket(AF_INET, SOCK_STREAM, 0);
-        if (event_socket_ < 0) {
+        if (event_socket_ == INVALID_SOCKET_VALUE) {
             throw std::runtime_error("Failed to create event socket");
         }
 
@@ -174,13 +164,13 @@ bool PTPIPClient::connect() {
 }
 
 void PTPIPClient::disconnect() {
-    if (cmd_socket_ >= 0) {
-        close(cmd_socket_);
-        cmd_socket_ = -1;
+    if (cmd_socket_ != INVALID_SOCKET_VALUE) {
+        platform_close_socket(cmd_socket_);
+        cmd_socket_ = INVALID_SOCKET_VALUE;
     }
-    if (event_socket_ >= 0) {
-        close(event_socket_);
-        event_socket_ = -1;
+    if (event_socket_ != INVALID_SOCKET_VALUE) {
+        platform_close_socket(event_socket_);
+        event_socket_ = INVALID_SOCKET_VALUE;
     }
     connected_ = false;
 }
@@ -524,10 +514,10 @@ std::vector<uint8_t> PTPIPClient::parse_data_packet(const std::vector<uint8_t>& 
 }
 
 // Low-level I/O
-void PTPIPClient::send_raw(int sock, const std::vector<uint8_t>& data) {
+void PTPIPClient::send_raw(socket_t sock, const std::vector<uint8_t>& data) {
     size_t sent = 0;
     while (sent < data.size()) {
-        ssize_t n = send(sock, data.data() + sent, data.size() - sent, 0);
+        ssize_t n = send(sock, SEND_CAST(data.data() + sent), data.size() - sent, 0);
         if (n < 0) {
             throw std::runtime_error("Send failed");
         }
@@ -535,13 +525,13 @@ void PTPIPClient::send_raw(int sock, const std::vector<uint8_t>& data) {
     }
 }
 
-std::vector<uint8_t> PTPIPClient::recv_raw(int sock, size_t size) {
+std::vector<uint8_t> PTPIPClient::recv_raw(socket_t sock, size_t size) {
     std::vector<uint8_t> data;
     data.reserve(size);
 
     while (data.size() < size) {
         uint8_t buffer[BUFFER_SIZE];
-        ssize_t n = recv(sock, buffer, std::min(size - data.size(), BUFFER_SIZE), 0);
+        ssize_t n = recv(sock, RECV_CAST(buffer), std::min(size - data.size(), BUFFER_SIZE), 0);
         if (n <= 0) {
             break;
         }
@@ -551,7 +541,7 @@ std::vector<uint8_t> PTPIPClient::recv_raw(int sock, size_t size) {
     return data;
 }
 
-std::vector<uint8_t> PTPIPClient::recv_packet(int sock) {
+std::vector<uint8_t> PTPIPClient::recv_packet(socket_t sock) {
     // Read header (8 bytes)
     auto header = recv_raw(sock, 8);
     if (header.size() < 8) {

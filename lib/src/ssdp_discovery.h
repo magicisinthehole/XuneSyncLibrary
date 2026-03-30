@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include "platform_socket.h"
 #include <string>
 #include <vector>
 #include <functional>
@@ -62,7 +63,7 @@ private:
     static constexpr int BUFFER_SIZE = 2048;
     static constexpr int DEVICE_TIMEOUT = 600; // 10 minutes (2x cache-control max-age)
 
-    int socket_fd_;
+    socket_t socket_fd_;
     std::atomic<bool> running_;
     std::thread listen_thread_;
     mutable std::mutex devices_mutex_;

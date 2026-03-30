@@ -3,23 +3,19 @@
  */
 
 #include "ssdp_discovery.h"
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <unistd.h>
 #include <cstring>
 #include <iostream>
 #include <sstream>
 #include <algorithm>
 #include <ctime>
-#include <errno.h>
 
 namespace ssdp {
 
 SSDPDiscovery::SSDPDiscovery()
-    : socket_fd_(-1)
+    : socket_fd_(INVALID_SOCKET_VALUE)
     , running_(false)
 {
+    platform_socket_init();
 }
 
 SSDPDiscovery::~SSDPDiscovery() {
@@ -29,22 +25,22 @@ SSDPDiscovery::~SSDPDiscovery() {
 bool SSDPDiscovery::create_socket() {
     // Create UDP socket
     socket_fd_ = socket(AF_INET, SOCK_DGRAM, 0);
-    if (socket_fd_ < 0) {
+    if (socket_fd_ == INVALID_SOCKET_VALUE) {
         std::cerr << "Failed to create socket" << std::endl;
         return false;
     }
 
     // Allow multiple listeners on the same port (for multiple instances)
     int reuse = 1;
-    if (setsockopt(socket_fd_, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)) < 0) {
+    if (setsockopt(socket_fd_, SOL_SOCKET, SO_REUSEADDR, SETSOCKOPT_CAST(&reuse), sizeof(reuse)) < 0) {
         std::cerr << "Failed to set SO_REUSEADDR" << std::endl;
-        close(socket_fd_);
-        socket_fd_ = -1;
+        platform_close_socket(socket_fd_);
+        socket_fd_ = INVALID_SOCKET_VALUE;
         return false;
     }
 
 #ifdef SO_REUSEPORT
-    if (setsockopt(socket_fd_, SOL_SOCKET, SO_REUSEPORT, &reuse, sizeof(reuse)) < 0) {
+    if (setsockopt(socket_fd_, SOL_SOCKET, SO_REUSEPORT, SETSOCKOPT_CAST(&reuse), sizeof(reuse)) < 0) {
         // Not fatal, continue
     }
 #endif
@@ -58,8 +54,8 @@ bool SSDPDiscovery::create_socket() {
 
     if (bind(socket_fd_, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
         std::cerr << "Failed to bind to port " << SSDP_PORT << std::endl;
-        close(socket_fd_);
-        socket_fd_ = -1;
+        platform_close_socket(socket_fd_);
+        socket_fd_ = INVALID_SOCKET_VALUE;
         return false;
     }
 
@@ -68,21 +64,15 @@ bool SSDPDiscovery::create_socket() {
     mreq.imr_multiaddr.s_addr = inet_addr(SSDP_ADDR);
     mreq.imr_interface.s_addr = INADDR_ANY;
 
-    if (setsockopt(socket_fd_, IPPROTO_IP, IP_ADD_MEMBERSHIP, &mreq, sizeof(mreq)) < 0) {
+    if (setsockopt(socket_fd_, IPPROTO_IP, IP_ADD_MEMBERSHIP, SETSOCKOPT_CAST(&mreq), sizeof(mreq)) < 0) {
         std::cerr << "Failed to join multicast group" << std::endl;
-        close(socket_fd_);
-        socket_fd_ = -1;
+        platform_close_socket(socket_fd_);
+        socket_fd_ = INVALID_SOCKET_VALUE;
         return false;
     }
 
     // Set receive timeout so we can check running flag periodically
-    struct timeval timeout;
-    timeout.tv_sec = 1;   // 1 second timeout
-    timeout.tv_usec = 0;
-    if (setsockopt(socket_fd_, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
-        std::cerr << "Warning: Failed to set socket timeout" << std::endl;
-        // Not fatal, continue
-    }
+    platform_set_socket_timeout(socket_fd_, SO_RCVTIMEO, 1);
 
     return true;
 }
@@ -220,18 +210,19 @@ void SSDPDiscovery::listen_loop(DeviceCallback callback) {
     std::cout << "Waiting for Zune devices to announce themselves..." << std::endl;
 
     while (running_) {
-        ssize_t recv_len = recvfrom(socket_fd_, buffer, BUFFER_SIZE - 1, 0,
+        ssize_t recv_len = recvfrom(socket_fd_, RECV_CAST(buffer), BUFFER_SIZE - 1, 0,
                                      (struct sockaddr*)&sender_addr, &sender_len);
 
         if (recv_len < 0) {
             // Check if it's a timeout (expected) or real error
-            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+            int err = platform_socket_error();
+            if (err == PLATFORM_EAGAIN) {
                 // Timeout - just continue loop to check running flags
                 continue;
             }
 
             if (running_) {
-                std::cerr << "Error receiving packet: " << strerror(errno) << std::endl;
+                std::cerr << "Error receiving packet (error " << err << ")" << std::endl;
             }
             break;
         }
@@ -318,11 +309,10 @@ void SSDPDiscovery::stop() {
 
     running_ = false;
 
-    if (socket_fd_ >= 0) {
-        // Shutdown socket to unblock recvfrom
-        shutdown(socket_fd_, SHUT_RDWR);
-        close(socket_fd_);
-        socket_fd_ = -1;
+    if (socket_fd_ != INVALID_SOCKET_VALUE) {
+        shutdown(socket_fd_, PLATFORM_SHUT_RDWR);
+        platform_close_socket(socket_fd_);
+        socket_fd_ = INVALID_SOCKET_VALUE;
     }
 
     if (listen_thread_.joinable()) {

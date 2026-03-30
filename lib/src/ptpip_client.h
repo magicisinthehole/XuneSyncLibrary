@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include "platform_socket.h"
 #include <string>
 #include <vector>
 #include <memory>
@@ -102,10 +103,10 @@ private:
     // Low-level packet operations
     OperationResponse send_operation(OperationCode opcode, const std::vector<uint32_t>& params = {}, const std::vector<uint8_t>& send_data = {});
 
-    void send_packet(int sock, const std::vector<uint8_t>& packet);
-    std::vector<uint8_t> recv_packet(int sock);
-    void send_raw(int sock, const std::vector<uint8_t>& data);
-    std::vector<uint8_t> recv_raw(int sock, size_t size);
+    void send_packet(socket_t sock, const std::vector<uint8_t>& packet);
+    std::vector<uint8_t> recv_packet(socket_t sock);
+    void send_raw(socket_t sock, const std::vector<uint8_t>& data);
+    std::vector<uint8_t> recv_raw(socket_t sock, size_t size);
 
     // Packet builders
     std::vector<uint8_t> build_init_command_request();
@@ -125,8 +126,8 @@ private:
     std::string session_guid_;  // Session GUID from device property 0xd221 (hex string, 36 chars with dashes)
     std::string pc_name_;
 
-    int cmd_socket_;
-    int event_socket_;
+    socket_t cmd_socket_;
+    socket_t event_socket_;
     bool connected_;
 
     uint32_t connection_number_;

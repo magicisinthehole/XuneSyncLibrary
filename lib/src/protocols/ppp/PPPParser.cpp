@@ -3,7 +3,7 @@
 #include <sstream>
 #include <iomanip>
 #include <cstring>
-#include <arpa/inet.h>
+#include "../../platform_socket.h"
 
 // Forward declaration
 static uint16_t CalculatePPPFCS(const uint8_t* data, size_t length);
