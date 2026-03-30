@@ -986,6 +986,39 @@ XUNE_SYNC_API int zune_upload_query_artist_descs(zune_device_handle_t handle);
 XUNE_SYNC_API int zune_upload_query_artwork_descs(zune_device_handle_t handle);
 
 
+// ── Windows Driver Management ────────────────────────────────────────────
+// Query-only functions for detecting Zune devices and their USB driver status.
+// Install/restore operations require the elevated xune-driver-setup helper exe.
+
+/// Driver status values returned by zune_driver_get_status().
+/// 0=Unknown, 1=OfficialMTP (wudfrd), 2=WinUSB, 3=Other, 4=NotFound
+typedef int zune_driver_status_t;
+
+/// Refresh internal device list, returns number of connected Zune devices.
+/// On non-Windows platforms, always returns 0.
+XUNE_SYNC_API int zune_driver_get_device_count(void);
+
+/// Get driver status for the device at the given index (0-based).
+/// Returns zune_driver_status_t. Returns 0 (Unknown) if index is out of range.
+XUNE_SYNC_API zune_driver_status_t zune_driver_get_status(int index);
+
+/// Get human-readable description of the driver status at the given index.
+/// Returns pointer to static string. Returns "Unknown" if index is out of range.
+XUNE_SYNC_API const char* zune_driver_get_status_description(int index);
+
+/// Get the device instance ID for the device at the given index.
+/// Returns pointer to internal string, valid until next zune_driver_get_device_count() call.
+/// Returns empty string if index is out of range.
+XUNE_SYNC_API const char* zune_driver_get_device_instance_id(int index);
+
+/// Get the device description for the device at the given index.
+/// Returns pointer to internal string, valid until next zune_driver_get_device_count() call.
+XUNE_SYNC_API const char* zune_driver_get_device_description(int index);
+
+/// Check whether the device with the given instance ID has WinUSB installed.
+XUNE_SYNC_API bool zune_driver_is_winusb_installed(const char* instance_id);
+
+
 #ifdef __cplusplus
 }
 #endif

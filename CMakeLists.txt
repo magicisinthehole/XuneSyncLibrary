@@ -144,7 +144,7 @@ if(APPLE)
     find_library(IOKIT_LIBRARY IOKit)
     set(PLATFORM_LIBRARIES ${IOKIT_LIBRARY} ${CORE_LIBRARY})
 elseif(WIN32)
-    set(PLATFORM_LIBRARIES setupapi winusb urlmon shlwapi ws2_32)
+    set(PLATFORM_LIBRARIES setupapi winusb urlmon shlwapi ws2_32 cfgmgr32)
 else()
     set(PLATFORM_LIBRARIES)
 endif()
@@ -211,6 +211,7 @@ add_library(xune_sync SHARED
     lib/src/ptpip_client.cpp
     lib/src/ssdp_discovery.cpp
     lib/src/xune_sync_api.cpp
+    lib/src/xune_driver_api.cpp
     lib/src/protocols/http/ZuneHTTPInterceptor.cpp
     lib/src/protocols/ppp/PPPParser.cpp
     lib/src/protocols/ppp/PPPFrameBuilder.cpp
@@ -224,6 +225,11 @@ add_library(xune_sync SHARED
     lib/src/protocols/tcp/TCPStreamReassembler.cpp
     lib/src/protocols/tcp/RTOManager.cpp
 )
+
+# Windows-only driver query sources (SetupAPI, no libwdi dependency)
+if(WIN32)
+    target_sources(xune_sync PRIVATE lib/src/driver_manager.cpp)
+endif()
 
 target_include_directories(xune_sync PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -387,6 +393,17 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../src/Xune.Infrastructure.Devices")
             COMMAND codesign --force --sign - "${ZW_RUNTIME_NATIVE}/$<TARGET_FILE_NAME:xune_sync>"
             COMMENT "Bundling taglib/openssl and fixing install names for hardened runtime"
         )
+    elseif(WIN32)
+        # Bundle vcpkg dynamic dependencies (OpenSSL, curl)
+        set(_vcpkg_bin "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/bin")
+        foreach(_dll "libcrypto-3-x64.dll" "libcurl.dll")
+            if(EXISTS "${_vcpkg_bin}/${_dll}")
+                add_custom_command(TARGET xune_sync POST_BUILD
+                    COMMAND ${CMAKE_COMMAND} -E copy "${_vcpkg_bin}/${_dll}" "${ZW_RUNTIME_NATIVE}/"
+                    COMMENT "Bundling ${_dll} to ${ZW_RUNTIME_NATIVE}/"
+                )
+            endif()
+        endforeach()
     endif()
     message(STATUS "Xune parent project detected - will auto-copy library to Xune.Infrastructure.Devices/runtimes/${RUNTIME_ID}/native/")
 else()
@@ -1312,6 +1329,46 @@ target_compile_options(xna_deploy_test_cli PRIVATE
 )
 
 endif() # ZUNE_BUILD_TOOLS
+
+# =============================================================================
+# Windows: Elevated driver setup helper (requires libwdi)
+# =============================================================================
+if(WIN32)
+    set(LIBWDI_DIR "${CMAKE_CURRENT_SOURCE_DIR}/vendor/libwdi")
+    if(EXISTS "${LIBWDI_DIR}/lib/x64/libwdi.lib")
+        add_executable(xune-driver-setup
+            tools/xune-driver-setup/main.cpp
+        )
+        target_include_directories(xune-driver-setup PRIVATE
+            "${LIBWDI_DIR}/include"
+        )
+        target_link_libraries(xune-driver-setup
+            "${LIBWDI_DIR}/lib/x64/libwdi.lib"
+            setupapi cfgmgr32 newdev ole32 advapi32 shlwapi shell32
+        )
+        target_compile_definitions(xune-driver-setup PRIVATE
+            WIN32_LEAN_AND_MEAN NOMINMAX _CRT_SECURE_NO_WARNINGS
+        )
+        # UAC requireAdministrator manifest
+        if(MSVC)
+            set_target_properties(xune-driver-setup PROPERTIES
+                LINK_FLAGS "/MANIFESTUAC:\"level='requireAdministrator' uiAccess='false'\""
+            )
+        endif()
+        # Copy to .NET runtime directory alongside xune_sync.dll
+        if(EXISTS "${XUNE_DEVICES_RUNTIME_DIR}")
+            add_custom_command(TARGET xune-driver-setup POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    $<TARGET_FILE:xune-driver-setup>
+                    "${XUNE_DEVICES_RUNTIME_DIR}/${RUNTIME_ID}/native/"
+                COMMENT "Copying xune-driver-setup.exe to .NET runtime directory"
+            )
+        endif()
+        message(STATUS "  Driver setup helper: enabled (libwdi found)")
+    else()
+        message(STATUS "  Driver setup helper: disabled (libwdi not found at ${LIBWDI_DIR})")
+    endif()
+endif()
 
 # =============================================================================
 # Install
