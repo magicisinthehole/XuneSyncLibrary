@@ -149,6 +149,18 @@ else()
     set(PLATFORM_LIBRARIES)
 endif()
 
+# ── Shared macros ─────────────────────────────────────────────────────────
+macro(xune_target_warnings target)
+    if(MSVC)
+        target_compile_options(${target} PRIVATE /W3)
+    else()
+        target_compile_options(${target} PRIVATE -Wall -Wextra -Wno-unused-parameter)
+    endif()
+    if(WIN32)
+        target_compile_definitions(${target} PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX _CRT_SECURE_NO_WARNINGS)
+    endif()
+endmacro()
+
 # AFTL include directories
 set(AFTL_INCLUDE_DIRS
     ${AFTL_ROOT}
@@ -250,7 +262,7 @@ target_link_libraries(xune_sync
 )
 
 if(WIN32)
-    target_compile_definitions(xune_sync PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX ZUNE_WIRELESS_EXPORTS _CRT_SECURE_NO_WARNINGS)
+    target_compile_definitions(xune_sync PRIVATE ZUNE_WIRELESS_EXPORTS)
 endif()
 
 # Link libusb for Linux USB backend (static in Docker, dynamic for local dev)
@@ -283,11 +295,7 @@ elseif(UNIX)
 endif()
 
 # Compiler flags
-if(MSVC)
-    target_compile_options(xune_sync PRIVATE /W3)
-else()
-    target_compile_options(xune_sync PRIVATE -Wall -Wextra -Wno-unused-parameter)
-endif()
+xune_target_warnings(xune_sync)
 
 if(CMAKE_BUILD_TYPE STREQUAL Debug)
     target_compile_options(xune_sync PRIVATE -g)
@@ -301,6 +309,8 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../src/Xune.Infrastructure.Devices")
     if(WIN32)
         if(CMAKE_SYSTEM_PROCESSOR MATCHES "AMD64|x86_64")
             set(RUNTIME_ID "win-x64")
+        elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "ARM64|aarch64")
+            set(RUNTIME_ID "win-arm64")
         else()
             set(RUNTIME_ID "win-x86")
         endif()
@@ -410,239 +420,86 @@ else()
     message(STATUS "Standalone build - library will not be auto-copied to parent project")
 endif()
 
+# ── Shared source list for tests and tools ────────────────────────────────
+# Tests and tools compile sources directly (not linking xune_sync shared lib)
+set(XUNE_CORE_SOURCES
+    lib/src/ZuneDevice.cpp
+    lib/src/ZuneDeviceIdentification.cpp
+    lib/src/NetworkManager.cpp
+    lib/src/ZuneMtpReader.cpp
+    lib/src/ZuneMtpWriter.cpp
+    lib/src/ZMDBLibraryExtractor.cpp
+    lib/src/zmdb/ZMDBParserBase.cpp
+    lib/src/zmdb/ZMDBUtils.cpp
+    lib/src/zmdb/ZuneHDParser.cpp
+    lib/src/zmdb/ZuneClassicParser.cpp
+    lib/src/zmdb/ZMDBParserFactory.cpp
+    lib/src/ptpip_client.cpp
+    lib/src/ssdp_discovery.cpp
+    lib/src/xune_sync_api.cpp
+    lib/src/protocols/http/ZuneHTTPInterceptor.cpp
+    lib/src/protocols/ppp/PPPParser.cpp
+    lib/src/protocols/ppp/PPPFrameBuilder.cpp
+    lib/src/protocols/http/HTTPParser.cpp
+    lib/src/protocols/http/MetadataRequestHandler.cpp
+    lib/src/protocols/http/HttpClient.cpp
+    lib/src/protocols/handlers/CCPHandler.cpp
+    lib/src/protocols/handlers/DNSHandler.cpp
+    lib/src/protocols/tcp/TCPConnectionManager.cpp
+    lib/src/protocols/tcp/TCPFlowController.cpp
+    lib/src/protocols/tcp/TCPStreamReassembler.cpp
+    lib/src/protocols/tcp/RTOManager.cpp
+)
+if(WIN32)
+    list(APPEND XUNE_CORE_SOURCES lib/src/driver_manager.cpp)
+endif()
+
+set(XUNE_CORE_INCLUDES
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${AFTL_INCLUDE_DIRS}
+    ${OPENSSL_INCLUDE_DIR}
+    ${CURL_INCLUDE_DIRS}
+)
+
+set(XUNE_CORE_LIBS
+    aft-cli-static
+    ${AFTL_LIBRARY}
+    ${TAGLIB_LIBRARIES}
+    ${OPENSSL_CRYPTO_LIBRARY}
+    ${CURL_LIBRARIES}
+    ${CMAKE_THREAD_LIBS_INIT}
+    ${PLATFORM_LIBRARIES}
+)
+
 # =============================================================================
 # Test Executables (only built when ZUNE_BUILD_TESTS=ON)
 # =============================================================================
 if(ZUNE_BUILD_TESTS)
 
 # Test executable for library JSON export
-add_executable(test_library_json
-    tests/test_library_json.cpp
-    lib/src/ZuneDevice.cpp
-    lib/src/ZuneDeviceIdentification.cpp
-    lib/src/NetworkManager.cpp
-
-    lib/src/ZuneMtpReader.cpp
-    lib/src/ZuneMtpWriter.cpp
-
-    lib/src/ZMDBLibraryExtractor.cpp
-    lib/src/zmdb/ZMDBParserBase.cpp
-    lib/src/zmdb/ZMDBUtils.cpp
-    lib/src/zmdb/ZuneHDParser.cpp
-    lib/src/zmdb/ZuneClassicParser.cpp
-    lib/src/zmdb/ZMDBParserFactory.cpp
-    lib/src/ptpip_client.cpp
-    lib/src/ssdp_discovery.cpp
-    lib/src/xune_sync_api.cpp
-    lib/src/protocols/http/ZuneHTTPInterceptor.cpp
-    lib/src/protocols/ppp/PPPParser.cpp
-    lib/src/protocols/ppp/PPPFrameBuilder.cpp
-    lib/src/protocols/http/HTTPParser.cpp
-    lib/src/protocols/http/MetadataRequestHandler.cpp
-    lib/src/protocols/http/HttpClient.cpp
-    lib/src/protocols/handlers/CCPHandler.cpp
-    lib/src/protocols/handlers/DNSHandler.cpp
-    lib/src/protocols/tcp/TCPConnectionManager.cpp
-    lib/src/protocols/tcp/TCPFlowController.cpp
-    lib/src/protocols/tcp/TCPStreamReassembler.cpp
-    lib/src/protocols/tcp/RTOManager.cpp
-)
-
-target_include_directories(test_library_json PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${AFTL_INCLUDE_DIRS}
-    ${OPENSSL_INCLUDE_DIR}
-    ${CURL_INCLUDE_DIRS}
-)
-
-target_link_libraries(test_library_json
-    aft-cli-static
-    ${AFTL_LIBRARY}
-    ${TAGLIB_LIBRARIES}
-    ${OPENSSL_CRYPTO_LIBRARY}
-    ${CURL_LIBRARIES}
-    ${CMAKE_THREAD_LIBS_INIT}
-    ${PLATFORM_LIBRARIES}
-)
-
-target_compile_options(test_library_json PRIVATE
-    -Wall
-    -Wextra
-    -Wno-unused-parameter
-)
+add_executable(test_library_json tests/test_library_json.cpp ${XUNE_CORE_SOURCES})
+target_include_directories(test_library_json PRIVATE ${XUNE_CORE_INCLUDES})
+target_link_libraries(test_library_json ${XUNE_CORE_LIBS})
+xune_target_warnings(test_library_json)
 
 # Test executable for zmdb fast library extraction
-add_executable(test_zmdb_fast
-    tests/test_zmdb_fast.cpp
-    lib/src/ZuneDevice.cpp
-    lib/src/ZuneDeviceIdentification.cpp
-    lib/src/NetworkManager.cpp
-
-    lib/src/ZuneMtpReader.cpp
-    lib/src/ZuneMtpWriter.cpp
-
-    lib/src/ZMDBLibraryExtractor.cpp
-    lib/src/zmdb/ZMDBParserBase.cpp
-    lib/src/zmdb/ZMDBUtils.cpp
-    lib/src/zmdb/ZuneHDParser.cpp
-    lib/src/zmdb/ZuneClassicParser.cpp
-    lib/src/zmdb/ZMDBParserFactory.cpp
-    lib/src/ptpip_client.cpp
-    lib/src/ssdp_discovery.cpp
-    lib/src/xune_sync_api.cpp
-    lib/src/protocols/http/ZuneHTTPInterceptor.cpp
-    lib/src/protocols/ppp/PPPParser.cpp
-    lib/src/protocols/ppp/PPPFrameBuilder.cpp
-    lib/src/protocols/http/HTTPParser.cpp
-    lib/src/protocols/http/MetadataRequestHandler.cpp
-    lib/src/protocols/http/HttpClient.cpp
-    lib/src/protocols/handlers/CCPHandler.cpp
-    lib/src/protocols/handlers/DNSHandler.cpp
-    lib/src/protocols/tcp/TCPConnectionManager.cpp
-    lib/src/protocols/tcp/TCPFlowController.cpp
-    lib/src/protocols/tcp/TCPStreamReassembler.cpp
-    lib/src/protocols/tcp/RTOManager.cpp
-)
-
-target_include_directories(test_zmdb_fast PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${AFTL_INCLUDE_DIRS}
-    ${OPENSSL_INCLUDE_DIR}
-    ${CURL_INCLUDE_DIRS}
-)
-
-target_link_libraries(test_zmdb_fast
-    aft-cli-static
-    ${AFTL_LIBRARY}
-    ${TAGLIB_LIBRARIES}
-    ${OPENSSL_CRYPTO_LIBRARY}
-    ${CURL_LIBRARIES}
-    ${CMAKE_THREAD_LIBS_INIT}
-    ${PLATFORM_LIBRARIES}
-)
-
-target_compile_options(test_zmdb_fast PRIVATE
-    -Wall
-    -Wextra
-    -Wno-unused-parameter
-)
+add_executable(test_zmdb_fast tests/test_zmdb_fast.cpp ${XUNE_CORE_SOURCES})
+target_include_directories(test_zmdb_fast PRIVATE ${XUNE_CORE_INCLUDES})
+target_link_libraries(test_zmdb_fast ${XUNE_CORE_LIBS})
+xune_target_warnings(test_zmdb_fast)
 
 # Test executable for unified zmdb extractor (file or device)
-add_executable(test_zmdb_extractor
-    tests/test_zmdb_extractor.cpp
-    lib/src/ZuneDevice.cpp
-    lib/src/ZuneDeviceIdentification.cpp
-    lib/src/NetworkManager.cpp
-
-    lib/src/ZuneMtpReader.cpp
-    lib/src/ZuneMtpWriter.cpp
-
-    lib/src/ZMDBLibraryExtractor.cpp
-    lib/src/zmdb/ZMDBParserBase.cpp
-    lib/src/zmdb/ZMDBUtils.cpp
-    lib/src/zmdb/ZuneHDParser.cpp
-    lib/src/zmdb/ZuneClassicParser.cpp
-    lib/src/zmdb/ZMDBParserFactory.cpp
-    lib/src/ptpip_client.cpp
-    lib/src/ssdp_discovery.cpp
-    lib/src/xune_sync_api.cpp
-    lib/src/protocols/http/ZuneHTTPInterceptor.cpp
-    lib/src/protocols/ppp/PPPParser.cpp
-    lib/src/protocols/ppp/PPPFrameBuilder.cpp
-    lib/src/protocols/http/HTTPParser.cpp
-    lib/src/protocols/http/MetadataRequestHandler.cpp
-    lib/src/protocols/http/HttpClient.cpp
-    lib/src/protocols/handlers/CCPHandler.cpp
-    lib/src/protocols/handlers/DNSHandler.cpp
-    lib/src/protocols/tcp/TCPConnectionManager.cpp
-    lib/src/protocols/tcp/TCPFlowController.cpp
-    lib/src/protocols/tcp/TCPStreamReassembler.cpp
-    lib/src/protocols/tcp/RTOManager.cpp
-)
-
-target_include_directories(test_zmdb_extractor PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${AFTL_INCLUDE_DIRS}
-    ${OPENSSL_INCLUDE_DIR}
-    ${CURL_INCLUDE_DIRS}
-)
-
-target_link_libraries(test_zmdb_extractor
-    aft-cli-static
-    ${AFTL_LIBRARY}
-    ${TAGLIB_LIBRARIES}
-    ${OPENSSL_CRYPTO_LIBRARY}
-    ${CURL_LIBRARIES}
-    ${CMAKE_THREAD_LIBS_INIT}
-    ${PLATFORM_LIBRARIES}
-)
-
-target_compile_options(test_zmdb_extractor PRIVATE
-    -Wall
-    -Wextra
-    -Wno-unused-parameter
-)
+add_executable(test_zmdb_extractor tests/test_zmdb_extractor.cpp ${XUNE_CORE_SOURCES})
+target_include_directories(test_zmdb_extractor PRIVATE ${XUNE_CORE_INCLUDES})
+target_link_libraries(test_zmdb_extractor ${XUNE_CORE_LIBS})
+xune_target_warnings(test_zmdb_extractor)
 
 # Test executable for HTTP interceptor
-add_executable(test_http_interceptor
-    tests/test_http_interceptor.cpp
-    lib/src/ZuneDevice.cpp
-    lib/src/ZuneDeviceIdentification.cpp
-    lib/src/NetworkManager.cpp
-
-    lib/src/ZuneMtpReader.cpp
-    lib/src/ZuneMtpWriter.cpp
-
-    lib/src/ZMDBLibraryExtractor.cpp
-    lib/src/zmdb/ZMDBParserBase.cpp
-    lib/src/zmdb/ZMDBUtils.cpp
-    lib/src/zmdb/ZuneHDParser.cpp
-    lib/src/zmdb/ZuneClassicParser.cpp
-    lib/src/zmdb/ZMDBParserFactory.cpp
-    lib/src/ptpip_client.cpp
-    lib/src/ssdp_discovery.cpp
-    lib/src/xune_sync_api.cpp
-    lib/src/protocols/http/ZuneHTTPInterceptor.cpp
-    lib/src/protocols/ppp/PPPParser.cpp
-    lib/src/protocols/ppp/PPPFrameBuilder.cpp
-    lib/src/protocols/http/HTTPParser.cpp
-    lib/src/protocols/http/MetadataRequestHandler.cpp
-    lib/src/protocols/http/HttpClient.cpp
-    lib/src/protocols/handlers/CCPHandler.cpp
-    lib/src/protocols/handlers/DNSHandler.cpp
-    lib/src/protocols/tcp/TCPConnectionManager.cpp
-    lib/src/protocols/tcp/TCPFlowController.cpp
-    lib/src/protocols/tcp/TCPStreamReassembler.cpp
-    lib/src/protocols/tcp/RTOManager.cpp
-)
-
-target_include_directories(test_http_interceptor PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${AFTL_INCLUDE_DIRS}
-    ${OPENSSL_INCLUDE_DIR}
-    ${CURL_INCLUDE_DIRS}
-    ${TAGLIB_INCLUDE_DIRS}
-)
-
-target_link_libraries(test_http_interceptor
-    aft-cli-static
-    ${AFTL_LIBRARY}
-    ${TAGLIB_LIBRARIES}
-    ${OPENSSL_CRYPTO_LIBRARY}
-    ${CURL_LIBRARIES}
-    ${CMAKE_THREAD_LIBS_INIT}
-    ${PLATFORM_LIBRARIES}
-)
-
-target_compile_options(test_http_interceptor PRIVATE
-    -Wall
-    -Wextra
-    -Wno-unused-parameter
-)
+add_executable(test_http_interceptor tests/test_http_interceptor.cpp ${XUNE_CORE_SOURCES})
+target_include_directories(test_http_interceptor PRIVATE ${XUNE_CORE_INCLUDES} ${TAGLIB_INCLUDE_DIRS})
+target_link_libraries(test_http_interceptor ${XUNE_CORE_LIBS})
+xune_target_warnings(test_http_interceptor)
 
 # Test executable for TCPFlowController (Phase 5.3)
 add_executable(test_tcp_flow_controller
@@ -667,11 +524,7 @@ target_link_libraries(test_tcp_flow_controller
     ${PLATFORM_LIBRARIES}
 )
 
-target_compile_options(test_tcp_flow_controller PRIVATE
-    -Wall
-    -Wextra
-    -Wno-unused-parameter
-)
+xune_target_warnings(test_tcp_flow_controller)
 
 # Test executable for TCPConnectionManager (Phase 5.2)
 add_executable(test_tcp_connection_manager
@@ -696,11 +549,7 @@ target_link_libraries(test_tcp_connection_manager
     ${PLATFORM_LIBRARIES}
 )
 
-target_compile_options(test_tcp_connection_manager PRIVATE
-    -Wall
-    -Wextra
-    -Wno-unused-parameter
-)
+xune_target_warnings(test_tcp_connection_manager)
 
 # Test executable for DNSHandler (Phase 5.2)
 add_executable(test_dns_handler
@@ -722,11 +571,7 @@ target_link_libraries(test_dns_handler
     ${PLATFORM_LIBRARIES}
 )
 
-target_compile_options(test_dns_handler PRIVATE
-    -Wall
-    -Wextra
-    -Wno-unused-parameter
-)
+xune_target_warnings(test_dns_handler)
 
 # Test executable for CCPHandler (Phase 5.2)
 add_executable(test_ccp_handler
@@ -748,125 +593,19 @@ target_link_libraries(test_ccp_handler
     ${PLATFORM_LIBRARIES}
 )
 
-target_compile_options(test_ccp_handler PRIVATE
-    -Wall
-    -Wextra
-    -Wno-unused-parameter
-)
+xune_target_warnings(test_ccp_handler)
 
 # Test executable for HTTP monitor (boot-time traffic capture)
-add_executable(test_http_monitor_boot
-    tests/test_http_monitor_boot.cpp
-    lib/src/ZuneDevice.cpp
-    lib/src/NetworkManager.cpp
-
-    lib/src/ZuneMtpReader.cpp
-    lib/src/ZuneMtpWriter.cpp
-
-    lib/src/ZMDBLibraryExtractor.cpp
-    lib/src/zmdb/ZMDBParserBase.cpp
-    lib/src/zmdb/ZMDBUtils.cpp
-    lib/src/zmdb/ZuneHDParser.cpp
-    lib/src/zmdb/ZuneClassicParser.cpp
-    lib/src/zmdb/ZMDBParserFactory.cpp
-    lib/src/ptpip_client.cpp
-    lib/src/ssdp_discovery.cpp
-    lib/src/xune_sync_api.cpp
-    lib/src/protocols/http/ZuneHTTPInterceptor.cpp
-    lib/src/protocols/ppp/PPPParser.cpp
-    lib/src/protocols/ppp/PPPFrameBuilder.cpp
-    lib/src/protocols/http/HTTPParser.cpp
-    lib/src/protocols/http/MetadataRequestHandler.cpp
-    lib/src/protocols/http/HttpClient.cpp
-    lib/src/protocols/handlers/CCPHandler.cpp
-    lib/src/protocols/handlers/DNSHandler.cpp
-    lib/src/protocols/tcp/TCPConnectionManager.cpp
-    lib/src/protocols/tcp/TCPFlowController.cpp
-    lib/src/protocols/tcp/TCPStreamReassembler.cpp
-    lib/src/protocols/tcp/RTOManager.cpp
-)
-
-target_include_directories(test_http_monitor_boot PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${AFTL_INCLUDE_DIRS}
-    ${OPENSSL_INCLUDE_DIR}
-    ${CURL_INCLUDE_DIRS}
-    ${TAGLIB_INCLUDE_DIRS}
-)
-
-target_link_libraries(test_http_monitor_boot
-    aft-cli-static
-    ${AFTL_LIBRARY}
-    ${TAGLIB_LIBRARIES}
-    ${OPENSSL_CRYPTO_LIBRARY}
-    ${CURL_LIBRARIES}
-    ${CMAKE_THREAD_LIBS_INIT}
-    ${PLATFORM_LIBRARIES}
-)
-
-target_compile_options(test_http_monitor_boot PRIVATE
-    -Wall
-    -Wextra
-    -Wno-unused-parameter
-)
+add_executable(test_http_monitor_boot tests/test_http_monitor_boot.cpp ${XUNE_CORE_SOURCES})
+target_include_directories(test_http_monitor_boot PRIVATE ${XUNE_CORE_INCLUDES} ${TAGLIB_INCLUDE_DIRS})
+target_link_libraries(test_http_monitor_boot ${XUNE_CORE_LIBS})
+xune_target_warnings(test_http_monitor_boot)
 
 # Test executable for rating iteration
-add_executable(test_rating
-    tests/test_rating.cpp
-    lib/src/ZuneDevice.cpp
-    lib/src/NetworkManager.cpp
-
-    lib/src/ZuneMtpReader.cpp
-    lib/src/ZuneMtpWriter.cpp
-
-    lib/src/ZMDBLibraryExtractor.cpp
-    lib/src/zmdb/ZMDBParserBase.cpp
-    lib/src/zmdb/ZMDBUtils.cpp
-    lib/src/zmdb/ZuneHDParser.cpp
-    lib/src/zmdb/ZuneClassicParser.cpp
-    lib/src/zmdb/ZMDBParserFactory.cpp
-    lib/src/ptpip_client.cpp
-    lib/src/ssdp_discovery.cpp
-    lib/src/xune_sync_api.cpp
-    lib/src/protocols/http/ZuneHTTPInterceptor.cpp
-    lib/src/protocols/ppp/PPPParser.cpp
-    lib/src/protocols/ppp/PPPFrameBuilder.cpp
-    lib/src/protocols/http/HTTPParser.cpp
-    lib/src/protocols/http/MetadataRequestHandler.cpp
-    lib/src/protocols/http/HttpClient.cpp
-    lib/src/protocols/handlers/CCPHandler.cpp
-    lib/src/protocols/handlers/DNSHandler.cpp
-    lib/src/protocols/tcp/TCPConnectionManager.cpp
-    lib/src/protocols/tcp/TCPFlowController.cpp
-    lib/src/protocols/tcp/TCPStreamReassembler.cpp
-    lib/src/protocols/tcp/RTOManager.cpp
-)
-
-target_include_directories(test_rating PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${AFTL_INCLUDE_DIRS}
-    ${OPENSSL_INCLUDE_DIR}
-    ${CURL_INCLUDE_DIRS}
-    ${TAGLIB_INCLUDE_DIRS}
-)
-
-target_link_libraries(test_rating
-    aft-cli-static
-    ${AFTL_LIBRARY}
-    ${TAGLIB_LIBRARIES}
-    ${OPENSSL_CRYPTO_LIBRARY}
-    ${CURL_LIBRARIES}
-    ${CMAKE_THREAD_LIBS_INIT}
-    ${PLATFORM_LIBRARIES}
-)
-
-target_compile_options(test_rating PRIVATE
-    -Wall
-    -Wextra
-    -Wno-unused-parameter
-)
+add_executable(test_rating tests/test_rating.cpp ${XUNE_CORE_SOURCES})
+target_include_directories(test_rating PRIVATE ${XUNE_CORE_INCLUDES} ${TAGLIB_INCLUDE_DIRS})
+target_link_libraries(test_rating ${XUNE_CORE_LIBS})
+xune_target_warnings(test_rating)
 
 # Test executable for network stack
 add_executable(test_network_stack
@@ -900,11 +639,7 @@ target_link_libraries(test_network_stack
     ${PLATFORM_LIBRARIES}
 )
 
-target_compile_options(test_network_stack PRIVATE
-    -Wall
-    -Wextra
-    -Wno-unused-parameter
-)
+xune_target_warnings(test_network_stack)
 
 # Test executable for HTTP interceptor integration (Phase 5.4)
 add_executable(test_http_interceptor_integration
@@ -938,11 +673,7 @@ target_link_libraries(test_http_interceptor_integration
     ${PLATFORM_LIBRARIES}
 )
 
-target_compile_options(test_http_interceptor_integration PRIVATE
-    -Wall
-    -Wextra
-    -Wno-unused-parameter
-)
+xune_target_warnings(test_http_interceptor_integration)
 
 endif() # ZUNE_BUILD_TESTS
 
@@ -961,349 +692,40 @@ target_include_directories(device_info_dump_cli PRIVATE
 target_link_libraries(device_info_dump_cli ${AFTL_LIBRARY} ${CMAKE_THREAD_LIBS_INIT} ${PLATFORM_LIBRARIES})
 
 # Artist Images Tool CLI
-add_executable(artist_images_tool_cli
-    tools/artist_images_tool_cli.cpp
-    lib/src/ZuneDevice.cpp
-    lib/src/ZuneDeviceIdentification.cpp
-    lib/src/NetworkManager.cpp
+add_executable(artist_images_tool_cli tools/artist_images_tool_cli.cpp ${XUNE_CORE_SOURCES})
+target_include_directories(artist_images_tool_cli PRIVATE ${XUNE_CORE_INCLUDES} ${TAGLIB_INCLUDE_DIRS})
+target_link_libraries(artist_images_tool_cli ${XUNE_CORE_LIBS})
+xune_target_warnings(artist_images_tool_cli)
 
-    lib/src/ZuneMtpReader.cpp
-    lib/src/ZuneMtpWriter.cpp
-
-    lib/src/ZMDBLibraryExtractor.cpp
-    lib/src/zmdb/ZMDBParserBase.cpp
-    lib/src/zmdb/ZMDBUtils.cpp
-    lib/src/zmdb/ZuneHDParser.cpp
-    lib/src/zmdb/ZuneClassicParser.cpp
-    lib/src/zmdb/ZMDBParserFactory.cpp
-    lib/src/ptpip_client.cpp
-    lib/src/ssdp_discovery.cpp
-    lib/src/xune_sync_api.cpp
-    lib/src/protocols/http/ZuneHTTPInterceptor.cpp
-    lib/src/protocols/ppp/PPPParser.cpp
-    lib/src/protocols/ppp/PPPFrameBuilder.cpp
-    lib/src/protocols/http/HTTPParser.cpp
-    lib/src/protocols/http/MetadataRequestHandler.cpp
-    lib/src/protocols/http/HttpClient.cpp
-    lib/src/protocols/handlers/CCPHandler.cpp
-    lib/src/protocols/handlers/DNSHandler.cpp
-    lib/src/protocols/tcp/TCPConnectionManager.cpp
-    lib/src/protocols/tcp/TCPFlowController.cpp
-    lib/src/protocols/tcp/TCPStreamReassembler.cpp
-    lib/src/protocols/tcp/RTOManager.cpp
-)
-
-target_include_directories(artist_images_tool_cli PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${AFTL_INCLUDE_DIRS}
-    ${OPENSSL_INCLUDE_DIR}
-    ${CURL_INCLUDE_DIRS}
-    ${TAGLIB_INCLUDE_DIRS}
-)
-
-target_link_libraries(artist_images_tool_cli
-    aft-cli-static
-    ${AFTL_LIBRARY}
-    ${TAGLIB_LIBRARIES}
-    ${OPENSSL_CRYPTO_LIBRARY}
-    ${CURL_LIBRARIES}
-    ${CMAKE_THREAD_LIBS_INIT}
-    ${PLATFORM_LIBRARIES}
-)
-
-target_compile_options(artist_images_tool_cli PRIVATE
-    -Wall
-    -Wextra
-    -Wno-unused-parameter
-)
-
-# Playlist Test CLI (for testing playlist create/update/delete operations)
-add_executable(playlist_test_cli
-    tools/playlist_test_cli.cpp
-    lib/src/ZuneDevice.cpp
-    lib/src/NetworkManager.cpp
-
-    lib/src/ZuneMtpReader.cpp
-    lib/src/ZuneMtpWriter.cpp
-
-    lib/src/ZMDBLibraryExtractor.cpp
-    lib/src/zmdb/ZMDBParserBase.cpp
-    lib/src/zmdb/ZMDBUtils.cpp
-    lib/src/zmdb/ZuneHDParser.cpp
-    lib/src/zmdb/ZuneClassicParser.cpp
-    lib/src/zmdb/ZMDBParserFactory.cpp
-    lib/src/ptpip_client.cpp
-    lib/src/ssdp_discovery.cpp
-    lib/src/xune_sync_api.cpp
-    lib/src/protocols/http/ZuneHTTPInterceptor.cpp
-    lib/src/protocols/ppp/PPPParser.cpp
-    lib/src/protocols/ppp/PPPFrameBuilder.cpp
-    lib/src/protocols/http/HTTPParser.cpp
-    lib/src/protocols/http/MetadataRequestHandler.cpp
-    lib/src/protocols/http/HttpClient.cpp
-    lib/src/protocols/handlers/CCPHandler.cpp
-    lib/src/protocols/handlers/DNSHandler.cpp
-    lib/src/protocols/tcp/TCPConnectionManager.cpp
-    lib/src/protocols/tcp/TCPFlowController.cpp
-    lib/src/protocols/tcp/TCPStreamReassembler.cpp
-    lib/src/protocols/tcp/RTOManager.cpp
-)
-
-target_include_directories(playlist_test_cli PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${AFTL_INCLUDE_DIRS}
-    ${OPENSSL_INCLUDE_DIR}
-    ${CURL_INCLUDE_DIRS}
-)
-
-target_link_libraries(playlist_test_cli
-    aft-cli-static
-    ${AFTL_LIBRARY}
-    ${TAGLIB_LIBRARIES}
-    ${OPENSSL_CRYPTO_LIBRARY}
-    ${CURL_LIBRARIES}
-    ${CMAKE_THREAD_LIBS_INIT}
-    ${PLATFORM_LIBRARIES}
-)
-
-target_compile_options(playlist_test_cli PRIVATE
-    -Wall
-    -Wextra
-    -Wno-unused-parameter
-)
+# Playlist Test CLI
+add_executable(playlist_test_cli tools/playlist_test_cli.cpp ${XUNE_CORE_SOURCES})
+target_include_directories(playlist_test_cli PRIVATE ${XUNE_CORE_INCLUDES})
+target_link_libraries(playlist_test_cli ${XUNE_CORE_LIBS})
+xune_target_warnings(playlist_test_cli)
 
 # Audiobook Test CLI
-add_executable(audiobook_test_cli
-    tools/audiobook_test_cli.cpp
-    lib/src/ZuneDevice.cpp
-    lib/src/NetworkManager.cpp
+add_executable(audiobook_test_cli tools/audiobook_test_cli.cpp ${XUNE_CORE_SOURCES})
+target_include_directories(audiobook_test_cli PRIVATE ${XUNE_CORE_INCLUDES} ${TAGLIB_INCLUDE_DIRS})
+target_link_libraries(audiobook_test_cli ${XUNE_CORE_LIBS})
+xune_target_warnings(audiobook_test_cli)
 
-    lib/src/ZuneMtpReader.cpp
-    lib/src/ZuneMtpWriter.cpp
-
-    lib/src/ZMDBLibraryExtractor.cpp
-    lib/src/zmdb/ZMDBParserBase.cpp
-    lib/src/zmdb/ZMDBUtils.cpp
-    lib/src/zmdb/ZuneHDParser.cpp
-    lib/src/zmdb/ZuneClassicParser.cpp
-    lib/src/zmdb/ZMDBParserFactory.cpp
-    lib/src/ptpip_client.cpp
-    lib/src/ssdp_discovery.cpp
-    lib/src/xune_sync_api.cpp
-    lib/src/protocols/http/ZuneHTTPInterceptor.cpp
-    lib/src/protocols/ppp/PPPParser.cpp
-    lib/src/protocols/ppp/PPPFrameBuilder.cpp
-    lib/src/protocols/http/HTTPParser.cpp
-    lib/src/protocols/http/MetadataRequestHandler.cpp
-    lib/src/protocols/http/HttpClient.cpp
-    lib/src/protocols/handlers/CCPHandler.cpp
-    lib/src/protocols/handlers/DNSHandler.cpp
-    lib/src/protocols/tcp/TCPConnectionManager.cpp
-    lib/src/protocols/tcp/TCPFlowController.cpp
-    lib/src/protocols/tcp/TCPStreamReassembler.cpp
-    lib/src/protocols/tcp/RTOManager.cpp
-)
-
-target_include_directories(audiobook_test_cli PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${AFTL_INCLUDE_DIRS}
-    ${OPENSSL_INCLUDE_DIR}
-    ${CURL_INCLUDE_DIRS}
-    ${TAGLIB_INCLUDE_DIRS}
-)
-
-target_link_libraries(audiobook_test_cli
-    aft-cli-static
-    ${AFTL_LIBRARY}
-    ${TAGLIB_LIBRARIES}
-    ${OPENSSL_CRYPTO_LIBRARY}
-    ${CURL_LIBRARIES}
-    ${CMAKE_THREAD_LIBS_INIT}
-    ${PLATFORM_LIBRARIES}
-)
-
-target_compile_options(audiobook_test_cli PRIVATE
-    -Wall
-    -Wextra
-    -Wno-unused-parameter
-)
-
-# Sync Partnership Test CLI (for testing GetSyncPartnerGuid and SetDeviceName)
-add_executable(sync_partnership_test_cli
-    tools/sync_partnership_test_cli.cpp
-    lib/src/ZuneDevice.cpp
-    lib/src/NetworkManager.cpp
-
-    lib/src/ZuneMtpReader.cpp
-    lib/src/ZuneMtpWriter.cpp
-
-    lib/src/ZMDBLibraryExtractor.cpp
-    lib/src/zmdb/ZMDBParserBase.cpp
-    lib/src/zmdb/ZMDBUtils.cpp
-    lib/src/zmdb/ZuneHDParser.cpp
-    lib/src/zmdb/ZuneClassicParser.cpp
-    lib/src/zmdb/ZMDBParserFactory.cpp
-
-    lib/src/ptpip_client.cpp
-    lib/src/ssdp_discovery.cpp
-    lib/src/xune_sync_api.cpp
-
-    lib/src/protocols/http/ZuneHTTPInterceptor.cpp
-    lib/src/protocols/ppp/PPPParser.cpp
-    lib/src/protocols/ppp/PPPFrameBuilder.cpp
-    lib/src/protocols/http/HTTPParser.cpp
-    lib/src/protocols/http/MetadataRequestHandler.cpp
-    lib/src/protocols/http/HttpClient.cpp
-    lib/src/protocols/handlers/CCPHandler.cpp
-    lib/src/protocols/handlers/DNSHandler.cpp
-    lib/src/protocols/tcp/TCPConnectionManager.cpp
-    lib/src/protocols/tcp/TCPFlowController.cpp
-    lib/src/protocols/tcp/TCPStreamReassembler.cpp
-    lib/src/protocols/tcp/RTOManager.cpp
-)
-
-target_include_directories(sync_partnership_test_cli PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${AFTL_INCLUDE_DIRS}
-    ${OPENSSL_INCLUDE_DIR}
-    ${CURL_INCLUDE_DIRS}
-)
-
-target_link_libraries(sync_partnership_test_cli
-    aft-cli-static
-    ${AFTL_LIBRARY}
-    ${TAGLIB_LIBRARIES}
-    ${OPENSSL_CRYPTO_LIBRARY}
-    ${CURL_LIBRARIES}
-    ${CMAKE_THREAD_LIBS_INIT}
-    ${PLATFORM_LIBRARIES}
-)
-
-target_compile_options(sync_partnership_test_cli PRIVATE
-    -Wall
-    -Wextra
-    -Wno-unused-parameter
-)
+# Sync Partnership Test CLI
+add_executable(sync_partnership_test_cli tools/sync_partnership_test_cli.cpp ${XUNE_CORE_SOURCES})
+target_include_directories(sync_partnership_test_cli PRIVATE ${XUNE_CORE_INCLUDES})
+target_link_libraries(sync_partnership_test_cli ${XUNE_CORE_LIBS})
+xune_target_warnings(sync_partnership_test_cli)
 
 # Erase Content Test CLI
-add_executable(erase_content_test_cli
-    tools/erase_content_test_cli.cpp
-    lib/src/ZuneDevice.cpp
-    lib/src/NetworkManager.cpp
+add_executable(erase_content_test_cli tools/erase_content_test_cli.cpp ${XUNE_CORE_SOURCES})
+target_include_directories(erase_content_test_cli PRIVATE ${XUNE_CORE_INCLUDES})
+target_link_libraries(erase_content_test_cli ${XUNE_CORE_LIBS})
+xune_target_warnings(erase_content_test_cli)
 
-    lib/src/ZuneMtpReader.cpp
-    lib/src/ZuneMtpWriter.cpp
-
-    lib/src/ZMDBLibraryExtractor.cpp
-    lib/src/zmdb/ZMDBParserBase.cpp
-    lib/src/zmdb/ZMDBUtils.cpp
-    lib/src/zmdb/ZuneHDParser.cpp
-    lib/src/zmdb/ZuneClassicParser.cpp
-    lib/src/zmdb/ZMDBParserFactory.cpp
-
-    lib/src/ptpip_client.cpp
-    lib/src/ssdp_discovery.cpp
-    lib/src/xune_sync_api.cpp
-
-    lib/src/protocols/http/ZuneHTTPInterceptor.cpp
-    lib/src/protocols/ppp/PPPParser.cpp
-    lib/src/protocols/ppp/PPPFrameBuilder.cpp
-    lib/src/protocols/http/HTTPParser.cpp
-    lib/src/protocols/http/MetadataRequestHandler.cpp
-    lib/src/protocols/http/HttpClient.cpp
-    lib/src/protocols/handlers/CCPHandler.cpp
-    lib/src/protocols/handlers/DNSHandler.cpp
-    lib/src/protocols/tcp/TCPConnectionManager.cpp
-    lib/src/protocols/tcp/TCPFlowController.cpp
-    lib/src/protocols/tcp/TCPStreamReassembler.cpp
-    lib/src/protocols/tcp/RTOManager.cpp
-)
-
-target_include_directories(erase_content_test_cli PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${AFTL_INCLUDE_DIRS}
-    ${OPENSSL_INCLUDE_DIR}
-    ${CURL_INCLUDE_DIRS}
-)
-
-target_link_libraries(erase_content_test_cli
-    aft-cli-static
-    ${AFTL_LIBRARY}
-    ${TAGLIB_LIBRARIES}
-    ${OPENSSL_CRYPTO_LIBRARY}
-    ${CURL_LIBRARIES}
-    ${CMAKE_THREAD_LIBS_INIT}
-    ${PLATFORM_LIBRARIES}
-)
-
-target_compile_options(erase_content_test_cli PRIVATE
-    -Wall
-    -Wextra
-    -Wno-unused-parameter
-)
-
-# Upload Test CLI (for debugging upload hang issues)
-add_executable(upload_test_cli
-    tools/upload_test_cli.cpp
-    lib/src/ZuneDevice.cpp
-    lib/src/ZuneDeviceIdentification.cpp
-    lib/src/NetworkManager.cpp
-
-    lib/src/ZuneMtpReader.cpp
-    lib/src/ZuneMtpWriter.cpp
-
-    lib/src/ZMDBLibraryExtractor.cpp
-    lib/src/zmdb/ZMDBParserBase.cpp
-    lib/src/zmdb/ZMDBUtils.cpp
-    lib/src/zmdb/ZuneHDParser.cpp
-    lib/src/zmdb/ZuneClassicParser.cpp
-    lib/src/zmdb/ZMDBParserFactory.cpp
-    lib/src/ptpip_client.cpp
-    lib/src/ssdp_discovery.cpp
-    lib/src/xune_sync_api.cpp
-    lib/src/protocols/http/ZuneHTTPInterceptor.cpp
-    lib/src/protocols/ppp/PPPParser.cpp
-    lib/src/protocols/ppp/PPPFrameBuilder.cpp
-    lib/src/protocols/http/HTTPParser.cpp
-    lib/src/protocols/http/MetadataRequestHandler.cpp
-    lib/src/protocols/http/HttpClient.cpp
-    lib/src/protocols/handlers/CCPHandler.cpp
-    lib/src/protocols/handlers/DNSHandler.cpp
-    lib/src/protocols/tcp/TCPConnectionManager.cpp
-    lib/src/protocols/tcp/TCPFlowController.cpp
-    lib/src/protocols/tcp/TCPStreamReassembler.cpp
-    lib/src/protocols/tcp/RTOManager.cpp
-)
-
-target_include_directories(upload_test_cli PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${AFTL_INCLUDE_DIRS}
-    ${OPENSSL_INCLUDE_DIR}
-    ${CURL_INCLUDE_DIRS}
-    ${TAGLIB_INCLUDE_DIRS}
-)
-
-target_link_libraries(upload_test_cli
-    aft-cli-static
-    ${AFTL_LIBRARY}
-    ${TAGLIB_LIBRARIES}
-    ${OPENSSL_CRYPTO_LIBRARY}
-    ${CURL_LIBRARIES}
-    ${CMAKE_THREAD_LIBS_INIT}
-    ${PLATFORM_LIBRARIES}
-)
-
-target_compile_options(upload_test_cli PRIVATE
-    -Wall
-    -Wextra
-    -Wno-unused-parameter
-)
+# Upload Test CLI
+add_executable(upload_test_cli tools/upload_test_cli.cpp ${XUNE_CORE_SOURCES})
+target_include_directories(upload_test_cli PRIVATE ${XUNE_CORE_INCLUDES} ${TAGLIB_INCLUDE_DIRS})
+target_link_libraries(upload_test_cli ${XUNE_CORE_LIBS})
+xune_target_warnings(upload_test_cli)
 
 # XNA Deploy Test CLI
 add_executable(xna_deploy_test_cli tools/xna_deploy_test_cli.cpp)
@@ -1322,11 +744,7 @@ target_link_libraries(xna_deploy_test_cli
     ${PLATFORM_LIBRARIES}
 )
 
-target_compile_options(xna_deploy_test_cli PRIVATE
-    -Wall
-    -Wextra
-    -Wno-unused-parameter
-)
+xune_target_warnings(xna_deploy_test_cli)
 
 endif() # ZUNE_BUILD_TOOLS
 

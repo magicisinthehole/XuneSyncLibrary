@@ -22,11 +22,6 @@
 #include <CoreFoundation/CoreFoundation.h>
 #endif
 
-#ifdef _WIN32
-#undef CreateDirectory
-#undef GetObject
-#undef GetVersion
-#endif
 
 static std::unique_ptr<ssdp::SSDPDiscovery> g_discovery;
 

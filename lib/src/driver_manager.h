@@ -31,9 +31,6 @@ struct DeviceDriverInfo
 /// VID 045E: PID 0710 (Zune Classic) and PID 063E (Zune HD).
 std::vector<DeviceDriverInfo> GetZuneDeviceDriverInfo();
 
-/// Check whether a specific device instance has WinUSB installed.
-bool IsWinUSBInstalled(const std::string& instanceId);
-
 /// Human-readable description of a DriverStatus value.
 const char* DriverStatusDescription(DriverStatus status);
 

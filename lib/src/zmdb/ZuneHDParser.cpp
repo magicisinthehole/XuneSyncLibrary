@@ -1,5 +1,6 @@
 #include "ZuneHDParser.h"
 #include "ZMDBUtils.h"
+#include "../platform_compat.h"
 #include <cstring>
 #include <ctime>
 #include <iostream>
@@ -715,17 +716,9 @@ std::optional<ZMDBAlbum> ZuneHDParser::parse_album(
         if (seconds_since_1601 > EPOCH_DIFF_SECONDS) {
             time_t unix_time = static_cast<time_t>(seconds_since_1601 - EPOCH_DIFF_SECONDS);
             struct tm tm_result;
-#ifdef _WIN32
-            // Windows: gmtime_s has reversed parameter order and returns errno_t
-            if (gmtime_s(&tm_result, &unix_time) == 0) {
-                album.release_year = tm_result.tm_year + 1900;
-            }
-#else
-            // POSIX (macOS/Linux): gmtime_r returns pointer to result
             if (gmtime_r(&unix_time, &tm_result) != nullptr) {
                 album.release_year = tm_result.tm_year + 1900;
             }
-#endif
         }
     }
 

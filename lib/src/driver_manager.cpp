@@ -9,9 +9,6 @@
 #include <usbiodef.h>
 #include <algorithm>
 
-#pragma comment(lib, "setupapi.lib")
-#pragma comment(lib, "cfgmgr32.lib")
-
 namespace xune {
 
 // ── Query helpers ────────────────────────────────────────────────────────
@@ -98,46 +95,6 @@ std::vector<DeviceDriverInfo> GetZuneDeviceDriverInfo()
 
     SetupDiDestroyDeviceInfoList(devInfoSet);
     return devices;
-}
-
-bool IsWinUSBInstalled(const std::string& instanceId)
-{
-    HDEVINFO devInfoSet = SetupDiGetClassDevsA(
-        nullptr, "USB", nullptr, DIGCF_ALLCLASSES | DIGCF_PRESENT);
-    if (devInfoSet == INVALID_HANDLE_VALUE)
-        return false;
-
-    SP_DEVINFO_DATA devData{};
-    devData.cbSize = sizeof(SP_DEVINFO_DATA);
-
-    for (DWORD idx = 0; SetupDiEnumDeviceInfo(devInfoSet, idx, &devData); ++idx)
-    {
-        DWORD reqSize = 0;
-        SetupDiGetDeviceInstanceIdA(devInfoSet, &devData, nullptr, 0, &reqSize);
-        std::string id(reqSize, '\0');
-        if (!SetupDiGetDeviceInstanceIdA(devInfoSet, &devData,
-                id.data(), reqSize, nullptr))
-            continue;
-        auto nul = id.find('\0');
-        if (nul != std::string::npos) id.erase(nul);
-
-        if (_stricmp(id.c_str(), instanceId.c_str()) != 0)
-            continue;
-
-        char svcName[256]{};
-        if (SetupDiGetDeviceRegistryPropertyA(devInfoSet, &devData,
-                SPDRP_SERVICE, nullptr, reinterpret_cast<PBYTE>(svcName),
-                sizeof(svcName), nullptr))
-        {
-            SetupDiDestroyDeviceInfoList(devInfoSet);
-            return ServiceNameToStatus(svcName) == DriverStatus::WinUSB;
-        }
-
-        break;
-    }
-
-    SetupDiDestroyDeviceInfoList(devInfoSet);
-    return false;
 }
 
 const char* DriverStatusDescription(DriverStatus status)

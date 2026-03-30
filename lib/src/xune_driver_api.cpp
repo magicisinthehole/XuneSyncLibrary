@@ -44,7 +44,10 @@ const char* zune_driver_get_device_description(int index)
 bool zune_driver_is_winusb_installed(const char* instance_id)
 {
     if (!instance_id) return false;
-    return xune::IsWinUSBInstalled(instance_id);
+    for (const auto& d : g_cachedDevices)
+        if (_stricmp(d.instanceId.c_str(), instance_id) == 0)
+            return d.status == xune::DriverStatus::WinUSB;
+    return false;
 }
 
 #else // non-Windows stubs

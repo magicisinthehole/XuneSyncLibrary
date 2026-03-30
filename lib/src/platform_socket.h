@@ -11,7 +11,6 @@
 #ifdef _WIN32
     #include <winsock2.h>
     #include <ws2tcpip.h>
-    #pragma comment(lib, "ws2_32.lib")
 
     // Winsock uses SOCKET (unsigned), POSIX uses int
     typedef SOCKET socket_t;
@@ -54,8 +53,10 @@
         WSACleanup();
     }
 
-    // ssize_t doesn't exist on MSVC
+    #ifndef _SSIZE_T_DEFINED
+    #define _SSIZE_T_DEFINED
     typedef int ssize_t;
+    #endif
 
     // send/recv on Winsock use char*, POSIX uses void*
     #define SEND_CAST(x) reinterpret_cast<const char*>(x)
