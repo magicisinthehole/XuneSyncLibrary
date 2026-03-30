@@ -9,6 +9,12 @@
 #include <sys/stat.h>
 #include <functional>
 
+#ifdef _WIN32
+inline struct tm* gmtime_r(const time_t* timer, struct tm* buf) {
+    return gmtime_s(buf, timer) == 0 ? buf : nullptr;
+}
+#endif
+
 const char* EndpointTypeToString(EndpointType type) {
     switch (type) {
         case EndpointType::Overview:               return "overview";
