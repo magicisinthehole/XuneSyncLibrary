@@ -21,7 +21,11 @@ message(STATUS "Build tools: ${ZUNE_BUILD_TOOLS}")
 # AFTL library configuration
 set(AFTL_ROOT "${CMAKE_SOURCE_DIR}/vendor/android-file-transfer-linux")
 set(AFTL_BUILD_DIR "${CMAKE_BINARY_DIR}/vendor/android-file-transfer-linux-build")
-set(AFTL_LIBRARY "${AFTL_BUILD_DIR}/libmtp-ng-static.a")
+if(WIN32)
+    set(AFTL_LIBRARY "${AFTL_BUILD_DIR}/mtp-ng-static.lib")
+else()
+    set(AFTL_LIBRARY "${AFTL_BUILD_DIR}/libmtp-ng-static.a")
+endif()
 
 # On Linux, use libusb backend for IOKit parity (synchronous blocking transfers)
 if(UNIX AND NOT APPLE)
@@ -121,6 +125,8 @@ endif()
 if(NOT TAGLIB_FOUND)
     if(APPLE)
         message(FATAL_ERROR "TagLib not found. Install with: brew install taglib")
+    elseif(WIN32)
+        message(FATAL_ERROR "TagLib not found. Install with vcpkg: vcpkg install taglib")
     else()
         message(FATAL_ERROR "TagLib not found. Build TagLib 2 from source: https://taglib.org/releases/")
     endif()
@@ -129,11 +135,13 @@ endif()
 message(STATUS "TagLib library: ${TAGLIB_LIBRARIES}")
 message(STATUS "TagLib include: ${TAGLIB_INCLUDE_DIRS}")
 
-# macOS specific settings
+# Platform specific settings
 if(APPLE)
     find_library(CORE_LIBRARY CoreFoundation)
     find_library(IOKIT_LIBRARY IOKit)
     set(PLATFORM_LIBRARIES ${IOKIT_LIBRARY} ${CORE_LIBRARY})
+elseif(WIN32)
+    set(PLATFORM_LIBRARIES setupapi winusb urlmon shlwapi ws2_32)
 else()
     set(PLATFORM_LIBRARIES)
 endif()
@@ -142,12 +150,16 @@ endif()
 set(AFTL_INCLUDE_DIRS
     ${AFTL_ROOT}
     ${AFTL_ROOT}/mtp
-    ${AFTL_ROOT}/mtp/backend/posix
     ${AFTL_ROOT}/cli
 )
+if(NOT WIN32)
+    list(APPEND AFTL_INCLUDE_DIRS ${AFTL_ROOT}/mtp/backend/posix)
+endif()
 
 if(APPLE)
     list(APPEND AFTL_INCLUDE_DIRS ${AFTL_ROOT}/mtp/backend/darwin)
+elseif(WIN32)
+    list(APPEND AFTL_INCLUDE_DIRS ${AFTL_ROOT}/mtp/backend/windows)
 elseif(UNIX)
     list(APPEND AFTL_INCLUDE_DIRS ${AFTL_ROOT}/mtp/backend/libusb)
     pkg_check_modules(LIBUSB REQUIRED libusb-1.0)
@@ -171,10 +183,11 @@ target_include_directories(aft-cli-static PUBLIC
     ${OPENSSL_INCLUDE_DIR}
 )
 
-target_compile_options(aft-cli-static PRIVATE
-    -Wall
-    -Wno-unused-parameter
-)
+if(MSVC)
+    target_compile_options(aft-cli-static PRIVATE /W3)
+else()
+    target_compile_options(aft-cli-static PRIVATE -Wall -Wno-unused-parameter)
+endif()
 
 # Main library
 add_library(xune_sync SHARED
@@ -256,11 +269,11 @@ elseif(UNIX)
 endif()
 
 # Compiler flags
-target_compile_options(xune_sync PRIVATE
-    -Wall
-    -Wextra
-    -Wno-unused-parameter
-)
+if(MSVC)
+    target_compile_options(xune_sync PRIVATE /W3)
+else()
+    target_compile_options(xune_sync PRIVATE -Wall -Wextra -Wno-unused-parameter)
+endif()
 
 if(CMAKE_BUILD_TYPE STREQUAL Debug)
     target_compile_options(xune_sync PRIVATE -g)
@@ -271,7 +284,13 @@ endif()
 set(XUNE_DEVICES_RUNTIME_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../src/Xune.Infrastructure.Devices/runtimes")
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../src/Xune.Infrastructure.Devices")
     # Determine the runtime identifier based on platform and architecture
-    if(APPLE)
+    if(WIN32)
+        if(CMAKE_SYSTEM_PROCESSOR MATCHES "AMD64|x86_64")
+            set(RUNTIME_ID "win-x64")
+        else()
+            set(RUNTIME_ID "win-x86")
+        endif()
+    elseif(APPLE)
         # CMAKE_OSX_ARCHITECTURES is the target arch (cross-compilation);
         # CMAKE_SYSTEM_PROCESSOR is the host arch (native build).
         if(CMAKE_OSX_ARCHITECTURES)
@@ -284,7 +303,7 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../src/Xune.Infrastructure.Devices")
         else()
             set(RUNTIME_ID "osx-x64")
         endif()
-    elseif(UNIX AND NOT APPLE)
+    elseif(UNIX)
         if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
             set(RUNTIME_ID "linux-arm64")
         else()
