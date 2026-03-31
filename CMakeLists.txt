@@ -406,7 +406,12 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../src/Xune.Infrastructure.Devices")
     elseif(WIN32)
         # Bundle vcpkg dynamic dependencies (OpenSSL, curl)
         set(_vcpkg_bin "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/bin")
-        foreach(_dll "libcrypto-3-x64.dll" "libcurl.dll")
+        if(CMAKE_SYSTEM_PROCESSOR MATCHES "ARM64|aarch64")
+            set(_crypto_dll "libcrypto-3-arm64.dll")
+        else()
+            set(_crypto_dll "libcrypto-3-x64.dll")
+        endif()
+        foreach(_dll "${_crypto_dll}" "libcurl.dll")
             if(EXISTS "${_vcpkg_bin}/${_dll}")
                 add_custom_command(TARGET xune_sync POST_BUILD
                     COMMAND ${CMAKE_COMMAND} -E copy "${_vcpkg_bin}/${_dll}" "${ZW_RUNTIME_NATIVE}/"
