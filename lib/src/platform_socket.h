@@ -1,16 +1,9 @@
-/**
- * @file platform_socket.h
- * @brief Platform abstraction for BSD socket APIs (POSIX / Winsock2)
- *
- * Include this instead of <sys/socket.h>, <arpa/inet.h>, etc.
- * Provides consistent types and function names across platforms.
- */
-
 #pragma once
 
 #ifdef _WIN32
     #include <winsock2.h>
     #include <ws2tcpip.h>
+    #include <mutex>
 
     // Winsock uses SOCKET (unsigned), POSIX uses int
     typedef SOCKET socket_t;
@@ -39,14 +32,16 @@
         ioctlsocket(s, FIONBIO, &mode);
     }
 
+    // WinSock ignores the nfds argument — pass 0
+    inline int platform_select_nfds(socket_t) { return 0; }
+
     // Winsock requires startup/cleanup
     inline void platform_socket_init() {
-        static bool initialized = false;
-        if (!initialized) {
+        static std::once_flag flag;
+        std::call_once(flag, []() {
             WSADATA wsaData;
             WSAStartup(MAKEWORD(2, 2), &wsaData);
-            initialized = true;
-        }
+        });
     }
 
     inline void platform_socket_cleanup() {
@@ -98,6 +93,8 @@
         else
             fcntl(s, F_SETFL, flags & ~O_NONBLOCK);
     }
+
+    inline int platform_select_nfds(socket_t s) { return static_cast<int>(s) + 1; }
 
     inline void platform_socket_init() {}
     inline void platform_socket_cleanup() {}

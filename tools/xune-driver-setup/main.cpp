@@ -56,18 +56,20 @@ static std::string BackupFilePath(const std::string& instanceId)
 
 static bool SaveBackup(const std::string& instanceId,
                        const std::string& driverName,
-                       const std::string& mfgName)
+                       const std::string& mfgName,
+                       const std::string& serviceName)
 {
     auto path = BackupFilePath(instanceId);
     std::ofstream f(path);
     if (!f) return false;
     f << "DRIVER_NAME=" << driverName << "\n";
     f << "MFG_NAME=" << mfgName << "\n";
+    f << "SERVICE_NAME=" << serviceName << "\n";
     f << "INSTANCE_ID=" << instanceId << "\n";
     return true;
 }
 
-struct BackupInfo { std::string driverName, mfgName, instanceId; };
+struct BackupInfo { std::string driverName, mfgName, serviceName, instanceId; };
 
 static bool LoadBackup(const std::string& instanceId, BackupInfo& out)
 {
@@ -82,6 +84,7 @@ static bool LoadBackup(const std::string& instanceId, BackupInfo& out)
         auto val = line.substr(eq + 1);
         if (key == "DRIVER_NAME") out.driverName = val;
         else if (key == "MFG_NAME") out.mfgName = val;
+        else if (key == "SERVICE_NAME") out.serviceName = val;
         else if (key == "INSTANCE_ID") out.instanceId = val;
     }
     return !out.driverName.empty();
@@ -90,7 +93,8 @@ static bool LoadBackup(const std::string& instanceId, BackupInfo& out)
 // ── SetupAPI: find device and get current driver info ────────────────────
 
 static bool FindDevice(const std::string& instanceId,
-                       std::string& outDriverName, std::string& outMfg)
+                       std::string& outDriverName, std::string& outMfg,
+                       std::string& outService)
 {
     HDEVINFO devs = SetupDiGetClassDevsA(
         nullptr, "USB", nullptr, DIGCF_ALLCLASSES | DIGCF_PRESENT);
@@ -115,6 +119,11 @@ static bool FindDevice(const std::string& instanceId,
             nullptr, reinterpret_cast<PBYTE>(mfg), sizeof(mfg), nullptr);
         outMfg = mfg;
 
+        char svc[256]{};
+        SetupDiGetDeviceRegistryPropertyA(devs, &dd, SPDRP_SERVICE,
+            nullptr, reinterpret_cast<PBYTE>(svc), sizeof(svc), nullptr);
+        outService = svc;
+
         SetupDiDestroyDeviceInfoList(devs);
         return true;
     }
@@ -129,10 +138,10 @@ static int DoInstall(const std::string& instanceId, bool backup)
     // Backup current driver if requested
     if (backup)
     {
-        std::string drvName, mfg;
-        if (FindDevice(instanceId, drvName, mfg))
+        std::string drvName, mfg, svc;
+        if (FindDevice(instanceId, drvName, mfg, svc))
         {
-            if (SaveBackup(instanceId, drvName, mfg))
+            if (SaveBackup(instanceId, drvName, mfg, svc))
                 fprintf(stderr, "Backed up original driver: %s\n", drvName.c_str());
             else
                 fprintf(stderr, "Warning: could not save driver backup\n");
@@ -262,19 +271,52 @@ static int DoRestore(const std::string& instanceId)
     bool drvFound = false;
     for (DWORD i = 0; SetupDiEnumDriverInfoA(devs, &dd, SPDIT_COMPATDRIVER, i, &drvInfo); ++i)
     {
-        std::string desc(drvInfo.Description);
-        std::string mfg(drvInfo.MfgName);
-        if (bk.driverName.find(desc) != std::string::npos ||
-            bk.driverName.find(mfg) != std::string::npos)
-        {
-            drvFound = true;
+        if (bk.serviceName.empty())
             break;
+
+        // Get INF file path and section name from driver info detail
+        BYTE detailBuf[sizeof(SP_DRVINFO_DETAIL_DATA_A) + 256]{};
+        auto* detail = reinterpret_cast<SP_DRVINFO_DETAIL_DATA_A*>(detailBuf);
+        detail->cbSize = sizeof(SP_DRVINFO_DETAIL_DATA_A);
+        if (!SetupDiGetDriverInfoDetailA(devs, &dd, &drvInfo, detail, sizeof(detailBuf), nullptr) &&
+            GetLastError() != ERROR_INSUFFICIENT_BUFFER)
+            continue;
+
+        HINF hInf = SetupOpenInfFileA(detail->InfFileName, nullptr, INF_STYLE_WIN4, nullptr);
+        if (hInf == INVALID_HANDLE_VALUE)
+            continue;
+
+        // Resolve the platform-decorated install section name
+        char actualSection[MAX_PATH]{};
+        if (!SetupDiGetActualSectionToInstallA(hInf, detail->SectionName,
+                actualSection, MAX_PATH, nullptr, nullptr))
+        {
+            SetupCloseInfFile(hInf);
+            continue;
         }
+
+        // Read the AddService directive from the .Services section
+        std::string servicesSection = std::string(actualSection) + ".Services";
+        INFCONTEXT ctx{};
+        if (SetupFindFirstLineA(hInf, servicesSection.c_str(), "AddService", &ctx))
+        {
+            char svcName[256]{};
+            if (SetupGetStringFieldA(&ctx, 1, svcName, sizeof(svcName), nullptr) &&
+                _stricmp(svcName, bk.serviceName.c_str()) == 0)
+            {
+                drvFound = true;
+            }
+        }
+        SetupCloseInfFile(hInf);
+
+        if (drvFound)
+            break;
     }
 
     if (!drvFound)
     {
-        fprintf(stderr, "Original driver not in system database: %s\n", bk.driverName.c_str());
+        fprintf(stderr, "Original driver not in system database (service: %s)\n",
+                bk.serviceName.c_str());
         SetupDiDestroyDriverInfoList(devs, &dd, SPDIT_COMPATDRIVER);
         SetupDiDestroyDeviceInfoList(devs);
         return 2;

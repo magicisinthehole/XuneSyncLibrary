@@ -82,7 +82,7 @@ bool PTPIPClient::connect() {
                 timeout.tv_sec = 0;
                 timeout.tv_usec = 500000;  // 500ms
 
-                int select_result = select(static_cast<int>(cmd_socket_) + 1, NULL, &write_fds, NULL, &timeout);
+                int select_result = select(platform_select_nfds(cmd_socket_), NULL, &write_fds, NULL, &timeout);
 
                 if (select_result > 0) {
                     // Check if connection succeeded

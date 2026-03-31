@@ -753,7 +753,17 @@ endif() # ZUNE_BUILD_TOOLS
 # =============================================================================
 if(WIN32)
     set(LIBWDI_DIR "${CMAKE_CURRENT_SOURCE_DIR}/vendor/libwdi")
-    if(EXISTS "${LIBWDI_DIR}/lib/x64/libwdi.lib")
+
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "AMD64|x86_64")
+        set(LIBWDI_ARCH "x64")
+    elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "ARM64|aarch64")
+        set(LIBWDI_ARCH "arm64")
+    else()
+        set(LIBWDI_ARCH "x86")
+    endif()
+
+    set(LIBWDI_LIB "${LIBWDI_DIR}/lib/${LIBWDI_ARCH}/libwdi.lib")
+    if(EXISTS "${LIBWDI_LIB}")
         add_executable(xune-driver-setup
             tools/xune-driver-setup/main.cpp
         )
@@ -761,7 +771,7 @@ if(WIN32)
             "${LIBWDI_DIR}/include"
         )
         target_link_libraries(xune-driver-setup
-            "${LIBWDI_DIR}/lib/x64/libwdi.lib"
+            "${LIBWDI_LIB}"
             setupapi cfgmgr32 newdev ole32 advapi32 shlwapi shell32
         )
         target_compile_definitions(xune-driver-setup PRIVATE
@@ -782,9 +792,9 @@ if(WIN32)
                 COMMENT "Copying xune-driver-setup.exe to .NET runtime directory"
             )
         endif()
-        message(STATUS "  Driver setup helper: enabled (libwdi found)")
+        message(STATUS "  Driver setup helper: enabled (libwdi ${LIBWDI_ARCH})")
     else()
-        message(STATUS "  Driver setup helper: disabled (libwdi not found at ${LIBWDI_DIR})")
+        message(STATUS "  Driver setup helper: disabled (libwdi not found at ${LIBWDI_LIB})")
     endif()
 endif()
 

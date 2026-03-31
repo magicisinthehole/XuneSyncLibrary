@@ -45,8 +45,16 @@ std::vector<DeviceDriverInfo> GetZuneDeviceDriverInfo()
                 sizeof(hwId), nullptr))
             continue;
 
-        bool isZune = strstr(hwId, "VID_045E&PID_0710") ||
-                      strstr(hwId, "VID_045E&PID_063E");
+        // SPDRP_HARDWAREID is REG_MULTI_SZ — walk each null-terminated string
+        bool isZune = false;
+        for (const char* p = hwId; *p; p += strlen(p) + 1)
+        {
+            if (strstr(p, "VID_045E&PID_0710") || strstr(p, "VID_045E&PID_063E"))
+            {
+                isZune = true;
+                break;
+            }
+        }
         if (!isZune)
             continue;
 
@@ -69,16 +77,12 @@ std::vector<DeviceDriverInfo> GetZuneDeviceDriverInfo()
                 sizeof(desc), nullptr))
             info.description = desc;
 
-        // VID / PID
-        if (strstr(hwId, "VID_045E&PID_0710"))
+        // VID / PID — scan multi-sz for the specific PID
+        info.vendorId = 0x045E;
+        info.productId = 0x063E;
+        for (const char* p = hwId; *p; p += strlen(p) + 1)
         {
-            info.vendorId  = 0x045E;
-            info.productId = 0x0710;
-        }
-        else
-        {
-            info.vendorId  = 0x045E;
-            info.productId = 0x063E;
+            if (strstr(p, "PID_0710")) { info.productId = 0x0710; break; }
         }
 
         // Driver status via SPDRP_SERVICE
