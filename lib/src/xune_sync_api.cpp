@@ -1054,6 +1054,69 @@ XUNE_SYNC_API int zune_mtp_get_object_references(
     }
 }
 
+XUNE_SYNC_API int zune_mtp_update_track_properties(
+    zune_device_handle_t handle,
+    uint32_t track_mtp_id,
+    const ZuneTrackProps* props
+) {
+    if (!handle || !props || track_mtp_id == 0) return -1;
+
+    try {
+        auto* device = static_cast<ZuneDevice*>(handle);
+        auto session = device->GetMtpSession();
+        if (!session) return -2;
+
+        zune::TrackProperties tp;
+        tp.filename     = props->filename ? props->filename : "";
+        tp.title        = props->title ? props->title : "";
+        tp.artist       = props->artist ? props->artist : "";
+        tp.genre        = props->genre ? props->genre : "";
+        tp.date_authored = props->date_authored ? props->date_authored : "";
+        tp.duration_ms   = props->duration_ms;
+        tp.track_number  = props->track_number;
+        tp.disc_number   = props->disc_number;
+        tp.artist_meta_id = props->artist_meta_id;
+        tp.is_hd         = props->is_hd;
+
+        zune::MtpWriter::UpdateTrackProperties(session, track_mtp_id, tp);
+        return 0;
+
+    } catch (const mtp::InvalidResponseException& e) {
+        return -static_cast<int>(e.Type);
+    } catch (const std::exception& e) {
+        return -1;
+    }
+}
+
+XUNE_SYNC_API int zune_mtp_update_album_properties(
+    zune_device_handle_t handle,
+    uint32_t album_mtp_id,
+    const ZuneAlbumProps* props
+) {
+    if (!handle || !props || album_mtp_id == 0) return -1;
+
+    try {
+        auto* device = static_cast<ZuneDevice*>(handle);
+        auto session = device->GetMtpSession();
+        if (!session) return -2;
+
+        zune::AlbumProperties ap;
+        ap.artist        = props->artist ? props->artist : "";
+        ap.album_name    = props->album_name ? props->album_name : "";
+        ap.date_authored = props->date_authored ? props->date_authored : "";
+        ap.artist_meta_id = props->artist_meta_id;
+        ap.is_hd         = props->is_hd;
+
+        zune::MtpWriter::UpdateAlbumProperties(session, album_mtp_id, ap);
+        return 0;
+
+    } catch (const mtp::InvalidResponseException& e) {
+        return -static_cast<int>(e.Type);
+    } catch (const std::exception& e) {
+        return -1;
+    }
+}
+
 XUNE_SYNC_API int zune_mtp_set_object_property_string(
     zune_device_handle_t handle,
     uint32_t object_id,
@@ -1074,6 +1137,8 @@ XUNE_SYNC_API int zune_mtp_set_object_property_string(
 
         return 0;
 
+    } catch (const mtp::InvalidResponseException& e) {
+        return -static_cast<int>(e.Type);
     } catch (const std::exception& e) {
         return -1;
     }
@@ -1099,6 +1164,8 @@ XUNE_SYNC_API int zune_mtp_set_object_property_int(
 
         return 0;
 
+    } catch (const mtp::InvalidResponseException& e) {
+        return -static_cast<int>(e.Type);
     } catch (const std::exception& e) {
         return -1;
     }

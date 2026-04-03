@@ -13,24 +13,24 @@ static constexpr const char* kFolderPlaylists = "Playlists";
 
 // ── Property List Writing Helpers ────────────────────────────────────────
 
-void MtpWriter::WritePropString(mtp::OutputStream& os, uint16_t prop, const std::string& value) {
-    os.Write32(0); os.Write16(prop); os.Write16(MtpType::String); os.WriteString(value);
+void MtpWriter::WritePropString(mtp::OutputStream& os, uint16_t prop, const std::string& value, uint32_t handle) {
+    os.Write32(handle); os.Write16(prop); os.Write16(MtpType::String); os.WriteString(value);
 }
 
-void MtpWriter::WritePropU8(mtp::OutputStream& os, uint16_t prop, uint8_t value) {
-    os.Write32(0); os.Write16(prop); os.Write16(MtpType::Uint8); os.Write8(value);
+void MtpWriter::WritePropU8(mtp::OutputStream& os, uint16_t prop, uint8_t value, uint32_t handle) {
+    os.Write32(handle); os.Write16(prop); os.Write16(MtpType::Uint8); os.Write8(value);
 }
 
-void MtpWriter::WritePropU16(mtp::OutputStream& os, uint16_t prop, uint16_t value) {
-    os.Write32(0); os.Write16(prop); os.Write16(MtpType::Uint16); os.Write16(value);
+void MtpWriter::WritePropU16(mtp::OutputStream& os, uint16_t prop, uint16_t value, uint32_t handle) {
+    os.Write32(handle); os.Write16(prop); os.Write16(MtpType::Uint16); os.Write16(value);
 }
 
-void MtpWriter::WritePropU32(mtp::OutputStream& os, uint16_t prop, uint32_t value) {
-    os.Write32(0); os.Write16(prop); os.Write16(MtpType::Uint32); os.Write32(value);
+void MtpWriter::WritePropU32(mtp::OutputStream& os, uint16_t prop, uint32_t value, uint32_t handle) {
+    os.Write32(handle); os.Write16(prop); os.Write16(MtpType::Uint32); os.Write32(value);
 }
 
-void MtpWriter::WritePropU128(mtp::OutputStream& os, uint16_t prop, const uint8_t* bytes, size_t len) {
-    os.Write32(0); os.Write16(prop); os.Write16(MtpType::Uint128);
+void MtpWriter::WritePropU128(mtp::OutputStream& os, uint16_t prop, const uint8_t* bytes, size_t len, uint32_t handle) {
+    os.Write32(handle); os.Write16(prop); os.Write16(MtpType::Uint128);
     for (size_t i = 0; i < len && i < 16; ++i) os.Write8(bytes[i]);
     for (size_t i = len; i < 16; ++i) os.Write8(0);
 }
@@ -276,6 +276,63 @@ uint32_t MtpWriter::CreateTrack(
         fileSize, propList);
 
     return resp.ObjectId.Id;
+}
+
+void MtpWriter::UpdateTrackProperties(
+    const SessionPtr& session, uint32_t trackMtpId,
+    const TrackProperties& props)
+{
+    // SetObjectPropList (0x9806) — same proplist format as creation but excludes
+    // AlbumName, AlbumArtist (album-level), and Rating (separate path).
+    // Property set and order matches Zune Desktop pcap captures.
+    uint32_t propCount = 11 + (props.is_hd ? 2 : 0);
+    auto h = trackMtpId;
+
+    mtp::ByteArray propList;
+    mtp::OutputStream os(propList);
+    os.Write32(propCount);
+
+    WritePropString(os, MtpProp::ObjectFileName, props.filename, h);
+    WritePropU8(os, MtpProp::ZuneCollectionId, 0, h);
+    WritePropU16(os, MtpProp::MetaGenre, 1, h);
+    WritePropU8(os, MtpProp::ZunePropDAB2, 0, h);
+    if (props.is_hd) {
+        WritePropU32(os, MtpProp::DiscNumber, props.disc_number > 0 ? props.disc_number : 1, h);
+        WritePropU32(os, MtpProp::ArtistId, props.artist_meta_id, h);
+    }
+    WritePropU16(os, MtpProp::DC9D, 0, h);
+    WritePropString(os, MtpProp::Name, props.title, h);
+    WritePropU32(os, MtpProp::Duration, props.duration_ms, h);
+    WritePropU16(os, MtpProp::Track, props.track_number, h);
+    WritePropString(os, MtpProp::Artist, props.artist, h);
+    WritePropString(os, MtpProp::Genre, props.genre.empty() ? "Unknown" : props.genre, h);
+    WritePropString(os, MtpProp::DateAuthored, props.date_authored, h);
+
+    session->SetObjectPropList(propList);
+}
+
+void MtpWriter::UpdateAlbumProperties(
+    const SessionPtr& session, uint32_t albumMtpId,
+    const AlbumProperties& props)
+{
+    // HD: Artist, DateAuthored, ZuneCollectionId, DAB9 (artist ref), Name
+    // Classic: Artist, ZuneCollectionId, Name
+    uint32_t propCount = props.is_hd ? 5 : 3;
+    auto h = albumMtpId;
+
+    mtp::ByteArray propList;
+    mtp::OutputStream os(propList);
+    os.Write32(propCount);
+
+    WritePropString(os, MtpProp::Artist, props.artist, h);
+    if (props.is_hd)
+        WritePropString(os, MtpProp::DateAuthored, props.date_authored, h);
+    WritePropU8(os, MtpProp::ZuneCollectionId, 0, h);
+    if (props.is_hd)
+        WritePropU32(os, MtpProp::ArtistId, props.artist_meta_id, h);
+    WritePropString(os, MtpProp::Name, props.album_name, h);
+
+    session->SetObjectPropList(propList);
 }
 
 void MtpWriter::UploadAudioData(const SessionPtr& session, const std::string& filePath) {

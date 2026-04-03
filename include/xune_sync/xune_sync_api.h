@@ -877,6 +877,29 @@ struct ZuneAlbumProps {
     bool is_hd;
 };
 
+// --- Property Updates ---
+
+/// Update track metadata via SetObjectPropList (0x9806).
+/// Sends all writable track properties in a single batch.
+/// @param track_mtp_id MTP object ID of the track to update
+/// @param props Track properties (album_name/album_artist/rating fields are ignored)
+/// @return 0 on success, negated MTP ResponseType on device error, -1 on other error
+XUNE_SYNC_API int zune_mtp_update_track_properties(
+    zune_device_handle_t handle,
+    uint32_t track_mtp_id,
+    const ZuneTrackProps* props
+);
+
+/// Update album metadata via SetObjectPropList (0x9806).
+/// @param album_mtp_id MTP object ID of the album to update
+/// @param props Album properties (artist, album_name, date_authored, artist_meta_id, is_hd)
+/// @return 0 on success, negated MTP ResponseType on device error, -1 on other error
+XUNE_SYNC_API int zune_mtp_update_album_properties(
+    zune_device_handle_t handle,
+    uint32_t album_mtp_id,
+    const ZuneAlbumProps* props
+);
+
 // --- Pre-Upload ---
 
 /// Discover root folder structure and create missing essential folders.

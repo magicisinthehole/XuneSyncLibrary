@@ -160,6 +160,14 @@ public:
     static void UploadAudioData(const SessionPtr& session, const std::string& filePath);
     static void VerifyTrack(const SessionPtr& session, uint32_t trackId);
 
+    // ── Property Updates (SetObjectPropList 0x9806) ───────────────
+    static void UpdateTrackProperties(
+        const SessionPtr& session, uint32_t trackMtpId,
+        const TrackProperties& props);
+    static void UpdateAlbumProperties(
+        const SessionPtr& session, uint32_t albumMtpId,
+        const AlbumProperties& props);
+
     // ── Album Metadata Operations ────────────────────────────────
     static uint32_t CreateAlbumMetadata(
         const SessionPtr& session, uint32_t storageId, uint32_t albumsFolderId,
@@ -208,12 +216,12 @@ public:
     static void QueryArtworkDescriptors(const SessionPtr& session);
 
 private:
-    // Property list writing helpers
-    static void WritePropString(mtp::OutputStream& os, uint16_t prop, const std::string& value);
-    static void WritePropU8(mtp::OutputStream& os, uint16_t prop, uint8_t value);
-    static void WritePropU16(mtp::OutputStream& os, uint16_t prop, uint16_t value);
-    static void WritePropU32(mtp::OutputStream& os, uint16_t prop, uint32_t value);
-    static void WritePropU128(mtp::OutputStream& os, uint16_t prop, const uint8_t* bytes, size_t len);
+    // Property list writing helpers — handle defaults to 0 for creation (SendObjPropList)
+    static void WritePropString(mtp::OutputStream& os, uint16_t prop, const std::string& value, uint32_t handle = 0);
+    static void WritePropU8(mtp::OutputStream& os, uint16_t prop, uint8_t value, uint32_t handle = 0);
+    static void WritePropU16(mtp::OutputStream& os, uint16_t prop, uint16_t value, uint32_t handle = 0);
+    static void WritePropU32(mtp::OutputStream& os, uint16_t prop, uint32_t value, uint32_t handle = 0);
+    static void WritePropU128(mtp::OutputStream& os, uint16_t prop, const uint8_t* bytes, size_t len, uint32_t handle = 0);
 
     // Batch format helpers
     static const uint16_t* GetBatchFormats(bool isHD);
