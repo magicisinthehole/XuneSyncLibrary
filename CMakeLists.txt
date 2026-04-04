@@ -265,6 +265,20 @@ if(WIN32)
     target_compile_definitions(xune_sync PRIVATE ZUNE_WIRELESS_EXPORTS)
 endif()
 
+# Hide all symbols by default — only XUNE_SYNC_API functions are exported.
+# C_VISIBILITY_PRESET hidden handles symbols from our own source files.
+# --exclude-libs,ALL handles symbols from statically linked archives (OpenSSL,
+# libusb, etc.) that would otherwise leak into the global table and crash when
+# the system loads its own version (e.g., libssl calling our EC_GROUP_order_bits).
+set_target_properties(xune_sync PROPERTIES
+    C_VISIBILITY_PRESET hidden
+    CXX_VISIBILITY_PRESET hidden
+    VISIBILITY_INLINES_HIDDEN ON
+)
+if(UNIX AND NOT APPLE)
+    target_link_options(xune_sync PRIVATE -Wl,--exclude-libs,ALL)
+endif()
+
 # Link libusb for Linux USB backend (static in Docker, dynamic for local dev)
 if(UNIX AND NOT APPLE)
     find_library(LIBUSB_STATIC NAMES libusb-1.0.a
