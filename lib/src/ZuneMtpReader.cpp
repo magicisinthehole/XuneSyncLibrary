@@ -2,6 +2,7 @@
 #include "zmdb/ZMDBParserFactory.h"
 #include <mtp/ptp/ObjectPropertyListParser.h>
 #include <mtp/ptp/ByteArrayObjectStream.h>
+#include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <iomanip>
@@ -73,7 +74,7 @@ int MtpReader::DownloadArtwork(
         if (artwork_data.size() < 4)
             return -1;
 
-        std::ofstream file(destination_path, std::ios::binary);
+        std::ofstream file(std::filesystem::u8path(destination_path), std::ios::binary);
         if (!file.is_open())
             return -1;
 
