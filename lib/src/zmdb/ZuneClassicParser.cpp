@@ -458,7 +458,6 @@ std::optional<ZMDBTrack> ZuneClassicParser::parse_music_track(
     */
     
     // Set defaults for fields not found in ZuneClassic track records
-    track.disc_number = 1;  // Default disc number
     track.skip_count = 0;
     track.last_played_timestamp = 0;
 

@@ -282,9 +282,10 @@ void MtpWriter::UpdateTrackProperties(
     const SessionPtr& session, uint32_t trackMtpId,
     const TrackProperties& props)
 {
-    // SetObjectPropList (0x9806) — same proplist format as creation but excludes
-    // AlbumName, AlbumArtist (album-level), and Rating (separate path).
-    // Property set and order matches Zune Desktop pcap captures.
+    // SetObjectPropList (0x9806). Track metadata updates use the generic
+    // per-track fields observed in the official software captures. Post-create
+    // album-title/album-artist edits are handled on album objects, not by
+    // rewriting track AlbumName/AlbumArtist on Classic.
     uint32_t propCount = 11 + (props.is_hd ? 2 : 0);
     auto h = trackMtpId;
 

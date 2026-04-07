@@ -45,7 +45,7 @@ struct ZMDBTrack {
     std::string album_artist_guid;  // Album artist GUID (optional)
     std::string genre;
     int track_number = 0;           // Track number (offset 24-25)
-    int disc_number = 0;            // Disc number (varint field 0x6c, default=1 if absent)
+    int disc_number = 1;            // Disc number (varint field 0x6c, default=1 if absent)
     int duration_ms = 0;            // Duration in milliseconds (offset 16-19)
     int file_size_bytes = 0;        // File size in bytes (offset 20-23)
     uint16_t playcount = 0;         // Play count (offset 26-27)
