@@ -746,6 +746,12 @@ target_include_directories(upload_test_cli PRIVATE ${XUNE_CORE_INCLUDES} ${TAGLI
 target_link_libraries(upload_test_cli ${XUNE_CORE_LIBS})
 xune_target_warnings(upload_test_cli)
 
+# Podcast Upload Test CLI
+add_executable(podcast_upload_test_cli tools/podcast_upload_test_cli.cpp ${XUNE_CORE_SOURCES})
+target_include_directories(podcast_upload_test_cli PRIVATE ${XUNE_CORE_INCLUDES})
+target_link_libraries(podcast_upload_test_cli ${XUNE_CORE_LIBS})
+xune_target_warnings(podcast_upload_test_cli)
+
 # XNA Deploy Test CLI
 add_executable(xna_deploy_test_cli tools/xna_deploy_test_cli.cpp)
 
