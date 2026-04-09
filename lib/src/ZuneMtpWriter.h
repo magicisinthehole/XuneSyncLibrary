@@ -52,6 +52,7 @@ struct TrackProperties {
     uint32_t duration_ms = 0;
     uint16_t track_number = 0;
     int rating = -1;             // -1 = omit, 0+ = include
+    int play_count = -1;         // -1 = omit, 0+ = UseCount (0xDC91) Uint32
     // HD-only
     uint32_t disc_number = 0;    // 0xDAB8 disc number (HD only, Uint32: 1=disc1, 2=disc2)
     uint32_t artist_meta_id = 0; // 0xDAB9 reference
@@ -121,6 +122,7 @@ namespace MtpProp {
     constexpr uint16_t Duration         = 0xDC89;
     constexpr uint16_t Rating           = 0xDC8A;
     constexpr uint16_t Track            = 0xDC8B;
+    constexpr uint16_t UseCount         = 0xDC91;
     constexpr uint16_t Genre            = 0xDC8C;
     constexpr uint16_t MetaGenre        = 0xDC95;
     constexpr uint16_t AlbumName        = 0xDC9A;

@@ -257,6 +257,7 @@ ZuneMusicLibrary* MtpReader::ReadMusicLibrary(
             result->tracks[i].skip_count = t.skip_count;
             result->tracks[i].codec_id = t.codec_id;
             result->tracks[i].rating = t.rating;
+            result->tracks[i].on_device_playcount = t.on_device_playcount;
             result->tracks[i].last_played_timestamp = t.last_played_timestamp;
         }
 

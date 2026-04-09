@@ -942,11 +942,30 @@ int ZuneDevice::SetTrackUserState(uint32_t zmdb_atom_id, int play_count, int ski
         ", rating=" + std::to_string(rating) + ")");
 
     if (play_count >= 0) {
-        Log("  [DISABLED] play_count update - pending protocol analysis");
+        try {
+            // UseCount (0xDC91) — Uint32, confirmed writable on both Classic and HD
+            mtp::ByteArray countData(4);
+            countData[0] = static_cast<uint8_t>(play_count & 0xFF);
+            countData[1] = static_cast<uint8_t>((play_count >> 8) & 0xFF);
+            countData[2] = static_cast<uint8_t>((play_count >> 16) & 0xFF);
+            countData[3] = static_cast<uint8_t>((play_count >> 24) & 0xFF);
+
+            mtp_session_->SetObjectProperty(
+                mtp::ObjectId(zmdb_atom_id),
+                mtp::ObjectProperty::UseCount,
+                countData
+            );
+            Log("  UseCount set to " + std::to_string(play_count));
+        } catch (const std::exception& e) {
+            Log("  UseCount update FAILED: " + std::string(e.what()));
+            return -4;
+        }
     }
 
     if (skip_count >= 0) {
-        Log("  [DISABLED] skip_count update - property not supported");
+        // SkipCount (0xDC92) is not supported by Zune devices — InvalidObjectPropCode
+        Log("  SkipCount write not supported by device firmware");
+        return -5;
     }
 
     if (rating >= 0) {

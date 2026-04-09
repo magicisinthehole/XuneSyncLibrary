@@ -245,7 +245,11 @@ std::optional<ZMDBTrack> ZuneHDParser::parse_music_track(
                         track.last_played_timestamp = read_uint64_le(field.field_data, 0);
                     }
                     break;
-                // 0x62 (redundant play count) intentionally skipped - we use offset 26-27
+                case 0x62:
+                    if (field.field_size >= 1 && field.field_size <= 4) {
+                        track.on_device_playcount = read_uint32_le(field.field_data, 0);
+                    }
+                    break;
                 default:
                     break;
             }

@@ -276,10 +276,8 @@ uint32_t MtpWriter::CreateTrack(
     const TrackProperties& props, uint16_t formatCode, uint64_t fileSize)
 {
     bool hasRating = (props.rating >= 0);
-    // Base: 13 (MetaGenre through Genre, minus DAB8/DAB9/Rating)
-    // HD adds: DAB8+DAB9 = +2
-    // Rating: +1 when present
-    uint32_t propCount = 13 + (props.is_hd ? 2 : 0) + (hasRating ? 1 : 0);
+    bool hasPlayCount = (props.play_count >= 0);
+    uint32_t propCount = 13 + (props.is_hd ? 2 : 0) + (hasRating ? 1 : 0) + (hasPlayCount ? 1 : 0);
 
     mtp::ByteArray propList;
     mtp::OutputStream os(propList);
@@ -303,6 +301,8 @@ uint32_t MtpWriter::CreateTrack(
     WritePropU32(os, MtpProp::Duration, props.duration_ms);
     if (hasRating)
         WritePropU16(os, MtpProp::Rating, static_cast<uint16_t>(props.rating));
+    if (hasPlayCount)
+        WritePropU32(os, MtpProp::UseCount, static_cast<uint32_t>(props.play_count));
     WritePropU16(os, MtpProp::Track, props.track_number);
     WritePropString(os, MtpProp::Genre, props.genre.empty() ? "Unknown" : props.genre);
 

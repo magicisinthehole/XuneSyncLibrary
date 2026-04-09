@@ -50,10 +50,11 @@ struct ZuneMusicTrack {
     uint32_t album_ref;     // References album atom_id for grouping
     uint32_t atom_id;
     uint32_t genre_ref;     // References genre atom_id
-    uint16_t playcount;     // Play count (offset 26-27)
-    uint16_t skip_count;    // Skip count (field 0x63)
+    uint16_t playcount;     // Total play count (MTP UseCount — offset 26 HD, byte 22 Classic)
+    uint16_t skip_count;    // Skip count (varint field 0x63)
     uint16_t codec_id;      // Format code: 0xb901=WMA, 0x3009=MP3
     uint8_t rating;         // Rating: 0=neutral, 8=liked, 2=disliked (offset 30)
+    uint32_t on_device_playcount; // On-device plays only (varint field 0x62)
     uint64_t last_played_timestamp; // Windows FILETIME of last play/skip event (field 0x70)
 };
 
@@ -283,23 +284,13 @@ XUNE_SYNC_API int zune_device_delete_playlist(
 );
 
 // Track User State (Play Count, Skip Count, Rating)
-// Sets track user state metadata via MTP SetObjectPropValue operations.
-// This updates the device's internal database (will be reflected in zmdb on next sync).
-//
-// Parameters:
-//   handle        - Device handle from zune_device_create()
-//   zmdb_atom_id  - The ZMDB atom_id of the track (from device library)
-//   play_count    - DISABLED: Not supported via MTP, needs pcap investigation (-1 to skip)
-//   skip_count    - DISABLED: Property not supported on Zune HD (-1 to skip)
-//   rating        - Rating value: 0=unrated, 8=liked, 2=disliked (-1 to skip)
-//
-// Returns: 0 on success, negative error code on failure
-//   -1: General MTP error
-//   -2: Device not connected
-//   -3: Invalid atom ID
-//
-// Note: Rating is implemented via MTP SetObjectProperty with UserRating (0xDC8A).
-// Play count and skip count are ignored pending protocol analysis.
+/// Set track user state metadata via MTP SetObjectPropValue.
+/// @param handle Device handle from zune_device_create()
+/// @param zmdb_atom_id ZMDB atom_id of the track
+/// @param play_count UseCount (0xDC91) value to write as Uint32, or -1 to skip
+/// @param skip_count Not writable — device does not support SkipCount (0xDC92). Pass -1.
+/// @param rating UserRating (0xDC8A) value (0=unrated, 8=liked, 2=disliked), or -1 to skip
+/// @return 0 on success, -2 not connected, -3 invalid atom_id, -4 UseCount write failed, -5 SkipCount not supported
 XUNE_SYNC_API int zune_device_set_track_user_state(
     zune_device_handle_t handle,
     uint32_t zmdb_atom_id,
@@ -869,6 +860,7 @@ struct ZuneTrackProps {
     uint32_t duration_ms;
     uint16_t track_number;
     int rating;                    ///< -1 = omit, 0+ = include as Uint16
+    int play_count;                ///< -1 = omit, 0+ = include as UseCount (0xDC91) Uint32
     uint32_t disc_number;          ///< 0xDAB8 disc number (HD only, Uint32: 1=disc1, 2=disc2)
     uint32_t artist_meta_id;       ///< 0xDAB9 artist metadata reference (HD only, 0 for Classic)
     bool is_hd;                    ///< true = HD (15-16 props), false = Classic (13-14 props)

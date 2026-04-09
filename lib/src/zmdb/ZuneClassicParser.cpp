@@ -289,65 +289,47 @@ std::optional<ZMDBTrack> ZuneClassicParser::parse_music_track(
     // Fixed fields occupy bytes 0-26, title starts at offset 28
     track.duration_ms = read_int32_le(record_data, 16);
 
-    // Bytes 20-23: track_number (byte 20) + metadata_count (byte 22)
-    track.track_number = record_data[20];  // Just byte 20, not uint32
-    uint8_t metadata_record_count = record_data[22];  // Number of 6-byte metadata records after title
+    // Byte 20: track number, byte 22: play count (MTP UseCount, uint8 mirror)
+    track.track_number = record_data[20];
+    track.playcount = record_data[22];
 
     track.codec_id = read_uint16_le(record_data, 24);
     track.rating = record_data[26];
-    track.file_size_bytes = 0;  // Not stored in ZuneClassic fixed fields
+    track.file_size_bytes = 0;
 
     // Read title at offset 28
     size_t title_end = 28;
     if (record_data.size() > 28) {
         track.title = read_null_terminated_utf8(record_data, 28);
-        title_end = 28 + track.title.length() + 1;  // +1 for null terminator
+        title_end = 28 + track.title.length() + 1;
     }
-    
-    // Initialize default values
-    track.playcount = 0;
+
     track.skip_count = 0;
-    
-    // Parse metadata records if present
-    if (metadata_record_count > 0 && title_end + (metadata_record_count * 6) <= record_data.size()) {
-        std::cout << "[ZuneClassicParser::parse_music_track] Track \"" << track.title 
-                  << "\" has " << (int)metadata_record_count << " metadata records" << std::endl;
-        
-        size_t metadata_offset = title_end;
-        for (uint8_t i = 0; i < metadata_record_count; i++) {
-            if (metadata_offset + 6 > record_data.size()) {
-                std::cout << "[ZuneClassicParser::parse_music_track] Insufficient data for metadata record " 
-                          << (int)i << std::endl;
+    track.on_device_playcount = 0;
+
+    // Parse trailing metadata records after the title null terminator
+    // 6-byte records: uint32_le value + uint8 marker(0x04) + uint8 type
+    // Type 0x62 = on-device play count, 0x63 = skip count
+    size_t metadata_offset = title_end;
+    while (metadata_offset + 6 <= record_data.size()) {
+        uint8_t marker = record_data[metadata_offset + 4];
+        uint8_t type = record_data[metadata_offset + 5];
+
+        if (marker != 0x04)
+            break;
+
+        uint32_t value = read_uint32_le(record_data, metadata_offset);
+
+        switch (type) {
+            case 0x62:
+                track.on_device_playcount = value;
                 break;
-            }
-            
-            // Each record is 6 bytes: 4-byte count + 0x04 + type byte
-            uint32_t count = read_uint32_le(record_data, metadata_offset);
-            uint8_t marker = record_data[metadata_offset + 4];  // Should be 0x04
-            uint8_t type = record_data[metadata_offset + 5];
-            
-            if (marker != 0x04) {
-                std::cout << "[ZuneClassicParser::parse_music_track] WARNING: Expected marker 0x04, got 0x" 
-                          << std::hex << (int)marker << std::dec << std::endl;
-            }
-            
-            switch (type) {
-                case 0x62:  // Play count
-                    track.playcount = count;
-                    std::cout << "[ZuneClassicParser::parse_music_track]   Play count: " << count << std::endl;
-                    break;
-                case 0x63:  // Skip count
-                    track.skip_count = count;
-                    std::cout << "[ZuneClassicParser::parse_music_track]   Skip count: " << count << std::endl;
-                    break;
-                default:
-                    std::cout << "[ZuneClassicParser::parse_music_track]   Unknown metadata type 0x" 
-                              << std::hex << (int)type << std::dec << " with value " << count << std::endl;
-                    break;
-            }
-            
-            metadata_offset += 6;
+            case 0x63:
+                track.skip_count = static_cast<uint16_t>(value);
+                break;
         }
+
+        metadata_offset += 6;
     }
 
     // Resolve references
