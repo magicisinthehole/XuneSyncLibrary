@@ -30,6 +30,8 @@ struct RootDiscoveryResult {
     uint32_t albums_folder = 0;
     uint32_t artists_folder = 0;
     uint32_t playlists_folder = 0;
+    uint32_t series_folder = 0;
+    uint32_t podcasts_folder = 0;
     uint32_t storage_id = 0;
     int root_object_count = 0;
 };
@@ -62,6 +64,27 @@ struct AlbumProperties {
     std::string date_authored;   // Format: "YYYYMMDDTHHMMSS.0" (HD only)
     uint32_t artist_meta_id = 0; // 0xDAB9 reference (HD only)
     bool is_hd = false;
+};
+
+struct PodcastSeriesProperties {
+    std::string name;
+    std::string artist;          // Podcast author
+    std::string feed_url;        // RSS feed URL (written as AUINT16)
+    std::string filename;        // e.g. "Series Name.ser"
+};
+
+struct PodcastEpisodeProperties {
+    std::string title;
+    std::string artist;          // Episode author
+    std::string series_name;     // Parent series name (0xDA9A)
+    std::string date_authored;   // Format: "YYYYMMDDTHHMMSS.0"
+    std::string description;     // Episode description (written as AUINT16)
+    std::string source_url;      // Episode download URL (written as AUINT16)
+    std::string filename;        // e.g. "Episode Title.mp3"
+    uint32_t duration_ms = 0;
+    uint32_t series_handle = 0;  // MTP handle of parent 0xBA0B object
+    uint16_t format_code = 0;    // MTP format: 0x3009 (MP3), 0xB981 (WMV), etc.
+    bool is_video = false;       // false=MetaGenre 64 (audio), true=MetaGenre 65 (video)
 };
 
 // ── Format Lists (from pcap) ─────────────────────────────────────────────
@@ -108,6 +131,15 @@ namespace MtpProp {
     constexpr uint16_t DiscNumber       = 0xDAB8;  // HD disc number (Uint32: 1, 2, ...)
     constexpr uint16_t ArtistId        = 0xDAB9;  // HD artist metadata reference
     constexpr uint16_t DA97             = 0xDA97;
+    // Podcast-specific properties
+    constexpr uint16_t SeriesName       = 0xDA9A;
+    constexpr uint16_t DA9B             = 0xDA9B;  // Always 0 on episodes
+    constexpr uint16_t IsPodcast        = 0xDA9C;  // UINT8, always 1 on series
+    constexpr uint16_t DA9D             = 0xDA9D;  // UINT32, always 1 on series
+    constexpr uint16_t SeriesHandle     = 0xDA9E;  // UINT32, parent series MTP handle
+    constexpr uint16_t Description      = 0xDC48;  // AUINT16, episode description
+    constexpr uint16_t SourceURL        = 0xDD60;  // AUINT16, feed URL (series) or episode URL
+    constexpr uint16_t DD62             = 0xDD62;  // UINT32, always 0 on episodes
 }
 
 namespace MtpFmt {
@@ -115,6 +147,7 @@ namespace MtpFmt {
     constexpr uint16_t JPEG             = 0x3801;
     constexpr uint16_t AbstractAlbum    = 0xBA03;
     constexpr uint16_t ArtistMeta       = 0xB218;
+    constexpr uint16_t PodcastSeries    = 0xBA0B;
 }
 
 namespace MtpType {
@@ -122,7 +155,14 @@ namespace MtpType {
     constexpr uint16_t Uint16  = 0x0004;
     constexpr uint16_t Uint32  = 0x0006;
     constexpr uint16_t Uint128 = 0x000A;
+    constexpr uint16_t Auint16 = 0x4004;  // Array of uint16 — UTF-16LE string encoding
     constexpr uint16_t String  = 0xFFFF;
+}
+
+namespace MetaGenre {
+    constexpr uint16_t Music        = 1;
+    constexpr uint16_t AudioPodcast = 64;
+    constexpr uint16_t VideoPodcast = 65;
 }
 
 // ── Upload Primitives Class ──────────────────────────────────────────────
@@ -186,6 +226,34 @@ public:
     // ── Finalization ─────────────────────────────────────────────
     static void RegisterTrackContext(const SessionPtr& session, const std::string& trackName);
 
+    // ── Podcast Operations ────────────────────────────────────────
+    // Create a podcast series (.ser object, format 0xBA0B) on the device.
+    // Returns new series MTP object handle, or 0 on failure.
+    static uint32_t CreatePodcastSeries(
+        const SessionPtr& session, uint32_t storageId, uint32_t seriesFolderId,
+        const PodcastSeriesProperties& props);
+
+    // Upload a podcast episode (MP3 or WMV) to the device.
+    // Returns new episode MTP object handle, or 0 on failure.
+    static uint32_t CreatePodcastEpisode(
+        const SessionPtr& session, uint32_t storageId, uint32_t episodeFolderId,
+        const PodcastEpisodeProperties& props, uint64_t fileSize);
+
+    // Set artwork on a podcast series object (same pattern as album artwork).
+    static void SetSeriesArtwork(
+        const SessionPtr& session, uint32_t seriesObjId,
+        const uint8_t* data, size_t size);
+
+    // Verification readback for a newly created series object.
+    static void VerifySeries(const SessionPtr& session, uint32_t seriesObjId);
+
+    // Query property descriptors for podcast series format (0xBA0B).
+    static void QuerySeriesDescriptors(const SessionPtr& session);
+
+    // Query property descriptors for podcast episode format (MP3 or WMV).
+    static void QueryEpisodeDescriptors(
+        const SessionPtr& session, uint16_t formatCode);
+
     // ── Playlist Operations ──────────────────────────────────────
     // Create a playlist (.pla object) on the device.
     // Returns new playlist MTP object ID, or 0 on failure.
@@ -222,6 +290,8 @@ private:
     static void WritePropU16(mtp::OutputStream& os, uint16_t prop, uint16_t value, uint32_t handle = 0);
     static void WritePropU32(mtp::OutputStream& os, uint16_t prop, uint32_t value, uint32_t handle = 0);
     static void WritePropU128(mtp::OutputStream& os, uint16_t prop, const uint8_t* bytes, size_t len, uint32_t handle = 0);
+    // Write a UTF-8 string as AUINT16 (array of uint16, UTF-16LE encoded)
+    static void WritePropAuint16String(mtp::OutputStream& os, uint16_t prop, const std::string& value, uint32_t handle = 0);
 
     // Batch format helpers
     static const uint16_t* GetBatchFormats(bool isHD);

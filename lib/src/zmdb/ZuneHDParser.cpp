@@ -515,9 +515,9 @@ std::optional<ZMDBPodcast> ZuneHDParser::parse_podcast_episode(
 
     // Read reference fields
     uint32_t show_name_ref = read_uint32_le(record_data, 0);
-    uint32_t podcast_show_ref = read_uint32_le(record_data, 4);
-    podcast.duration_ms = read_uint32_le(record_data, 8);  // Duration at ref2 position
-    podcast.ref3 = read_uint32_le(record_data, 12);  // Purpose unknown, might be file reference
+    podcast.podcast_show_ref = read_uint32_le(record_data, 4);
+    podcast.duration_ms = read_uint32_le(record_data, 8);
+    podcast.ref3 = read_uint32_le(record_data, 12);
 
     // Read fixed fields at offset 16+
     podcast.timestamp = read_uint64_le(record_data, 16);
@@ -1068,6 +1068,18 @@ void ZuneHDParser::extract_media_from_descriptor(
                         new (&library.playlists[library.playlist_count]) ZMDBPlaylist(std::move(playlist.value()));
                         library.playlist_count++;
                     }
+                }
+                break;
+            }
+
+            case Schema::PodcastShow:
+            {
+                if (record_data.size() > 8) {
+                    ZMDBPodcastShow show;
+                    show.atom_id = atom_id;
+                    show.name = read_null_terminated_utf8(record_data, 8);
+                    library.podcast_show_metadata[atom_id] = std::move(show);
+                    library.podcast_show_count++;
                 }
                 break;
             }

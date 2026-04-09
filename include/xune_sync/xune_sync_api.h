@@ -835,6 +835,8 @@ struct ZuneRootDiscovery {
     uint32_t albums_folder;    ///< Albums root folder handle (created if missing)
     uint32_t artists_folder;   ///< Artists root folder handle (HD: created if missing, Classic: always 0)
     uint32_t playlists_folder; ///< Playlists folder handle (created if missing)
+    uint32_t series_folder;    ///< Series root folder handle (for podcast .ser objects)
+    uint32_t podcasts_folder;  ///< Podcasts root folder handle (for episode subfolders)
     uint32_t storage_id;       ///< Default storage ID
     int root_object_count;     ///< Number of root objects found
 };
@@ -976,6 +978,59 @@ XUNE_SYNC_API int zune_upload_verify_album(
 /// Read album subset properties (grp=2, for existing albums)
 XUNE_SYNC_API int zune_upload_read_album_subset(
     zune_device_handle_t handle, uint32_t album_id);
+
+// --- Podcast Series ---
+
+/// Podcast series properties for creating a .ser metadata object
+struct ZunePodcastSeriesProps {
+    const char* name;            ///< Series title
+    const char* artist;          ///< Podcast author
+    const char* feed_url;        ///< RSS feed URL (written as AUINT16)
+    const char* filename;        ///< e.g. "Series Name.ser"
+};
+
+/// Podcast episode properties for upload
+struct ZunePodcastEpisodeProps {
+    const char* title;           ///< Episode title
+    const char* artist;          ///< Episode author
+    const char* series_name;     ///< Parent series name (0xDA9A)
+    const char* date_authored;   ///< Format: "YYYYMMDDTHHMMSS.0"
+    const char* description;     ///< Episode description (written as AUINT16)
+    const char* source_url;      ///< Episode download URL (written as AUINT16)
+    const char* filename;        ///< e.g. "Episode Title.mp3"
+    uint32_t duration_ms;
+    uint32_t series_handle;      ///< MTP handle of parent 0xBA0B series object
+    uint16_t format_code;        ///< MTP format: 0x3009 (MP3), 0xB981 (WMV), 0xB982 (MP4), etc.
+    uint8_t is_video;            ///< 0=MetaGenre 64 (audio), 1=MetaGenre 65 (video)
+};
+
+/// Create podcast series (.ser object, format 0xBA0B). Returns MTP handle or 0 on error.
+XUNE_SYNC_API uint32_t zune_upload_create_podcast_series(
+    zune_device_handle_t handle, uint32_t series_folder,
+    const ZunePodcastSeriesProps* props);
+
+/// Create podcast episode. Returns MTP handle or 0 on error.
+/// @param out_mtp_error If non-null, receives the MTP response code on failure (0 on success)
+XUNE_SYNC_API uint32_t zune_upload_create_podcast_episode(
+    zune_device_handle_t handle, uint32_t episode_folder,
+    const ZunePodcastEpisodeProps* props, uint64_t file_size,
+    uint16_t* out_mtp_error);
+
+/// Set artwork on a podcast series object (same pattern as album artwork)
+XUNE_SYNC_API int zune_upload_set_series_artwork(
+    zune_device_handle_t handle, uint32_t series_id,
+    const uint8_t* data, uint32_t size);
+
+/// Verify series (GetObjPropList ALL)
+XUNE_SYNC_API int zune_upload_verify_series(
+    zune_device_handle_t handle, uint32_t series_id);
+
+/// Query property descriptors for podcast series format (0xBA0B)
+XUNE_SYNC_API int zune_upload_query_series_descs(zune_device_handle_t handle);
+
+/// Query property descriptors for podcast episode format
+XUNE_SYNC_API int zune_upload_query_episode_descs(
+    zune_device_handle_t handle, uint16_t format_code);
 
 // --- Finalization ---
 

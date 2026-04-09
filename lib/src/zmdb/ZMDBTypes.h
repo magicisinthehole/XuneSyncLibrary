@@ -118,7 +118,13 @@ struct ZMDBPlaylist {
     uint32_t atom_id = 0;
 };
 
-// Podcast episode structure
+// Podcast show/series structure (Schema 0x0f)
+struct ZMDBPodcastShow {
+    std::string name;
+    uint32_t atom_id = 0;           // atom_id = MTP object handle of the .ser object
+};
+
+// Podcast episode structure (Schema 0x10)
 struct ZMDBPodcast {
     std::string title;
     std::string show_name;
@@ -126,6 +132,7 @@ struct ZMDBPodcast {
     std::string description;
     std::string audio_url;
     std::string rss_url;
+    uint32_t podcast_show_ref = 0;  // atom_id of parent PodcastShow (= series MTP handle)
     uint32_t ref3 = 0;              // Reference field at offset 12, purpose unknown
     int duration_ms = 0;
     uint64_t timestamp = 0;
@@ -173,6 +180,9 @@ struct ZMDBLibrary {
     // Genre metadata (kept as map for O(1) lookups during parsing)
     std::map<uint32_t, ZMDBGenre> genre_metadata;
 
+    // Podcast show metadata (atom_id = MTP handle of .ser object)
+    std::map<uint32_t, ZMDBPodcastShow> podcast_show_metadata;
+
     // Counts
     int album_count = 0;
     int track_count = 0;
@@ -180,6 +190,7 @@ struct ZMDBLibrary {
     int picture_count = 0;
     int playlist_count = 0;
     int podcast_count = 0;
+    int podcast_show_count = 0;
     int artist_count = 0;
     int genre_count = 0;
     int audiobook_count = 0;
@@ -248,12 +259,14 @@ struct ZMDBLibrary {
           album_metadata(std::move(other.album_metadata)),
           artist_metadata(std::move(other.artist_metadata)),
           genre_metadata(std::move(other.genre_metadata)),
+          podcast_show_metadata(std::move(other.podcast_show_metadata)),
           album_count(other.album_count),
           track_count(other.track_count),
           video_count(other.video_count),
           picture_count(other.picture_count),
           playlist_count(other.playlist_count),
           podcast_count(other.podcast_count),
+          podcast_show_count(other.podcast_show_count),
           artist_count(other.artist_count),
           genre_count(other.genre_count),
           audiobook_count(other.audiobook_count),
@@ -275,6 +288,7 @@ struct ZMDBLibrary {
         other.picture_count = 0;
         other.playlist_count = 0;
         other.podcast_count = 0;
+        other.podcast_show_count = 0;
         other.audiobook_count = 0;
         other.tracks_capacity = 0;
         other.videos_capacity = 0;

@@ -42,6 +42,7 @@
 
 #include "lib/src/ZuneDevice.h"
 #include "lib/src/ZuneDeviceIdentification.h"
+#include "lib/src/ZuneMtpWriter.h"
 #include <mtp/ptp/OutputStream.h>
 #include <mtp/ptp/ByteArrayObjectStream.h>
 #include <cli/PosixStreams.h>
@@ -50,55 +51,9 @@ namespace fs = std::filesystem;
 
 static bool g_verbose = false;
 
-// ── MTP Format & Property Codes ─────────────────────────────────────────
-
-static constexpr uint16_t FMT_FOLDER   = 0x3001;
-static constexpr uint16_t FMT_MP3      = 0x3009;
-static constexpr uint16_t FMT_JPEG     = 0x3801;
-static constexpr uint16_t FMT_WMV      = 0xB981;
-static constexpr uint16_t FMT_SERIES   = 0xBA0B;
-
-static constexpr uint16_t PROP_STORAGE_ID        = 0xDC01;
-static constexpr uint16_t PROP_OBJECT_FILENAME   = 0xDC07;
-static constexpr uint16_t PROP_PERSISTENT_UID    = 0xDC41;
-static constexpr uint16_t PROP_NAME              = 0xDC44;
-static constexpr uint16_t PROP_ARTIST            = 0xDC46;
-static constexpr uint16_t PROP_DATE_AUTHORED     = 0xDC47;
-static constexpr uint16_t PROP_DESCRIPTION       = 0xDC48;
-static constexpr uint16_t PROP_REP_SAMPLE_FORMAT = 0xDC81;
-static constexpr uint16_t PROP_REP_SAMPLE_DATA   = 0xDC86;
-static constexpr uint16_t PROP_DURATION           = 0xDC89;
-static constexpr uint16_t PROP_META_GENRE         = 0xDC95;
-static constexpr uint16_t PROP_SOURCE_URL         = 0xDD60;
-static constexpr uint16_t PROP_DD62               = 0xDD62;
-static constexpr uint16_t PROP_SERIES_NAME        = 0xDA9A;
-static constexpr uint16_t PROP_DA9B               = 0xDA9B;
-static constexpr uint16_t PROP_IS_PODCAST         = 0xDA9C;
-static constexpr uint16_t PROP_DA9D               = 0xDA9D;
-static constexpr uint16_t PROP_SERIES_HANDLE      = 0xDA9E;
-
-static constexpr uint16_t DT_UINT8   = 0x0002;
-static constexpr uint16_t DT_UINT16  = 0x0004;
-static constexpr uint16_t DT_UINT32  = 0x0006;
-static constexpr uint16_t DT_STRING  = 0xFFFF;
-static constexpr uint16_t DT_AUINT16 = 0x4004;
-
-static constexpr uint16_t META_GENRE_AUDIO_PODCAST = 64;
-static constexpr uint16_t META_GENRE_VIDEO_PODCAST = 65;
-
-// Classic: 17 formats for batch GetObjPropDesc queries
-static const uint16_t CLASSIC_FORMATS[] = {
-    0x3009, 0xB901, 0x300C, 0xB215, 0xB903, 0xB904, 0xB301,
-    0xB981, 0x3801, 0x3001, 0xBA03, 0xBA05, 0xB211, 0xB213,
-    0x3000, 0xB802, 0xBA0B,
-};
-
-// HD: 21 formats for batch GetObjPropDesc queries
-static const uint16_t HD_FORMATS[] = {
-    0x3009, 0xB901, 0x300C, 0xB215, 0xB903, 0xB904, 0xB301,
-    0xB216, 0xB982, 0xB981, 0x300A, 0x3801, 0x3001, 0xBA03,
-    0xBA05, 0xB211, 0x3000, 0xB802, 0xBA0B, 0xB218, 0xB217,
-};
+// Format codes for podcast episodes (caller-determined based on file type)
+static constexpr uint16_t FMT_MP3 = 0x3009;
+static constexpr uint16_t FMT_WMV = 0xB981;
 
 // ── Data Structures ─────────────────────────────────────────────────────
 
@@ -167,56 +122,6 @@ std::string format_size(uint64_t n) {
     else if (n >= 1'000) ss << n << "B (" << std::fixed << std::setprecision(1) << (n / 1'000.0) << "KB)";
     else ss << n << "B";
     return ss.str();
-}
-
-// ── Property List Helpers ───────────────────────────────────────────────
-
-void write_prop_string(mtp::OutputStream& os, uint16_t prop, const std::string& value) {
-    os.Write32(0); os.Write16(prop); os.Write16(DT_STRING); os.WriteString(value);
-}
-
-void write_prop_u8(mtp::OutputStream& os, uint16_t prop, uint8_t value) {
-    os.Write32(0); os.Write16(prop); os.Write16(DT_UINT8); os.Write8(value);
-}
-
-void write_prop_u16(mtp::OutputStream& os, uint16_t prop, uint16_t value) {
-    os.Write32(0); os.Write16(prop); os.Write16(DT_UINT16); os.Write16(value);
-}
-
-void write_prop_u32(mtp::OutputStream& os, uint16_t prop, uint32_t value) {
-    os.Write32(0); os.Write16(prop); os.Write16(DT_UINT32); os.Write32(value);
-}
-
-/// Write a string as AUINT16 (array of uint16) — used for SourceURL and Description
-void write_prop_auint16_string(mtp::OutputStream& os, uint16_t prop, const std::string& value) {
-    os.Write32(0);
-    os.Write16(prop);
-    os.Write16(DT_AUINT16);
-
-    // Convert UTF-8 to UTF-16LE code units
-    std::vector<uint16_t> utf16;
-    for (size_t i = 0; i < value.size(); ) {
-        uint8_t c0 = static_cast<uint8_t>(value[i++]);
-        uint16_t cp;
-        if (c0 < 0x80) {
-            cp = c0;
-        } else if (c0 < 0xE0 && i < value.size()) {
-            uint8_t c1 = static_cast<uint8_t>(value[i++]);
-            cp = ((c0 & 0x1F) << 6) | (c1 & 0x3F);
-        } else if (c0 < 0xF0 && i + 1 < value.size()) {
-            uint8_t c1 = static_cast<uint8_t>(value[i++]);
-            uint8_t c2 = static_cast<uint8_t>(value[i++]);
-            cp = ((c0 & 0x0F) << 12) | ((c1 & 0x3F) << 6) | (c2 & 0x3F);
-        } else {
-            cp = '?';
-            if (c0 >= 0xF0 && i + 2 < value.size()) { i += 3; }
-        }
-        utf16.push_back(cp);
-    }
-
-    os.Write32(static_cast<uint32_t>(utf16.size()));
-    for (auto u : utf16)
-        os.Write16(u);
 }
 
 // ── CURL Helpers ────────────────────────────────────────────────────────
@@ -335,9 +240,17 @@ std::string xml_text(const std::string& xml, const std::string& tag,
 
     std::string text = xml.substr(content_start, content_end - content_start);
 
+    // Trim leading whitespace before checking for CDATA
+    size_t first_non_ws = text.find_first_not_of(" \t\n\r");
+    if (first_non_ws != std::string::npos && first_non_ws > 0)
+        text = text.substr(first_non_ws);
+
     // Strip CDATA wrapper
     if (text.size() > 12 && text.substr(0, 9) == "<![CDATA[") {
-        text = text.substr(9, text.size() - 12);  // remove <![CDATA[ and ]]>
+        text = text.substr(9);
+        size_t cdata_end = text.rfind("]]>");
+        if (cdata_end != std::string::npos)
+            text = text.substr(0, cdata_end);
     }
     return text;
 }
@@ -570,11 +483,13 @@ std::string convert_to_wmv(const std::string& input_path, const std::string& out
         return output_path;
     }
 
-    // WMV9 encoding compatible with Zune Classic and HD
-    // 320x240 for Classic compatibility, 768kbps video, 128kbps WMA audio
+    // WMV encoding matching Zune Desktop ASF layout:
+    // Audio stream first (-map 0:a -map 0:v), 320x180, ≤30fps, 48kHz audio.
     std::string cmd = "ffmpeg -i \"" + input_path + "\" "
-        "-c:v wmv2 -b:v 768k -vf \"scale=320:240:force_original_aspect_ratio=decrease,pad=320:240:(ow-iw)/2:(oh-ih)/2\" "
-        "-c:a wmav2 -b:a 128k -ar 44100 -ac 2 "
+        "-map 0:a:0 -map 0:v:0 "
+        "-c:v wmv2 -b:v 736k -r 25 "
+        "-vf \"scale=320:180:force_original_aspect_ratio=decrease,pad=320:180:(ow-iw)/2:(oh-ih)/2\" "
+        "-c:a wmav2 -b:a 128k -ar 48000 -ac 2 "
         "-y \"" + output_path + "\" 2>&1";
 
     std::cout << "  Converting to WMV..." << std::endl;
@@ -591,194 +506,39 @@ std::string convert_to_wmv(const std::string& input_path, const std::string& out
     return output_path;
 }
 
-// ── MTP Helpers (adapted from upload_test_cli) ──────────────────────────
+// ── MTP Helpers ─────────────────────────────────────────────────────────
 
-void query_prop_desc_batch(
-    const std::shared_ptr<mtp::Session>& session,
-    uint16_t prop_code, const std::string& prop_name,
-    const uint16_t* formats, size_t count) {
-    log_op("GetObjPropDesc x" + std::to_string(count) + ": " + prop_name);
-    for (size_t i = 0; i < count; ++i) {
-        try {
-            session->GetObjectPropertyDesc(
-                mtp::ObjectProperty(prop_code), mtp::ObjectFormat(formats[i]));
-        } catch (const std::exception& e) {
-            if (g_verbose) log_warn("GetObjPropDesc " + prop_name +
-                " fmt=" + hex16(formats[i]) + ": " + e.what());
-        }
-    }
-}
-
-void root_re_enum(const std::shared_ptr<mtp::Session>& session) {
-    log_op("Root re-enumeration");
-    try {
-        session->GetObjectPropertyList(
-            mtp::Session::Device, mtp::ObjectFormat(0),
-            mtp::ObjectProperty(PROP_STORAGE_ID), 0, 1);
-    } catch (...) {}
-    try {
-        session->GetObjectPropertyList(
-            mtp::Session::Device, mtp::ObjectFormat(0),
-            mtp::ObjectProperty(PROP_OBJECT_FILENAME), 0, 1);
-    } catch (...) {}
-}
-
-void folder_readback(
-    const std::shared_ptr<mtp::Session>& session,
-    mtp::ObjectId folder_id, mtp::StorageId storage_id) {
-    try { session->GetObjectPropertyList(
-        folder_id, mtp::ObjectFormat(0),
-        mtp::ObjectProperty(PROP_PERSISTENT_UID), 0, 0); } catch (...) {}
-    try { session->GetObjectPropertyList(
-        folder_id, mtp::ObjectFormat(0),
-        mtp::ObjectProperty(0), 4, 0); } catch (...) {}
-    try { session->GetObjectHandles(
-        storage_id, mtp::ObjectFormat::Any, folder_id); } catch (...) {}
-}
-
-void first_folder_readback(
-    const std::shared_ptr<mtp::Session>& session,
-    mtp::ObjectId folder_id, mtp::StorageId storage_id,
-    const uint16_t* batch_formats, size_t batch_format_count) {
-    query_prop_desc_batch(session, PROP_PERSISTENT_UID, "PersistentUID",
-        batch_formats, batch_format_count);
-    try { session->GetObjectPropertyList(
-        folder_id, mtp::ObjectFormat(0),
-        mtp::ObjectProperty(PROP_PERSISTENT_UID), 0, 0); } catch (...) {}
-    query_prop_desc_batch(session, PROP_STORAGE_ID, "StorageID",
-        batch_formats, batch_format_count);
-    try { session->GetObjectPropertyList(
-        folder_id, mtp::ObjectFormat(0),
-        mtp::ObjectProperty(0), 4, 0); } catch (...) {}
-    try { session->GetObjectHandles(
-        storage_id, mtp::ObjectFormat::Any, folder_id); } catch (...) {}
-}
-
-mtp::ObjectId create_folder(
-    const std::shared_ptr<mtp::Session>& session,
-    mtp::StorageId storageId, mtp::ObjectId parent,
-    const std::string& name) {
-    log_op("SendObjPropList fmt=Folder — Create \"" + name + "\"");
-    mtp::ByteArray propList;
-    mtp::OutputStream os(propList);
-    os.Write32(1);
-    write_prop_string(os, PROP_OBJECT_FILENAME, name);
-
-    auto resp = session->SendObjectPropList(
-        storageId, parent, mtp::ObjectFormat::Association, 0, propList);
-    log_ok("Created \"" + name + "\" -> " + hex(resp.ObjectId.Id));
-    return resp.ObjectId;
-}
-
-/// Parse a property list response to extract child name → handle mappings
-std::map<std::string, mtp::ObjectId> parse_proplist_names(
-    const mtp::ByteArray& data, mtp::ObjectId exclude_id = mtp::ObjectId()) {
-    std::map<std::string, mtp::ObjectId> result;
-    if (data.size() < 4) return result;
-
-    uint32_t n = *reinterpret_cast<const uint32_t*>(data.data());
-    size_t off = 4;
-    for (uint32_t i = 0; i < n && off + 8 <= data.size(); ++i) {
-        uint32_t handle = *reinterpret_cast<const uint32_t*>(data.data() + off);
-        off += 4 + 2 + 2;  // handle, prop, type
-        std::string name;
-        if (off < data.size()) {
-            uint8_t nchars = data[off++];
-            if (nchars > 0 && off + nchars * 2 <= data.size()) {
-                for (uint8_t c = 0; c < nchars; ++c) {
-                    uint16_t ch = *reinterpret_cast<const uint16_t*>(data.data() + off + c * 2);
-                    if (ch == 0) break;
-                    // UTF-16 to UTF-8
-                    if (ch < 0x80) {
-                        name += static_cast<char>(ch);
-                    } else if (ch < 0x800) {
-                        name += static_cast<char>(0xC0 | (ch >> 6));
-                        name += static_cast<char>(0x80 | (ch & 0x3F));
-                    } else {
-                        name += static_cast<char>(0xE0 | (ch >> 12));
-                        name += static_cast<char>(0x80 | ((ch >> 6) & 0x3F));
-                        name += static_cast<char>(0x80 | (ch & 0x3F));
-                    }
-                }
-                off += nchars * 2;
-            }
-        }
-        if (!name.empty() && mtp::ObjectId(handle) != exclude_id)
-            result[name] = mtp::ObjectId(handle);
-    }
-    return result;
-}
-
-/// Discover children of a folder. Returns name → handle map.
-/// Pcap pattern: GetObjPropList filter=0x0002, GetObjectHandles, GetObjPropList group=56327
-std::map<std::string, mtp::ObjectId> discover_folder_children(
-    const std::shared_ptr<mtp::Session>& session,
-    mtp::StorageId storageId, mtp::ObjectId folder_id) {
-
-    // Read folder's own props (filter=0x0002)
-    try { session->GetObjectPropertyList(
-        folder_id, mtp::ObjectFormat(0),
-        mtp::ObjectProperty(0), 2, 0); } catch (...) {}
-
-    // Enumerate children handles
-    try { session->GetObjectHandles(
-        storageId, mtp::ObjectFormat::Any, folder_id); } catch (...) {}
-
-    // List children names: property=ObjectFileName, group=0, depth=1
-    // (same pattern as root_re_enum — depth=1 includes immediate children)
-    std::map<std::string, mtp::ObjectId> children;
-    try {
-        auto data = session->GetObjectPropertyList(
-            folder_id, mtp::ObjectFormat(0),
-            mtp::ObjectProperty(PROP_OBJECT_FILENAME), 0, 1);
-        children = parse_proplist_names(data, folder_id);
-    } catch (...) {}
-
-    log_ok("Discovered " + std::to_string(children.size()) + " children in " + hex(folder_id.Id));
-    return children;
-}
+using SessionPtr = std::shared_ptr<mtp::Session>;
 
 /// Read the SeriesHandle (0xDA9E) from an existing episode via GetObjectProperty.
 /// The .ser objects are not enumerable through GetObjectHandles (format 0xBA0B),
 /// so we discover the handle by reading it from an episode that references it.
-mtp::ObjectId find_series_handle_from_episode(
-    const std::shared_ptr<mtp::Session>& session,
-    mtp::StorageId storageId, mtp::ObjectId episode_folder) {
+uint32_t find_series_handle_from_episode(
+    const SessionPtr& session,
+    uint32_t storageId, uint32_t episode_folder_id) {
 
-    // Get child handles
     std::vector<mtp::ObjectId> handles;
     try {
-        auto result = session->GetObjectHandles(storageId, mtp::ObjectFormat::Any, episode_folder);
+        auto result = session->GetObjectHandles(
+            mtp::StorageId(storageId), mtp::ObjectFormat::Any, mtp::ObjectId(episode_folder_id));
         handles = result.ObjectHandles;
     } catch (...) {}
 
-    // Read SeriesHandle (0xDA9E) from the first child episode
     for (auto& h : handles) {
         try {
-            auto data = session->GetObjectProperty(h, mtp::ObjectProperty(PROP_SERIES_HANDLE));
+            auto data = session->GetObjectProperty(
+                h, mtp::ObjectProperty(zune::MtpProp::SeriesHandle));
             if (data.size() >= 4) {
                 uint32_t handle = *reinterpret_cast<const uint32_t*>(data.data());
                 if (handle != 0) {
                     log_ok("SeriesHandle from episode " + hex(h.Id) + " = " + hex(handle));
-                    return mtp::ObjectId(handle);
+                    return handle;
                 }
             }
         } catch (...) {}
     }
 
-    return mtp::ObjectId();
-}
-
-/// Match root folder names to handles from property list data
-std::map<std::string, mtp::ObjectId> parse_root_folders(
-    const std::shared_ptr<mtp::Session>& session) {
-    try {
-        auto data = session->GetObjectPropertyList(
-            mtp::Session::Device, mtp::ObjectFormat(0),
-            mtp::ObjectProperty(PROP_OBJECT_FILENAME), 0, 1);
-        return parse_proplist_names(data);
-    } catch (...) {}
-    return {};
+    return 0;
 }
 
 // ── Main ────────────────────────────────────────────────────────────────
@@ -1014,12 +774,9 @@ int main(int argc, char* argv[]) {
 
     auto start_time = std::chrono::steady_clock::now();
     uint32_t storage_raw = device.GetDefaultStorageId();
-    mtp::StorageId storageId(storage_raw);
 
     auto family = device.GetDeviceFamily();
     bool is_hd = (family == zune::DeviceFamily::Pavo);
-    const uint16_t* batch_formats = is_hd ? HD_FORMATS : CLASSIC_FORMATS;
-    size_t batch_format_count = is_hd ? std::size(HD_FORMATS) : std::size(CLASSIC_FORMATS);
 
     std::cout << "  Device: " << device.GetName()
               << " (" << device.GetDeviceFamilyName() << ")"
@@ -1043,292 +800,211 @@ int main(int argc, char* argv[]) {
 
     log_op("SetSessionGUID — done during ConnectUSB");
 
-    if (is_hd) {
-        log_op("GetObjectHandles root");
-        try { session->GetObjectHandles(storageId, mtp::ObjectFormat::Any, mtp::Session::Root); }
-        catch (...) {}
-    }
-
-    // Discover existing root folders
-    root_re_enum(session);
-    auto root_folders = parse_root_folders(session);
-    for (auto& [name, id] : root_folders)
-        log_ok("Root folder: " + name + " = " + hex(id.Id));
+    // Discover root folders via MtpWriter
+    log_op("DiscoverRoot");
+    auto root = zune::MtpWriter::DiscoverRoot(session, storage_raw, is_hd);
+    if (root.series_folder) log_ok("Series folder: " + hex(root.series_folder));
+    if (root.podcasts_folder) log_ok("Podcasts folder: " + hex(root.podcasts_folder));
 
     bool first_folder_created = false;
 
-    // Detect existing state. Pcap shows three scenarios:
+    // Detect existing state:
     //   1. Nothing exists → full fresh (create Series/, .ser, Podcasts/<series>/)
     //   2. Subfolder exists, no .ser → create .ser + artwork, reuse subfolder
     //   3. Both exist → pure addition (RegisterTrackCtx → upload)
-    mtp::ObjectId series_folder, podcasts_folder, episode_folder, series_obj_id;
+    uint32_t series_folder_id = root.series_folder;
+    uint32_t podcasts_folder_id = root.podcasts_folder;
+    uint32_t episode_folder_id = 0;
+    uint32_t series_obj_id = 0;
     bool episode_folder_exists = false;
     bool series_obj_exists = false;
 
-    auto podcasts_it = root_folders.find("Podcasts");
-    if (podcasts_it != root_folders.end()) {
-        podcasts_folder = podcasts_it->second;
-
-        auto podcasts_children = discover_folder_children(session, storageId, podcasts_folder);
-        auto ep_it = podcasts_children.find(feed.title);
-        if (ep_it != podcasts_children.end()) {
-            episode_folder_exists = true;
-            episode_folder = ep_it->second;
-            log_ok("Existing episode folder: " + hex(episode_folder.Id));
+    if (podcasts_folder_id != 0) {
+        auto podcasts_children = zune::MtpWriter::DiscoverFolderChildren(
+            session, storage_raw, podcasts_folder_id);
+        log_ok("Podcasts has " + std::to_string(podcasts_children.size()) + " children");
+        for (auto& child : podcasts_children) {
+            if (g_verbose) log_ok("  Child: \"" + child.name + "\" = " + hex(child.handle));
+            if (child.name == feed.title) {
+                episode_folder_exists = true;
+                episode_folder_id = child.handle;
+                log_ok("Existing episode folder: " + hex(episode_folder_id));
+                break;
+            }
         }
     }
 
-    // If the episode folder exists and has children, read the SeriesHandle
-    // from an existing episode. The .ser objects are NOT enumerable through
-    // GetObjectHandles (format 0xBA0B) — the Zune software caches the handle.
+    // .ser objects are NOT enumerable — read SeriesHandle from an existing episode
     if (episode_folder_exists) {
         series_obj_id = find_series_handle_from_episode(
-            session, storageId, episode_folder);
-        if (series_obj_id != mtp::ObjectId())
+            session, storage_raw, episode_folder_id);
+        if (series_obj_id != 0)
             series_obj_exists = true;
     }
-
-    auto series_root_it = root_folders.find("Series");
-    if (series_root_it != root_folders.end())
-        series_folder = series_root_it->second;
 
     if (episode_folder_exists && series_obj_exists) {
         // ═══════════════════════════════════════════════════════════════
         // Pure Addition (pcap steps 56-67): both .ser and subfolder exist
-        //   RegisterTrackCtx → root re-enum → discover subfolder → upload
         // ═══════════════════════════════════════════════════════════════
 
         log_phase("Addition Mode — Series Already on Device");
 
         log_op("RegisterTrackCtx (0x922A) — \"" + feed.title + "\"");
-        try { session->Operation922a(feed.title); log_ok("Registered"); }
-        catch (const std::exception& e) { log_warn("RegisterTrackCtx: " + std::string(e.what())); }
+        zune::MtpWriter::RegisterTrackContext(session, feed.title);
+        log_ok("Registered");
 
-        root_re_enum(session);
+        zune::MtpWriter::RootReEnum(session);
 
-        // Discover existing episodes in subfolder
-        auto ep_children = discover_folder_children(session, storageId, episode_folder);
+        zune::MtpWriter::DiscoverFolderChildren(session, storage_raw, episode_folder_id);
 
     } else {
         // ═══════════════════════════════════════════════════════════════
         // Fresh Flow: first upload for this series (pcap-verified)
-        //
-        // Order: folder discovery → create Series folder → create series
-        //        object → artwork → RegisterTrackCtx → create Podcasts
-        //        folder → create per-series subfolder
         // ═══════════════════════════════════════════════════════════════
 
         log_phase("Fresh Upload — Creating Series");
 
-        log_op("GetObjPropsSupported(Folder) + GetObjPropDesc(ObjectFileName, Folder)");
-        try { session->GetObjectPropertiesSupported(mtp::ObjectFormat(FMT_FOLDER)); } catch (...) {}
-        try { session->GetObjectPropertyDesc(
-            mtp::ObjectProperty(PROP_OBJECT_FILENAME), mtp::ObjectFormat(FMT_FOLDER)); } catch (...) {}
+        zune::MtpWriter::QueryFolderDescriptors(session);
 
         // Create "Series" root folder if needed
-        auto it = root_folders.find("Series");
-        if (it != root_folders.end()) {
-            series_folder = it->second;
-            log_ok("Series folder exists: " + hex(series_folder.Id));
+        if (series_folder_id != 0) {
+            log_ok("Series folder exists: " + hex(series_folder_id));
         } else {
-            series_folder = create_folder(session, storageId, mtp::Session::Root, "Series");
-            first_folder_readback(session, series_folder, storageId,
-                batch_formats, batch_format_count);
+            series_folder_id = zune::MtpWriter::CreateFolder(
+                session, storage_raw, 0, "Series");
+            log_ok("Created Series folder: " + hex(series_folder_id));
+            zune::MtpWriter::FirstFolderReadback(
+                session, series_folder_id, storage_raw, is_hd);
             first_folder_created = true;
         }
 
-        try { session->GetObjectHandles(storageId, mtp::ObjectFormat::Any, series_folder); } catch (...) {}
+        try { session->GetObjectHandles(
+            mtp::StorageId(storage_raw), mtp::ObjectFormat::Any,
+            mtp::ObjectId(series_folder_id)); } catch (...) {}
 
-        // GetObjPropDesc for Series format (0xBA0B)
-        {
-            const uint16_t series_desc_props[] = {
-                PROP_IS_PODCAST, PROP_DA9D, PROP_ARTIST,
-                PROP_OBJECT_FILENAME, PROP_SOURCE_URL, PROP_NAME,
-            };
-            log_op("GetObjPropDesc x6 for Series (0xBA0B)");
-            for (auto p : series_desc_props) {
-                try { session->GetObjectPropertyDesc(
-                    mtp::ObjectProperty(p), mtp::ObjectFormat(FMT_SERIES)); } catch (...) {}
-            }
-        }
+        // Query property descriptors for Series format (0xBA0B)
+        log_op("QuerySeriesDescriptors");
+        zune::MtpWriter::QuerySeriesDescriptors(session);
 
-        // Create series metadata object
-        std::string series_filename = feed.title + ".ser";
-        log_op("SendObjPropList fmt=Series \"" + series_filename + "\"");
-        {
-            mtp::ByteArray propList;
-            mtp::OutputStream os(propList);
-            os.Write32(6);
-            write_prop_u8(os, PROP_IS_PODCAST, 1);
-            write_prop_u32(os, PROP_DA9D, 1);
-            write_prop_string(os, PROP_ARTIST, feed.author);
-            write_prop_string(os, PROP_OBJECT_FILENAME, series_filename);
-            write_prop_auint16_string(os, PROP_SOURCE_URL, feed.feed_url);
-            write_prop_string(os, PROP_NAME, feed.title);
+        // Create series metadata object via MtpWriter
+        zune::PodcastSeriesProperties series_props;
+        series_props.name = feed.title;
+        series_props.artist = feed.author;
+        series_props.feed_url = feed.feed_url;
+        series_props.filename = feed.title + ".ser";
 
-            auto resp = session->SendObjectPropList(
-                storageId, series_folder, mtp::ObjectFormat(FMT_SERIES), 0, propList);
-            series_obj_id = resp.ObjectId;
-        }
+        log_op("CreatePodcastSeries \"" + series_props.filename + "\"");
+        series_obj_id = zune::MtpWriter::CreatePodcastSeries(
+            session, storage_raw, series_folder_id, series_props);
+        log_ok("Series created: " + hex(series_obj_id));
 
-        {
-            mtp::ByteArray empty;
-            session->SendObject(std::make_shared<mtp::ByteArrayObjectInputStream>(empty));
-        }
-        log_ok("Series created: " + hex(series_obj_id.Id));
-
-        log_op("GetObjPropList ALL series props");
-        try {
-            session->GetObjectPropertyList(
-                series_obj_id, mtp::ObjectFormat(0),
-                mtp::ObjectProperty(0xFFFFFFFF), 0, 0);
-        } catch (...) {}
-
-        // Series artwork
+        // Series artwork via MtpWriter
         if (!artwork.empty()) {
-            log_op("GetObjPropValue RepSampleData (current)");
-            try { session->GetObjectProperty(
-                series_obj_id, mtp::ObjectProperty(PROP_REP_SAMPLE_DATA)); } catch (...) {}
-
-            log_op("SetObjPropValue RepSampleData (" + std::to_string(artwork.size()) + " bytes)");
+            log_op("SetSeriesArtwork (" + std::to_string(artwork.size()) + " bytes)");
             try {
-                mtp::ByteArray art_data(artwork.begin(), artwork.end());
-                session->SetObjectPropertyAsArray(
-                    series_obj_id, mtp::ObjectProperty(PROP_REP_SAMPLE_DATA), art_data);
+                zune::MtpWriter::SetSeriesArtwork(
+                    session, series_obj_id, artwork.data(), artwork.size());
                 log_ok("Artwork set");
             } catch (const std::exception& e) {
                 log_warn("Artwork failed: " + std::string(e.what()));
             }
-
-            log_op("SetObjPropValue RepSampleFormat = JPEG");
-            try {
-                mtp::ByteArray fmt_val;
-                mtp::OutputStream fmt_os(fmt_val);
-                fmt_os.Write16(FMT_JPEG);
-                session->SetObjectProperty(
-                    series_obj_id, mtp::ObjectProperty(PROP_REP_SAMPLE_FORMAT), fmt_val);
-            } catch (...) {}
         }
 
         // RegisterTrackCtx (between series creation and episode folder)
         log_op("RegisterTrackCtx (0x922A) — \"" + feed.title + "\"");
-        try { session->Operation922a(feed.title); log_ok("Registered"); }
-        catch (const std::exception& e) { log_warn("RegisterTrackCtx: " + std::string(e.what())); }
+        zune::MtpWriter::RegisterTrackContext(session, feed.title);
+        log_ok("Registered");
 
         // Re-enumerate root after Series creation
-        root_re_enum(session);
-        root_folders = parse_root_folders(session);
+        zune::MtpWriter::RootReEnum(session);
 
         // Create "Podcasts" root folder if needed
-        it = root_folders.find("Podcasts");
-        if (it != root_folders.end()) {
-            podcasts_folder = it->second;
-            log_ok("Podcasts folder exists: " + hex(podcasts_folder.Id));
-        } else {
-            podcasts_folder = create_folder(session, storageId, mtp::Session::Root, "Podcasts");
+        if (podcasts_folder_id == 0) {
+            // Re-discover after root re-enum to pick up newly created folders
+            auto updated_root = zune::MtpWriter::DiscoverRoot(session, storage_raw, is_hd);
+            podcasts_folder_id = updated_root.podcasts_folder;
+        }
+        if (podcasts_folder_id == 0) {
+            podcasts_folder_id = zune::MtpWriter::CreateFolder(
+                session, storage_raw, 0, "Podcasts");
+            log_ok("Created Podcasts folder: " + hex(podcasts_folder_id));
             if (!first_folder_created) {
-                first_folder_readback(session, podcasts_folder, storageId,
-                    batch_formats, batch_format_count);
+                zune::MtpWriter::FirstFolderReadback(
+                    session, podcasts_folder_id, storage_raw, is_hd);
                 first_folder_created = true;
             } else {
-                folder_readback(session, podcasts_folder, storageId);
+                zune::MtpWriter::FolderReadback(
+                    session, podcasts_folder_id, storage_raw);
             }
+        } else {
+            log_ok("Podcasts folder exists: " + hex(podcasts_folder_id));
         }
 
         // Discover or create per-series subfolder under Podcasts
-        // Pcap (steps 28-29): discovers existing subfolder and reuses it
         if (episode_folder_exists) {
-            log_ok("Reusing existing episode folder: " + hex(episode_folder.Id));
-            auto ep_children = discover_folder_children(session, storageId, episode_folder);
+            log_ok("Reusing existing episode folder: " + hex(episode_folder_id));
+            zune::MtpWriter::DiscoverFolderChildren(session, storage_raw, episode_folder_id);
         } else {
-            episode_folder = create_folder(session, storageId, podcasts_folder, feed.title);
-            folder_readback(session, episode_folder, storageId);
+            episode_folder_id = zune::MtpWriter::CreateFolder(
+                session, storage_raw, podcasts_folder_id, feed.title);
+            log_ok("Created episode folder: " + hex(episode_folder_id));
+            zune::MtpWriter::FolderReadback(session, episode_folder_id, storage_raw);
         }
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    // Phase 8: Upload Episodes (pcap Phase 6)
+    // Phase 8: Upload Episodes
     // ═══════════════════════════════════════════════════════════════════
 
     log_phase("Upload Episodes");
 
     bool episode_desc_done = false;
-    std::vector<std::pair<std::string, mtp::ObjectId>> uploaded;
+    std::vector<std::pair<std::string, uint32_t>> uploaded;
 
     for (size_t ei = 0; ei < selected.size(); ++ei) {
         auto& ep = *selected[ei];
-        uint16_t meta_genre = ep.is_video ? META_GENRE_VIDEO_PODCAST : META_GENRE_AUDIO_PODCAST;
-        uint16_t fmt = ep.format_code;
 
         log_phase("Episode " + std::to_string(ei + 1) + "/" +
                   std::to_string(selected.size()) + ": " + ep.title);
 
         // Episode property descriptors (first episode per format only)
         if (!episode_desc_done) {
-            const uint16_t episode_desc_props[] = {
-                PROP_SOURCE_URL, PROP_OBJECT_FILENAME, PROP_DD62,
-                PROP_SERIES_NAME, PROP_DA9B, PROP_META_GENRE,
-                PROP_SERIES_HANDLE, PROP_NAME, PROP_DURATION,
-                PROP_ARTIST, PROP_DATE_AUTHORED, PROP_DESCRIPTION,
-            };
-            log_op("GetObjPropDesc x12 for " + std::string(ep.is_video ? "WMV" : "MP3"));
-            for (auto p : episode_desc_props) {
-                try { session->GetObjectPropertyDesc(
-                    mtp::ObjectProperty(p), mtp::ObjectFormat(fmt)); } catch (...) {}
-            }
+            log_op("QueryEpisodeDescriptors for fmt=" + hex16(ep.format_code));
+            zune::MtpWriter::QueryEpisodeDescriptors(session, ep.format_code);
             episode_desc_done = true;
         }
 
-        // Build episode property list (12 properties — pcap-verified order)
-        log_op("SendObjPropList fmt=" + hex16(fmt) + " \"" + ep.filename +
+        // Build episode properties and create via MtpWriter
+        zune::PodcastEpisodeProperties ep_props;
+        ep_props.title = ep.title;
+        ep_props.artist = feed.author;
+        ep_props.series_name = feed.title;
+        ep_props.date_authored = ep.date_authored;
+        ep_props.description = ep.description;
+        ep_props.source_url = ep.url;
+        ep_props.filename = ep.filename;
+        ep_props.duration_ms = ep.duration_ms;
+        ep_props.series_handle = series_obj_id;
+        ep_props.format_code = ep.format_code;
+        ep_props.is_video = ep.is_video;
+
+        log_op("CreatePodcastEpisode \"" + ep.filename +
                "\" (" + format_size(ep.file_size) + ")");
-
-        mtp::ObjectId episode_id;
-        {
-            mtp::ByteArray propList;
-            mtp::OutputStream os(propList);
-            os.Write32(12);
-
-            write_prop_auint16_string(os, PROP_SOURCE_URL, ep.url);
-            write_prop_string(os, PROP_OBJECT_FILENAME, ep.filename);
-            write_prop_u32(os, PROP_DD62, 0);
-            write_prop_string(os, PROP_SERIES_NAME, feed.title);
-            write_prop_u8(os, PROP_DA9B, 0);
-            write_prop_u16(os, PROP_META_GENRE, meta_genre);
-            write_prop_u32(os, PROP_SERIES_HANDLE, series_obj_id.Id);
-            write_prop_string(os, PROP_NAME, ep.title);
-            write_prop_u32(os, PROP_DURATION, ep.duration_ms);
-            write_prop_string(os, PROP_ARTIST, feed.author);
-            write_prop_string(os, PROP_DATE_AUTHORED, ep.date_authored);
-            write_prop_auint16_string(os, PROP_DESCRIPTION, ep.description);
-
-            auto resp = session->SendObjectPropList(
-                storageId, episode_folder, mtp::ObjectFormat(fmt),
-                ep.file_size, propList);
-            episode_id = resp.ObjectId;
-        }
-        log_ok("Episode object created: " + hex(episode_id.Id));
+        uint32_t episode_id = zune::MtpWriter::CreatePodcastEpisode(
+            session, storage_raw, episode_folder_id, ep_props, ep.file_size);
+        log_ok("Episode object created: " + hex(episode_id));
 
         // SendObject (episode file data)
         log_op("SendObject — " + format_size(ep.file_size));
-        {
-            auto file_stream = std::make_shared<cli::ObjectInputStream>(ep.local_path);
-            file_stream->SetTotal(file_stream->GetSize());
-            session->SendObject(file_stream);
-        }
+        zune::MtpWriter::UploadAudioData(session, ep.local_path);
         log_ok("Episode data uploaded");
 
         // Post-upload verification
-        log_op("GetObjPropList ALL episode props (verification)");
-        try {
-            auto props = session->GetObjectPropertyList(
-                episode_id, mtp::ObjectFormat(0),
-                mtp::ObjectProperty(0xFFFFFFFF), 0, 0);
-            log_ok("Episode props: " + std::to_string(props.size()) + " bytes");
-        } catch (...) {}
+        log_op("VerifyTrack (readback)");
+        zune::MtpWriter::VerifyTrack(session, episode_id);
 
         log_op("GetObjReferences");
-        try { session->GetObjectReferences(episode_id); } catch (...) {}
+        try { session->GetObjectReferences(mtp::ObjectId(episode_id)); } catch (...) {}
 
         uploaded.emplace_back(ep.title, episode_id);
     }
@@ -1364,13 +1040,13 @@ int main(int argc, char* argv[]) {
     std::cout << "╚══════════════════════════════════════════════════════════╝" << std::endl;
     std::cout << std::endl;
     std::cout << "  Device:   " << device.GetName() << " (" << device.GetDeviceFamilyName() << ")" << std::endl;
-    std::cout << "  Series:   " << feed.title << " (" + hex(series_obj_id.Id) << ")" << std::endl;
+    std::cout << "  Series:   " << feed.title << " (" + hex(series_obj_id) << ")" << std::endl;
     std::cout << "  Episodes: " << uploaded.size() << std::endl;
     std::cout << "  Elapsed:  " << elapsed_ms << " ms" << std::endl;
     std::cout << std::endl;
 
     for (auto& [title, id] : uploaded) {
-        std::cout << "  " << title << "  episode=" << hex(id.Id) << std::endl;
+        std::cout << "  " << title << "  episode=" << hex(id) << std::endl;
     }
 
     // Cleanup

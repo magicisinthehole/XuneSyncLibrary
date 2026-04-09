@@ -10,6 +10,8 @@ static constexpr const char* kFolderMusic     = "Music";
 static constexpr const char* kFolderAlbums    = "Albums";
 static constexpr const char* kFolderArtists   = "Artists";
 static constexpr const char* kFolderPlaylists = "Playlists";
+static constexpr const char* kFolderSeries    = "Series";
+static constexpr const char* kFolderPodcasts  = "Podcasts";
 
 // ── Property List Writing Helpers ────────────────────────────────────────
 
@@ -33,6 +35,39 @@ void MtpWriter::WritePropU128(mtp::OutputStream& os, uint16_t prop, const uint8_
     os.Write32(handle); os.Write16(prop); os.Write16(MtpType::Uint128);
     for (size_t i = 0; i < len && i < 16; ++i) os.Write8(bytes[i]);
     for (size_t i = len; i < 16; ++i) os.Write8(0);
+}
+
+void MtpWriter::WritePropAuint16String(mtp::OutputStream& os, uint16_t prop, const std::string& value, uint32_t handle) {
+    os.Write32(handle);
+    os.Write16(prop);
+    os.Write16(MtpType::Auint16);
+
+    // UTF-8 to UTF-16LE conversion
+    std::vector<uint16_t> utf16;
+    utf16.reserve(value.size());
+    for (size_t i = 0; i < value.size(); ) {
+        uint8_t c0 = static_cast<uint8_t>(value[i++]);
+        uint16_t cp;
+        if (c0 < 0x80) {
+            cp = c0;
+        } else if (c0 < 0xE0 && i < value.size()) {
+            uint8_t c1 = static_cast<uint8_t>(value[i++]);
+            cp = ((c0 & 0x1F) << 6) | (c1 & 0x3F);
+        } else if (c0 < 0xF0 && i + 1 < value.size()) {
+            uint8_t c1 = static_cast<uint8_t>(value[i++]);
+            uint8_t c2 = static_cast<uint8_t>(value[i++]);
+            cp = ((c0 & 0x0F) << 12) | ((c1 & 0x3F) << 6) | (c2 & 0x3F);
+        } else {
+            // 4-byte sequences (outside BMP) — substitute
+            cp = '?';
+            if (c0 >= 0xF0 && i + 2 < value.size()) i += 3;
+        }
+        utf16.push_back(cp);
+    }
+
+    os.Write32(static_cast<uint32_t>(utf16.size()));
+    for (auto u : utf16)
+        os.Write16(u);
 }
 
 const uint16_t* MtpWriter::GetBatchFormats(bool isHD) {
@@ -74,6 +109,8 @@ RootDiscoveryResult MtpWriter::DiscoverRoot(const SessionPtr& session, uint32_t 
                 else if (name == kFolderAlbums) result.albums_folder = handle;
                 else if (name == kFolderArtists) result.artists_folder = handle;
                 else if (name == kFolderPlaylists) result.playlists_folder = handle;
+                else if (name == kFolderSeries) result.series_folder = handle;
+                else if (name == kFolderPodcasts) result.podcasts_folder = handle;
             }
         } catch (...) {}
     }
@@ -564,7 +601,16 @@ std::vector<std::pair<uint32_t, std::string>> MtpWriter::ParsePropertyListNames(
                     uint16_t ch;
                     std::memcpy(&ch, data.data() + off + c * 2, sizeof(ch));
                     if (ch == 0) break;
-                    if (ch < 128) name += static_cast<char>(ch);
+                    if (ch < 0x80) {
+                        name += static_cast<char>(ch);
+                    } else if (ch < 0x800) {
+                        name += static_cast<char>(0xC0 | (ch >> 6));
+                        name += static_cast<char>(0x80 | (ch & 0x3F));
+                    } else {
+                        name += static_cast<char>(0xE0 | (ch >> 12));
+                        name += static_cast<char>(0x80 | ((ch >> 6) & 0x3F));
+                        name += static_cast<char>(0x80 | (ch & 0x3F));
+                    }
                 }
                 off += nchars * 2;
             }
@@ -572,6 +618,127 @@ std::vector<std::pair<uint32_t, std::string>> MtpWriter::ParsePropertyListNames(
         entries.emplace_back(handle, std::move(name));
     }
     return entries;
+}
+
+// ── Podcast Operations ──────────────────────────────────────────────────
+
+uint32_t MtpWriter::CreatePodcastSeries(
+    const SessionPtr& session, uint32_t storageId, uint32_t seriesFolderId,
+    const PodcastSeriesProperties& props)
+{
+    // 6 properties: IsPodcast, DA9D, Artist, ObjectFileName, SourceURL, Name
+    mtp::ByteArray propList;
+    mtp::OutputStream os(propList);
+    os.Write32(6);
+
+    WritePropU8(os, MtpProp::IsPodcast, 1);
+    WritePropU32(os, MtpProp::DA9D, 1);
+    WritePropString(os, MtpProp::Artist, props.artist);
+    WritePropString(os, MtpProp::ObjectFileName, props.filename);
+    WritePropAuint16String(os, MtpProp::SourceURL, props.feed_url);
+    WritePropString(os, MtpProp::Name, props.name);
+
+    auto resp = session->SendObjectPropList(
+        mtp::StorageId(storageId),
+        mtp::ObjectId(seriesFolderId),
+        mtp::ObjectFormat(MtpFmt::PodcastSeries), 0, propList);
+
+    // Empty SendObject (series is metadata-only)
+    mtp::ByteArray empty;
+    session->SendObject(std::make_shared<mtp::ByteArrayObjectInputStream>(empty));
+
+    // Verification readback
+    try { session->GetObjectPropertyList(
+        resp.ObjectId, mtp::ObjectFormat(0),
+        mtp::ObjectProperty(0xFFFFFFFF), 0, 0); } catch (...) {}
+
+    return resp.ObjectId.Id;
+}
+
+uint32_t MtpWriter::CreatePodcastEpisode(
+    const SessionPtr& session, uint32_t storageId, uint32_t episodeFolderId,
+    const PodcastEpisodeProperties& props, uint64_t fileSize)
+{
+    // 12 properties matching pcap order
+    mtp::ByteArray propList;
+    mtp::OutputStream os(propList);
+    os.Write32(12);
+
+    WritePropAuint16String(os, MtpProp::SourceURL, props.source_url);
+    WritePropString(os, MtpProp::ObjectFileName, props.filename);
+    WritePropU32(os, MtpProp::DD62, 0);
+    WritePropString(os, MtpProp::SeriesName, props.series_name);
+    WritePropU8(os, MtpProp::DA9B, 0);
+    WritePropU16(os, MtpProp::MetaGenre,
+        props.is_video ? MetaGenre::VideoPodcast : MetaGenre::AudioPodcast);
+    WritePropU32(os, MtpProp::SeriesHandle, props.series_handle);
+    WritePropString(os, MtpProp::Name, props.title);
+    WritePropU32(os, MtpProp::Duration, props.duration_ms);
+    WritePropString(os, MtpProp::Artist, props.artist);
+    WritePropString(os, MtpProp::DateAuthored, props.date_authored);
+    WritePropAuint16String(os, MtpProp::Description, props.description);
+
+    auto resp = session->SendObjectPropList(
+        mtp::StorageId(storageId),
+        mtp::ObjectId(episodeFolderId),
+        static_cast<mtp::ObjectFormat>(props.format_code),
+        fileSize, propList);
+
+    return resp.ObjectId.Id;
+}
+
+void MtpWriter::SetSeriesArtwork(
+    const SessionPtr& session, uint32_t seriesObjId,
+    const uint8_t* data, size_t size)
+{
+    auto obj = mtp::ObjectId(seriesObjId);
+
+    // Read current artwork value
+    try { session->GetObjectProperty(obj, mtp::ObjectProperty(MtpProp::RepSampleData)); } catch (...) {}
+
+    // Set artwork
+    mtp::ByteArray artData(data, data + size);
+    session->SetObjectPropertyAsArray(obj, mtp::ObjectProperty(MtpProp::RepSampleData), artData);
+
+    // Set format to JPEG
+    mtp::ByteArray fmtVal;
+    mtp::OutputStream fmtOs(fmtVal);
+    fmtOs.Write16(MtpFmt::JPEG);
+    session->SetObjectProperty(obj, mtp::ObjectProperty(MtpProp::RepSampleFormat), fmtVal);
+}
+
+void MtpWriter::VerifySeries(const SessionPtr& session, uint32_t seriesObjId) {
+    try { session->GetObjectPropertyList(
+        mtp::ObjectId(seriesObjId), mtp::ObjectFormat(0),
+        mtp::ObjectProperty(0xFFFFFFFF), 0, 0); } catch (...) {}
+}
+
+void MtpWriter::QuerySeriesDescriptors(const SessionPtr& session) {
+    // 5 properties observed in pcap for format 0xBA0B
+    auto fmt = mtp::ObjectFormat(MtpFmt::PodcastSeries);
+    const uint16_t props[] = {
+        MtpProp::IsPodcast, MtpProp::DA9D, MtpProp::Artist,
+        MtpProp::ObjectFileName, MtpProp::SourceURL,
+    };
+    for (auto p : props) {
+        try { session->GetObjectPropertyDesc(mtp::ObjectProperty(p), fmt); } catch (...) {}
+    }
+}
+
+void MtpWriter::QueryEpisodeDescriptors(
+    const SessionPtr& session, uint16_t formatCode)
+{
+    // 12 properties observed in pcap for MP3/WMV podcast episodes
+    auto fmt = mtp::ObjectFormat(formatCode);
+    const uint16_t props[] = {
+        MtpProp::SourceURL, MtpProp::ObjectFileName, MtpProp::DD62,
+        MtpProp::SeriesName, MtpProp::DA9B, MtpProp::MetaGenre,
+        MtpProp::SeriesHandle, MtpProp::Name, MtpProp::Duration,
+        MtpProp::Artist, MtpProp::DateAuthored, MtpProp::Description,
+    };
+    for (auto p : props) {
+        try { session->GetObjectPropertyDesc(mtp::ObjectProperty(p), fmt); } catch (...) {}
+    }
 }
 
 // ── Playlist Operations ──────────────────────────────────────────────────

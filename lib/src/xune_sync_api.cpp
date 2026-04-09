@@ -1426,6 +1426,8 @@ XUNE_SYNC_API ZuneRootDiscovery zune_upload_discover_root(zune_device_handle_t h
         result.albums_folder = r.albums_folder;
         result.artists_folder = r.artists_folder;
         result.playlists_folder = r.playlists_folder;
+        result.series_folder = r.series_folder;
+        result.podcasts_folder = r.podcasts_folder;
         result.storage_id = r.storage_id;
         result.root_object_count = r.root_object_count;
     } catch (...) {}
@@ -1625,6 +1627,88 @@ XUNE_SYNC_API int zune_upload_read_album_subset(
             mtp::ObjectProperty(0), 2, 0);
         return 0;
     } catch (...) { return -1; }
+}
+
+// --- Podcast Series ---
+
+XUNE_SYNC_API uint32_t zune_upload_create_podcast_series(
+    zune_device_handle_t handle, uint32_t series_folder,
+    const ZunePodcastSeriesProps* props)
+{
+    UPLOAD_SESSION_GUARD_VAL(handle, 0);
+    if (!props) return 0;
+    try {
+        zune::PodcastSeriesProperties sp;
+        sp.name = props->name ? props->name : "";
+        sp.artist = props->artist ? props->artist : "";
+        sp.feed_url = props->feed_url ? props->feed_url : "";
+        sp.filename = props->filename ? props->filename : "";
+        return zune::MtpWriter::CreatePodcastSeries(
+            _session, _device->GetDefaultStorageId(), series_folder, sp);
+    } catch (...) { return 0; }
+}
+
+XUNE_SYNC_API uint32_t zune_upload_create_podcast_episode(
+    zune_device_handle_t handle, uint32_t episode_folder,
+    const ZunePodcastEpisodeProps* props, uint64_t file_size,
+    uint16_t* out_mtp_error)
+{
+    UPLOAD_SESSION_GUARD_VAL(handle, 0);
+    if (!props) return 0;
+    if (out_mtp_error) *out_mtp_error = 0;
+    try {
+        zune::PodcastEpisodeProperties ep;
+        ep.title = props->title ? props->title : "";
+        ep.artist = props->artist ? props->artist : "";
+        ep.series_name = props->series_name ? props->series_name : "";
+        ep.date_authored = props->date_authored ? props->date_authored : "";
+        ep.description = props->description ? props->description : "";
+        ep.source_url = props->source_url ? props->source_url : "";
+        ep.filename = props->filename ? props->filename : "";
+        ep.duration_ms = props->duration_ms;
+        ep.series_handle = props->series_handle;
+        ep.format_code = props->format_code;
+        ep.is_video = props->is_video != 0;
+        return zune::MtpWriter::CreatePodcastEpisode(
+            _session, _device->GetDefaultStorageId(), episode_folder, ep, file_size);
+    } catch (const mtp::InvalidResponseException& ex) {
+        if (out_mtp_error) *out_mtp_error = static_cast<uint16_t>(ex.Type);
+        return 0;
+    } catch (...) { return 0; }
+}
+
+XUNE_SYNC_API int zune_upload_set_series_artwork(
+    zune_device_handle_t handle, uint32_t series_id,
+    const uint8_t* data, uint32_t size)
+{
+    UPLOAD_SESSION_GUARD(handle);
+    if (!data || size == 0) return 0;
+    try {
+        zune::MtpWriter::SetSeriesArtwork(_session, series_id, data, size);
+        return 0;
+    } catch (...) { return -1; }
+}
+
+XUNE_SYNC_API int zune_upload_verify_series(
+    zune_device_handle_t handle, uint32_t series_id)
+{
+    UPLOAD_SESSION_GUARD(handle);
+    try { zune::MtpWriter::VerifySeries(_session, series_id); return 0; }
+    catch (...) { return -1; }
+}
+
+XUNE_SYNC_API int zune_upload_query_series_descs(zune_device_handle_t handle) {
+    UPLOAD_SESSION_GUARD(handle);
+    try { zune::MtpWriter::QuerySeriesDescriptors(_session); return 0; }
+    catch (...) { return -1; }
+}
+
+XUNE_SYNC_API int zune_upload_query_episode_descs(
+    zune_device_handle_t handle, uint16_t format_code)
+{
+    UPLOAD_SESSION_GUARD(handle);
+    try { zune::MtpWriter::QueryEpisodeDescriptors(_session, format_code); return 0; }
+    catch (...) { return -1; }
 }
 
 // --- Finalization ---
