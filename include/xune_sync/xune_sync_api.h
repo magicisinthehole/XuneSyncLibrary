@@ -117,6 +117,10 @@ struct ZunePlaylistInfo {
     uint32_t MtpObjectId;
 };
 
+// Returns the error message from the most recent failed API call on this thread.
+// The returned pointer is valid until the next API call on this thread.
+XUNE_SYNC_API const char* zune_get_last_error();
+
 // API functions
 XUNE_SYNC_API zune_device_handle_t zune_device_create();
 XUNE_SYNC_API void zune_device_destroy(zune_device_handle_t handle);

@@ -29,8 +29,13 @@
 #endif
 
 static std::unique_ptr<ssdp::SSDPDiscovery> g_discovery;
+static thread_local std::string g_last_error;
 
 extern "C" {
+
+XUNE_SYNC_API const char* zune_get_last_error() {
+    return g_last_error.c_str();
+}
 
 XUNE_SYNC_API zune_device_handle_t zune_device_create() {
     return new ZuneDevice();
@@ -988,6 +993,7 @@ XUNE_SYNC_API int zune_mtp_send_object_from_file(
 
         return 0;
     } catch (const std::exception& e) {
+        g_last_error = e.what();
         return -1;
     }
 }
