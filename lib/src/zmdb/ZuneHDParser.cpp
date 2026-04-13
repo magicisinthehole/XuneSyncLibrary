@@ -93,9 +93,19 @@ ZMDBLibrary ZuneHDParser::ExtractLibrary(const std::vector<uint8_t>& zmdb_data) 
         library.pictures_capacity = descriptors_[16].entry_count;
         library.pictures = static_cast<ZMDBPicture*>(::operator new[](library.pictures_capacity * sizeof(ZMDBPicture)));
     }
-    if (descriptors_.size() > 19 && descriptors_[19].entry_count > 0) {
-        library.podcasts_capacity = descriptors_[19].entry_count;
-        library.podcasts = static_cast<ZMDBPodcast*>(::operator new[](library.podcasts_capacity * sizeof(ZMDBPodcast)));
+    // Audio episodes (descriptor 19) plus video-podcast records promoted
+    // out of Schema 0x02 (descriptor 12). Over-allocates by the number of
+    // non-podcast videos in descriptor 12; cheap and avoids a pre-pass.
+    if (descriptors_.size() > 19) {
+        size_t audio_episodes = descriptors_[19].entry_count;
+        size_t potential_video_podcasts =
+            (descriptors_.size() > 12) ? descriptors_[12].entry_count : 0;
+        library.podcasts_capacity =
+            static_cast<int>(audio_episodes + potential_video_podcasts);
+        if (library.podcasts_capacity > 0) {
+            library.podcasts = static_cast<ZMDBPodcast*>(::operator new[](
+                library.podcasts_capacity * sizeof(ZMDBPodcast)));
+        }
     }
     if (descriptors_.size() > 26 && descriptors_[26].entry_count > 0) {
         library.audiobooks_capacity = descriptors_[26].entry_count;
@@ -131,6 +141,12 @@ ZMDBLibrary ZuneHDParser::ExtractLibrary(const std::vector<uint8_t>& zmdb_data) 
         extract_media_from_descriptor(19, Schema::PodcastEpisode, library); // Podcast episodes
     } catch (const std::exception& e) {
         throw std::runtime_error(std::string("Podcast parsing failed: ") + e.what());
+    }
+
+    try {
+        extract_media_from_descriptor(20, Schema::PodcastShow, library); // Podcast shows
+    } catch (const std::exception& e) {
+        throw std::runtime_error(std::string("PodcastShow parsing failed: ") + e.what());
     }
 
     try {
@@ -510,115 +526,161 @@ std::optional<ZMDBPodcast> ZuneHDParser::parse_podcast_episode(
     const std::vector<uint8_t>& record_data,
     uint32_t atom_id
 ) {
-    if (record_data.size() < 32) {
+    // HD audio podcast episode (Schema 0x10) — 36-byte fixed header.
+    //   +0x00 u32  filename_ref       Schema 0x05 (per-series subfolder)
+    //   +0x04 u32  podcast_show_ref   Schema 0x0f
+    //   +0x08 u32  duration_ms
+    //   +0x0c u32  bookmark_ms
+    //   +0x10 u64  publish_date       Windows FILETIME
+    //   +0x18 u32  file_size_bytes    HD-only field; Classic omits it
+    //   +0x1c u16  reserved
+    //   +0x1e u16  codec_id           0x3009 = MP3
+    //   +0x20 u32  played_flag        bit 0x200 = marked played
+    //   +0x24      UTF-8 title (NUL-terminated), then variable section
+    if (record_data.size() < 0x24) {
         return std::nullopt;
     }
 
     ZMDBPodcast podcast;
-    podcast.atom_id = atom_id;
+    podcast.media_type       = PodcastMediaType::Audio;
+    podcast.atom_id          = atom_id;
+    podcast.filename_ref     = read_uint32_le(record_data, 0x00);
+    podcast.podcast_show_ref = read_uint32_le(record_data, 0x04);
+    podcast.duration_ms      = read_uint32_le(record_data, 0x08);
+    podcast.bookmark_ms      = read_uint32_le(record_data, 0x0c);
+    podcast.publish_date     = read_uint64_le(record_data, 0x10);
+    podcast.file_size_bytes  = read_uint32_le(record_data, 0x18);
+    podcast.codec_id         = read_uint16_le(record_data, 0x1e);
+    podcast.played_flag      = read_uint32_le(record_data, 0x20);
 
-    // Read reference fields
-    uint32_t show_name_ref = read_uint32_le(record_data, 0);
-    podcast.podcast_show_ref = read_uint32_le(record_data, 4);
-    podcast.duration_ms = read_uint32_le(record_data, 8);
-    podcast.ref3 = read_uint32_le(record_data, 12);
-
-    // Read fixed fields at offset 16+
-    podcast.timestamp = read_uint64_le(record_data, 16);
-    podcast.file_size_bytes = read_uint32_le(record_data, 24);
-    podcast.codec_id = read_uint16_le(record_data, 30);
-
-    // Parse strings starting at offset 36
-    if (record_data.size() > 36) {
-        size_t pos = 36;
-
-        // Episode title (UTF-8)
-        size_t null_pos = pos;
-        while (null_pos < record_data.size() && record_data[null_pos] != 0) {
-            null_pos++;
-        }
-
-        if (null_pos > pos) {
-            podcast.title = std::string(
-                reinterpret_cast<const char*>(&record_data[pos]),
-                null_pos - pos
-            );
-            pos = null_pos + 1;
-        }
-
-        // Author/email (UTF-16LE)
-        if (pos + 1 < record_data.size() && record_data[pos] != 0 && record_data[pos + 1] == 0) {
-            size_t author_end = pos;
-            while (author_end + 1 < record_data.size()) {
-                if (record_data[author_end] == 0 && record_data[author_end + 1] == 0) {
-                    break;
-                }
-                author_end += 2;
-            }
-
-            if (author_end > pos + 4) {
-                podcast.author = utf16le_to_utf8(std::vector<uint8_t>(
-                    record_data.begin() + pos,
-                    record_data.begin() + author_end
-                ));
-                pos = author_end + 2;
-            }
-        }
-
-        // Description (UTF-16LE after marker)
-        if (pos + 10 < record_data.size()) {
-            // Find marker
-            size_t marker_pos = pos;
-            while (marker_pos + 3 < record_data.size() && record_data[marker_pos] != 0) {
-                marker_pos++;
-                if (marker_pos - pos > 10) break;
-            }
-
-            if (marker_pos > pos && marker_pos + 1 < record_data.size()) {
-                pos = marker_pos - 1;
-
-                size_t desc_end = pos;
-                while (desc_end + 1 < record_data.size() - 100) {
-                    if (record_data[desc_end] == 0 && record_data[desc_end + 1] == 0) {
-                        break;
-                    }
-                    desc_end += 2;
-                }
-
-                if (desc_end > pos + 10) {
-                    podcast.description = utf16le_to_utf8(std::vector<uint8_t>(
-                        record_data.begin() + pos,
-                        record_data.begin() + desc_end
-                    ));
-                }
-            }
-        }
-    }
-
-    // Resolve references
-    if (show_name_ref != 0) {
-        podcast.show_name = resolve_string_reference(show_name_ref);
-    }
-
-    // Parse audio URL from backwards varints
-    size_t entry_size = get_entry_size_for_schema(Schema::PodcastEpisode);
-    if (entry_size > 0) {
-        auto fields = parse_backwards_varints(record_data, entry_size);
-        for (const auto& field : fields) {
-            if (field.field_size > 100) {
-                // URL in UTF-16LE with marker + padding bytes
-                if (field.field_size > 2) {
-                    podcast.audio_url = utf16le_to_utf8(std::vector<uint8_t>(
-                        field.field_data.begin() + 1,
-                        field.field_data.end() - 1
-                    ));
-                }
+    podcast.title = read_null_terminated_utf8(record_data, 0x24);
+    size_t variable_start = 0x24 + podcast.title.size() + 1;
+    auto fields = parse_backwards_varints(record_data, variable_start);
+    for (const auto& field : fields) {
+        switch (field.field_id) {
+            case PodcastFieldId::Author:
+                podcast.author = utf16le_to_utf8(field.field_data);
                 break;
-            }
+            case PodcastFieldId::Description:
+                podcast.description = utf16le_to_utf8(field.field_data);
+                break;
+            case PodcastFieldId::Url:
+                podcast.episode_url = utf16le_to_utf8(field.field_data);
+                break;
         }
+    }
+
+    if (podcast.podcast_show_ref != 0) {
+        podcast.show_name = resolve_string_reference(podcast.podcast_show_ref);
+    }
+    if (podcast.filename_ref != 0) {
+        podcast.folder_name = resolve_string_reference(podcast.filename_ref);
     }
 
     return podcast;
+}
+
+std::optional<ZMDBPodcast> ZuneHDParser::parse_video_podcast_episode(
+    const std::vector<uint8_t>& record_data,
+    uint32_t atom_id
+) {
+    // HD video podcast episode (Schema 0x02 with non-zero show_ref) —
+    // 44-byte fixed header. file_size and codec slots flip relative to the
+    // audio episode header:
+    //   +0x00 u32  filename_ref
+    //   +0x04 u32  reserved
+    //   +0x08 u32  podcast_show_ref
+    //   +0x0c u32  duration_ms
+    //   +0x10 u32  bookmark_ms
+    //   +0x14 u32  reserved
+    //   +0x18 u64  publish_date
+    //   +0x20 u32  file_size_bytes    HD-only
+    //   +0x24 u16  codec_id           0xB981 = WMV
+    //   +0x26 u16  reserved
+    //   +0x28 u32  played_flag
+    //   +0x2c      UTF-8 title (NUL-terminated), then variable section
+    if (record_data.size() < 0x2c) {
+        return std::nullopt;
+    }
+
+    ZMDBPodcast podcast;
+    podcast.media_type       = PodcastMediaType::Video;
+    podcast.atom_id          = atom_id;
+    podcast.filename_ref     = read_uint32_le(record_data, 0x00);
+    podcast.podcast_show_ref = read_uint32_le(record_data, 0x08);
+    podcast.duration_ms      = read_uint32_le(record_data, 0x0c);
+    podcast.bookmark_ms      = read_uint32_le(record_data, 0x10);
+    podcast.publish_date     = read_uint64_le(record_data, 0x18);
+    podcast.file_size_bytes  = read_uint32_le(record_data, 0x20);
+    podcast.codec_id         = read_uint16_le(record_data, 0x24);
+    podcast.played_flag      = read_uint32_le(record_data, 0x28);
+
+    podcast.title = read_null_terminated_utf8(record_data, 0x2c);
+    size_t variable_start = 0x2c + podcast.title.size() + 1;
+    auto fields = parse_backwards_varints(record_data, variable_start);
+    for (const auto& field : fields) {
+        switch (field.field_id) {
+            case PodcastFieldId::Filename:
+                podcast.episode_filename = utf16le_to_utf8(field.field_data);
+                break;
+            case PodcastFieldId::Author:
+                podcast.author = utf16le_to_utf8(field.field_data);
+                break;
+            case PodcastFieldId::Description:
+                podcast.description = utf16le_to_utf8(field.field_data);
+                break;
+            case PodcastFieldId::Url:
+                podcast.episode_url = utf16le_to_utf8(field.field_data);
+                break;
+        }
+    }
+
+    if (podcast.podcast_show_ref != 0) {
+        podcast.show_name = resolve_string_reference(podcast.podcast_show_ref);
+    }
+    if (podcast.filename_ref != 0) {
+        podcast.folder_name = resolve_string_reference(podcast.filename_ref);
+    }
+
+    return podcast;
+}
+
+std::optional<ZMDBPodcastShow> ZuneHDParser::parse_podcast_show(
+    const std::vector<uint8_t>& record_data,
+    uint32_t atom_id
+) {
+    // PodcastShow (Schema 0x0f) — same layout on Classic and HD.
+    //   +0x00 u32  filename_ref       Schema 0x05 (parent "Series" folder)
+    //   +0x05 u8   is_subscribed      1 = yes, 0 = no
+    //   +0x06 u8   is_podcast         always 1 in observed records
+    //   +0x08      UTF-8 name (NUL-terminated), then variable section
+    if (record_data.size() < 0x09) {
+        return std::nullopt;
+    }
+
+    ZMDBPodcastShow show;
+    show.atom_id       = atom_id;
+    show.filename_ref  = read_uint32_le(record_data, 0x00);
+    show.is_subscribed = record_data[0x05] != 0;
+    show.name          = read_null_terminated_utf8(record_data, 0x08);
+
+    size_t variable_start = 0x08 + show.name.size() + 1;
+    auto fields = parse_backwards_varints(record_data, variable_start);
+    for (const auto& field : fields) {
+        switch (field.field_id) {
+            case PodcastFieldId::Filename:
+                show.ser_filename = utf16le_to_utf8(field.field_data);
+                break;
+            case PodcastFieldId::Author:
+                show.author = utf16le_to_utf8(field.field_data);
+                break;
+            case PodcastFieldId::Url:
+                show.feed_url = utf16le_to_utf8(field.field_data);
+                break;
+        }
+    }
+
+    return show;
 }
 
 std::optional<ZMDBAudiobook> ZuneHDParser::parse_audiobook_track(
@@ -1042,7 +1104,25 @@ void ZuneHDParser::extract_media_from_descriptor(
 
             case Schema::Video:
             {
-                if (library.video_count < library.videos_capacity) {
+                // Schema 0x02 carries both videos and video-podcast
+                // episodes. Video-podcast records have a non-zero u32 at
+                // +0x08 whose schema byte is PodcastShow (0x0f); promote
+                // those into the podcast collection.
+                uint32_t show_ref = record_data.size() >= 0x0c
+                    ? read_uint32_le(record_data, 0x08) : 0;
+                bool is_video_podcast =
+                    show_ref != 0 && ((show_ref >> 24) & 0xff) == Schema::PodcastShow;
+
+                if (is_video_podcast) {
+                    if (library.podcast_count < library.podcasts_capacity) {
+                        auto podcast = parse_video_podcast_episode(record_data, atom_id);
+                        if (podcast.has_value()) {
+                            new (&library.podcasts[library.podcast_count])
+                                ZMDBPodcast(std::move(podcast.value()));
+                            library.podcast_count++;
+                        }
+                    }
+                } else if (library.video_count < library.videos_capacity) {
                     auto video = parse_video(record_data, atom_id);
                     if (video.has_value()) {
                         new (&library.videos[library.video_count]) ZMDBVideo(std::move(video.value()));
@@ -1078,11 +1158,9 @@ void ZuneHDParser::extract_media_from_descriptor(
 
             case Schema::PodcastShow:
             {
-                if (record_data.size() > 8) {
-                    ZMDBPodcastShow show;
-                    show.atom_id = atom_id;
-                    show.name = read_null_terminated_utf8(record_data, 8);
-                    library.podcast_show_metadata[atom_id] = std::move(show);
+                auto show = parse_podcast_show(record_data, atom_id);
+                if (show.has_value()) {
+                    library.podcast_show_metadata[atom_id] = std::move(show.value());
                     library.podcast_show_count++;
                 }
                 break;

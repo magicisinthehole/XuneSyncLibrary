@@ -328,6 +328,50 @@ ZuneMusicLibrary* MtpReader::ReadMusicLibrary(
             }
         }
 
+        // Copy podcast shows (atom_id = MTP handle of .ser object)
+        result->podcast_show_count = library.podcast_show_metadata.size();
+        result->podcast_shows = new ZunePodcastShow[result->podcast_show_count]{};
+        size_t show_idx = 0;
+        for (const auto& [atom_id, show] : library.podcast_show_metadata) {
+            auto& out = result->podcast_shows[show_idx++];
+            out.name          = strdup(show.name.c_str());
+            out.ser_filename  = strdup(show.ser_filename.c_str());
+            out.author        = strdup(show.author.c_str());
+            out.feed_url      = strdup(show.feed_url.c_str());
+            out.filename_ref  = show.filename_ref;
+            out.is_subscribed = show.is_subscribed;
+            out.atom_id       = show.atom_id;
+        }
+
+        // Copy podcast episodes (audio + promoted video podcasts)
+        result->podcast_episode_count = library.podcast_count;
+        result->podcast_episodes = library.podcast_count > 0
+            ? new ZunePodcastEpisode[library.podcast_count]{}
+            : nullptr;
+        for (int i = 0; i < library.podcast_count; ++i) {
+            const auto& ep = library.podcasts[i];
+            auto& out = result->podcast_episodes[i];
+            out.title             = strdup(ep.title.c_str());
+            out.show_name         = strdup(ep.show_name.c_str());
+            out.author            = strdup(ep.author.c_str());
+            out.description       = strdup(ep.description.c_str());
+            out.episode_url       = strdup(ep.episode_url.c_str());
+            out.folder_name       = strdup(ep.folder_name.c_str());
+            out.episode_filename  = strdup(ep.episode_filename.c_str());
+            out.atom_id           = ep.atom_id;
+            out.filename_ref      = ep.filename_ref;
+            out.podcast_show_ref  = ep.podcast_show_ref;
+            out.duration_ms       = ep.duration_ms;
+            out.bookmark_ms       = ep.bookmark_ms;
+            out.publish_date      = ep.publish_date;
+            out.file_size_bytes   = ep.file_size_bytes;
+            out.codec_id          = ep.codec_id;
+            out.meta_genre        = ep.meta_genre();
+            out.played_flag       = ep.played_flag;
+            out.is_played         = ep.is_played();
+            out.media_type        = static_cast<uint8_t>(ep.media_type);
+        }
+
         return result.release();
 
     } catch (...) {
@@ -385,6 +429,25 @@ void MtpReader::FreeLibrary(ZuneMusicLibrary* library) {
         delete[] library->playlists[i].track_atom_ids;
     }
     delete[] library->playlists;
+
+    for (uint32_t i = 0; i < library->podcast_show_count; ++i) {
+        free((void*)library->podcast_shows[i].name);
+        free((void*)library->podcast_shows[i].ser_filename);
+        free((void*)library->podcast_shows[i].author);
+        free((void*)library->podcast_shows[i].feed_url);
+    }
+    delete[] library->podcast_shows;
+
+    for (uint32_t i = 0; i < library->podcast_episode_count; ++i) {
+        free((void*)library->podcast_episodes[i].title);
+        free((void*)library->podcast_episodes[i].show_name);
+        free((void*)library->podcast_episodes[i].author);
+        free((void*)library->podcast_episodes[i].description);
+        free((void*)library->podcast_episodes[i].episode_url);
+        free((void*)library->podcast_episodes[i].folder_name);
+        free((void*)library->podcast_episodes[i].episode_filename);
+    }
+    delete[] library->podcast_episodes;
 
     delete library;
 }

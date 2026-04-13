@@ -71,6 +71,16 @@ std::string read_utf16le_until_double_null(
     size_t max_length = 512
 );
 
+// Backwards-varint field IDs used in the variable section of PodcastShow
+// (0x0f), PodcastEpisode (0x10), and video-podcast Video (0x02) records.
+namespace PodcastFieldId {
+    constexpr uint8_t Description = 0x41;  // episodes only
+    constexpr uint8_t Filename    = 0x44;  // shows and video episodes
+    constexpr uint8_t Url         = 0x45;  // feed URL on shows, download URL on episodes
+    constexpr uint8_t Author      = 0x46;  // shows and episodes
+    constexpr uint8_t Constant    = 0x1e;  // shows only, UINT32=1
+}
+
 /**
  * Read uint32 little-endian from buffer.
  *

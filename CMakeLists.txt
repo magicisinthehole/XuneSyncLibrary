@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 # Build options
-option(ZUNE_BUILD_TESTS "Build test executables" OFF)
+option(ZUNE_BUILD_TESTS "Build test executables" ON)
 option(ZUNE_BUILD_TOOLS "Build tool executables" OFF)
 
 # Build type

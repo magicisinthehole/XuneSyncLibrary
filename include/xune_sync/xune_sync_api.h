@@ -96,6 +96,43 @@ struct ZuneMusicPlaylist {
     uint32_t atom_id;           // Playlist's own atom_id
 };
 
+struct ZunePodcastShow {
+    const char* name;            // Series title (UTF-8)
+    const char* ser_filename;    // "<name>.ser" as stored on device
+    const char* author;          // Show author (podcast Artist)
+    const char* feed_url;        // RSS / feed URL (MTP 0xDD60 SourceURL)
+    uint32_t    filename_ref;    // Schema 0x05 atom_id — parent "Series" folder
+    bool        is_subscribed;   // Device-side subscription toggle
+    uint32_t    atom_id;         // MTP object handle of the .ser object
+};
+
+// Podcast episode — covers both audio (Schema 0x10, MP3) and video (Schema
+// 0x02 with a non-zero show_ref, WMV) episodes. `media_type` distinguishes
+// the two: 0 = audio, 1 = video.
+struct ZunePodcastEpisode {
+    const char* title;
+    const char* show_name;         // Resolved from show_ref
+    const char* author;
+    const char* description;
+    const char* episode_url;       // Per-episode download URL (MTP 0xDD60)
+    const char* folder_name;       // Per-series subfolder name
+    const char* episode_filename;  // On-device file name (video records only)
+
+    uint32_t atom_id;              // = MTP object handle of the episode file
+    uint32_t filename_ref;         // Schema 0x05 — per-series folder
+    uint32_t podcast_show_ref;     // Schema 0x0f — = MTP SeriesHandle
+
+    uint32_t duration_ms;
+    uint32_t bookmark_ms;          // Playback resume point
+    uint64_t publish_date;         // Windows FILETIME
+    uint32_t file_size_bytes;      // 0 on Classic (not stored in fixed header)
+    uint16_t codec_id;             // 0x3009 MP3, 0xB981 WMV
+    uint16_t meta_genre;           // MTP 0xDC95 — 64 audio, 65 video
+    uint32_t played_flag;          // Raw ZMDB u32; bit 0x200 = "played"
+    bool     is_played;            // Convenience: (played_flag & 0x200) != 0
+    uint8_t  media_type;           // 0 = Audio, 1 = Video
+};
+
 struct ZuneMusicLibrary {
     ZuneMusicTrack* tracks;
     uint32_t track_count;
@@ -109,6 +146,10 @@ struct ZuneMusicLibrary {
     uint32_t artwork_count;
     ZuneMusicPlaylist* playlists;
     uint32_t playlist_count;
+    ZunePodcastShow* podcast_shows;
+    uint32_t podcast_show_count;
+    ZunePodcastEpisode* podcast_episodes;
+    uint32_t podcast_episode_count;
 };
 
 struct ZunePlaylistInfo {

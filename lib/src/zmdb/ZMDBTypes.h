@@ -119,27 +119,53 @@ struct ZMDBPlaylist {
     uint32_t atom_id = 0;
 };
 
-// Podcast show/series structure (Schema 0x0f)
+// Audio (Schema 0x10) vs video-podcast (Schema 0x02 with non-zero show_ref).
+enum class PodcastMediaType : uint8_t { Audio, Video };
+
+// PodcastShow (Schema 0x0f).
+//   +0x00 u32  filename_ref       Schema 0x05 atom_id (parent "Series" folder)
+//   +0x05 u8   is_subscribed      1 = yes, 0 = no
+//   +0x06 u8   is_podcast         always 1 in observed records
+//   +0x08      UTF-8 name (NUL-terminated)
+//   …         backwards-varint UTF-16LE fields keyed by PodcastFieldId
 struct ZMDBPodcastShow {
     std::string name;
-    uint32_t atom_id = 0;           // atom_id = MTP object handle of the .ser object
+    std::string ser_filename;       // PodcastFieldId::Filename
+    std::string author;             // PodcastFieldId::Author
+    std::string feed_url;           // PodcastFieldId::Url
+    uint32_t    filename_ref = 0;
+    bool        is_subscribed = true;
+    uint32_t    atom_id = 0;        // = MTP object handle of the .ser file
 };
 
-// Podcast episode structure (Schema 0x10)
+// PodcastEpisode covers audio (Schema 0x10) and video-podcast (Schema 0x02
+// with non-zero podcast_show_ref). Per-device fixed-header offsets live in
+// the parsers; common fields are described below.
 struct ZMDBPodcast {
+    PodcastMediaType media_type = PodcastMediaType::Audio;
     std::string title;
-    std::string show_name;
+    std::string show_name;          // resolved from podcast_show_ref
     std::string author;
     std::string description;
-    std::string audio_url;
-    std::string rss_url;
-    uint32_t podcast_show_ref = 0;  // atom_id of parent PodcastShow (= series MTP handle)
-    uint32_t ref3 = 0;              // Reference field at offset 12, purpose unknown
-    int duration_ms = 0;
-    uint64_t timestamp = 0;
-    int file_size_bytes = 0;
-    uint32_t codec_id = 0;
-    uint32_t atom_id = 0;
+    std::string episode_url;
+    std::string folder_name;        // resolved from filename_ref
+    std::string episode_filename;   // video records only
+
+    uint32_t atom_id = 0;           // = MTP object handle
+    uint32_t filename_ref = 0;      // Schema 0x05 (per-series subfolder)
+    uint32_t podcast_show_ref = 0;  // Schema 0x0f (= MTP SeriesHandle)
+
+    uint32_t duration_ms = 0;
+    uint32_t bookmark_ms = 0;
+    uint64_t publish_date = 0;      // Windows FILETIME
+    uint32_t file_size_bytes = 0;   // HD only; absent from Classic fixed header
+    uint16_t codec_id = 0;          // 0x3009 = MP3, 0xB981 = WMV
+    uint32_t played_flag = 0;       // bit 0x200 = marked played; remaining bits
+                                    // include codec/capability data we don't decode
+
+    bool is_played() const { return (played_flag & 0x200u) != 0u; }
+    // MTP 0xDC95 MetaGenre — used by the upload path; not stored in ZMDB.
+    uint16_t meta_genre() const { return codec_id == 0xB981u ? 65u : 64u; }
 };
 
 // Audiobook track structure (Schema 0x12)

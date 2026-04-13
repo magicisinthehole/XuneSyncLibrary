@@ -43,12 +43,16 @@ std::vector<BackwardsVarintField> parse_backwards_varints(
         uint8_t size_byte1 = record_data[pos--];
         uint32_t field_size = size_byte1;
 
-        if (size_byte1 & 0x80) {  // Multi-byte encoding
+        // LEB128-style varint, walked backward. Continuation bit is set on
+        // every non-terminal byte. The previous gate `size_byte2 != 0`
+        // mis-fired on any 2-byte size with a non-zero high chunk
+        // (i.e. anything ≥ 128), shifting subsequent reads by one byte.
+        if (size_byte1 & 0x80) {
             if (pos < entry_size) break;
             uint8_t size_byte2 = record_data[pos--];
             field_size = (size_byte2 << 7) | (size_byte1 & 0x7F);
 
-            if (size_byte2 != 0) {  // 3-byte encoding
+            if (size_byte2 & 0x80) {
                 if (pos < entry_size) break;
                 uint8_t size_byte3 = record_data[pos--];
                 field_size = (size_byte3 << 14) | (field_size & 0x3FFF);

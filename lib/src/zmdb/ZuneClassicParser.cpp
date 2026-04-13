@@ -9,109 +9,73 @@ namespace zmdb {
 
 ZMDBLibrary ZuneClassicParser::ExtractLibrary(const std::vector<uint8_t>& zmdb_data) {
     ZMDBLibrary library;
-    library.device_family = zune::DeviceFamily::Unknown;  // Caller sets the specific family
-
-    std::cout << "[ZuneClassicParser] Starting ZMDB extraction, data size: " << zmdb_data.size() << " bytes" << std::endl;
+    library.device_family = zune::DeviceFamily::Unknown;
 
     if (zmdb_data.empty()) {
-        std::cout << "[ZuneClassicParser] ERROR: Empty ZMDB data" << std::endl;
         return library;
     }
 
     zmdb_data_ = zmdb_data;
 
-    // Parse ZMDB header
     if (zmdb_data_.size() < 0x10) {
-        std::cout << "[ZuneClassicParser] ERROR: ZMDB data too small for header (size: " << zmdb_data_.size() << ")" << std::endl;
         return library;
     }
 
-    // Verify ZMDB magic
     if (zmdb_data_[0] != 'Z' || zmdb_data_[1] != 'M' ||
         zmdb_data_[2] != 'D' || zmdb_data_[3] != 'B') {
-        std::cout << "[ZuneClassicParser] ERROR: Invalid ZMDB magic. Got: " 
-                  << std::hex << (int)zmdb_data_[0] << " " << (int)zmdb_data_[1] 
-                  << " " << (int)zmdb_data_[2] << " " << (int)zmdb_data_[3] << std::dec << std::endl;
         return library;
     }
-    std::cout << "[ZuneClassicParser] ZMDB magic verified" << std::endl;
 
-    // Parse ZMed header at offset 0x20
     if (zmdb_data_.size() < 0x30) {
-        std::cout << "[ZuneClassicParser] ERROR: ZMDB data too small for ZMed header" << std::endl;
         return library;
     }
 
     if (zmdb_data_[0x20] != 'Z' || zmdb_data_[0x21] != 'M' ||
         zmdb_data_[0x22] != 'e' || zmdb_data_[0x23] != 'd') {
-        std::cout << "[ZuneClassicParser] ERROR: Invalid ZMed magic at 0x20. Got: "
-                  << std::hex << (int)zmdb_data_[0x20] << " " << (int)zmdb_data_[0x21] 
-                  << " " << (int)zmdb_data_[0x22] << " " << (int)zmdb_data_[0x23] << std::dec << std::endl;
         return library;
     }
-    std::cout << "[ZuneClassicParser] ZMed magic verified at offset 0x20" << std::endl;
 
-    // Check ZMed version (should be 2 for Classic, 5 for HD)
-    uint16_t zmed_version = read_uint16_le(zmdb_data_, 0x24);
-    std::cout << "[ZuneClassicParser] ZMed version: " << zmed_version << " (expected 2 for Classic, 5 for HD)" << std::endl;
-    if (zmed_version != 2) {
-        std::cerr << "[ZuneClassicParser] Warning: Unexpected ZMed version " << zmed_version << " for Zune Classic" << std::endl;
-    }
+    // ZMed version: 2 = Classic, 5 = HD. Mismatch is non-fatal — caller picks
+    // the parser by device family, this only shows up on file-replay tests.
+    (void)read_uint16_le(zmdb_data_, 0x24);
 
-    // Find ZArr descriptors - search for first "ZArr" after ZMed header
+    // ZArr descriptor table follows the ZMed header; offset isn't fixed —
+    // scan a small window for the magic.
     size_t descriptor_offset = 0;
-    std::cout << "[ZuneClassicParser] Searching for ZArr descriptors starting at 0x30..." << std::endl;
     for (size_t offset = 0x30; offset < 0x100 && offset + 4 <= zmdb_data_.size(); offset += 4) {
         if (zmdb_data_[offset] == 'Z' && zmdb_data_[offset + 1] == 'A' &&
             zmdb_data_[offset + 2] == 'r' && zmdb_data_[offset + 3] == 'r') {
             descriptor_offset = offset;
-            std::cout << "[ZuneClassicParser] Found ZArr descriptors at offset 0x" << std::hex << offset << std::dec << std::endl;
             break;
         }
     }
 
     if (descriptor_offset == 0) {
-        std::cout << "[ZuneClassicParser] ERROR: No ZArr descriptors found" << std::endl;
         return library;
     }
 
-    // Parse 96 descriptors
     descriptors_.resize(96);
-    std::cout << "[ZuneClassicParser] Parsing 96 ZArr descriptors..." << std::endl;
     for (int i = 0; i < 96; i++) {
         size_t desc_offset = descriptor_offset + (i * 20);
         if (desc_offset + 20 > zmdb_data_.size()) {
-            std::cout << "[ZuneClassicParser] Stopped at descriptor " << i << " (out of bounds)" << std::endl;
             break;
         }
 
         descriptors_[i].entry_size = read_uint16_le(zmdb_data_, desc_offset + 6);
         descriptors_[i].entry_count = read_uint32_le(zmdb_data_, desc_offset + 8);
         descriptors_[i].data_offset = read_uint32_le(zmdb_data_, desc_offset + 16);
-        
-        if (descriptors_[i].entry_count > 0) {
-            std::cout << "[ZuneClassicParser] Descriptor " << i << ": entry_size=" << descriptors_[i].entry_size
-                      << ", entry_count=" << descriptors_[i].entry_count
-                      << ", data_offset=0x" << std::hex << descriptors_[i].data_offset << std::dec << std::endl;
-        }
     }
 
-    // Build index table from descriptor 0
     if (descriptors_[0].entry_count > 0 && descriptors_[0].entry_size == 8) {
-        std::cout << "[ZuneClassicParser] Building index table from descriptor 0 with " 
-                  << descriptors_[0].entry_count << " entries" << std::endl;
         index_table_ = build_index_table(
             zmdb_data_,
             descriptors_[0].data_offset,
             descriptors_[0].entry_count
         );
-        std::cout << "[ZuneClassicParser] Index table built with " << index_table_.size() << " entries" << std::endl;
-    } else {
-        std::cout << "[ZuneClassicParser] ERROR: Descriptor 0 invalid for index table" << std::endl;
     }
 
-    // Allocate arrays with exact sizes from descriptors (single allocation, no reallocation)
-    // Note: Zune Classic uses different descriptor mappings than Zune HD
+    // Descriptor → schema mappings differ from Zune HD. Capacities sized
+    // from descriptor entry_count to avoid reallocation during parsing.
     if (descriptors_.size() > 1 && descriptors_[1].entry_count > 0) {
         library.tracks_capacity = descriptors_[1].entry_count;
         library.tracks = static_cast<ZMDBTrack*>(::operator new[](library.tracks_capacity * sizeof(ZMDBTrack)));
@@ -129,9 +93,19 @@ ZMDBLibrary ZuneClassicParser::ExtractLibrary(const std::vector<uint8_t>& zmdb_d
         library.pictures_capacity = descriptors_[16].entry_count;
         library.pictures = static_cast<ZMDBPicture*>(::operator new[](library.pictures_capacity * sizeof(ZMDBPicture)));
     }
-    if (descriptors_.size() > 19 && descriptors_[19].entry_count > 0) {
-        library.podcasts_capacity = descriptors_[19].entry_count;
-        library.podcasts = static_cast<ZMDBPodcast*>(::operator new[](library.podcasts_capacity * sizeof(ZMDBPodcast)));
+    // Audio episodes (descriptor 19) plus video-podcast records promoted
+    // out of Schema 0x02 (descriptor 12). Over-allocates by the number of
+    // non-podcast videos in descriptor 12; cheap and avoids a pre-pass.
+    if (descriptors_.size() > 19) {
+        size_t audio_episodes = descriptors_[19].entry_count;
+        size_t potential_video_podcasts =
+            (descriptors_.size() > 12) ? descriptors_[12].entry_count : 0;
+        library.podcasts_capacity =
+            static_cast<int>(audio_episodes + potential_video_podcasts);
+        if (library.podcasts_capacity > 0) {
+            library.podcasts = static_cast<ZMDBPodcast*>(::operator new[](
+                library.podcasts_capacity * sizeof(ZMDBPodcast)));
+        }
     }
     if (descriptors_.size() > 27 && descriptors_[27].entry_count > 0) {
         // Audiobooks on Classic use descriptor 27 (vs 26 on HD)
@@ -139,104 +113,69 @@ ZMDBLibrary ZuneClassicParser::ExtractLibrary(const std::vector<uint8_t>& zmdb_d
         library.audiobooks = static_cast<ZMDBAudiobook*>(::operator new[](library.audiobooks_capacity * sizeof(ZMDBAudiobook)));
     }
 
-    // Parse directly into arrays (no intermediate vectors, no reallocation)
-    std::cout << "[ZuneClassicParser] Starting media extraction from descriptors..." << std::endl;
-    
     try {
-        std::cout << "[ZuneClassicParser] Extracting music tracks from descriptor 1..." << std::endl;
-        extract_media_from_descriptor(1, Schema::Music, library);      // Music tracks
-        std::cout << "[ZuneClassicParser] Extracted " << library.track_count << " tracks" << std::endl;
+        extract_media_from_descriptor(1, Schema::Music, library);
     } catch (const std::exception& e) {
         throw std::runtime_error(std::string("Music parsing failed: ") + e.what());
     }
 
     try {
-        std::cout << "[ZuneClassicParser] Extracting playlists from descriptor 11..." << std::endl;
-        extract_media_from_descriptor(11, Schema::Playlist, library);  // Playlists (same as Zune HD)
-        std::cout << "[ZuneClassicParser] Extracted " << library.playlist_count << " playlists" << std::endl;
+        extract_media_from_descriptor(11, Schema::Playlist, library);
     } catch (const std::exception& e) {
         throw std::runtime_error(std::string("Playlist parsing failed: ") + e.what());
     }
 
     try {
-        std::cout << "[ZuneClassicParser] Extracting videos from descriptor 12..." << std::endl;
-        extract_media_from_descriptor(12, Schema::Video, library);     // Videos
-        std::cout << "[ZuneClassicParser] Extracted " << library.video_count << " videos" << std::endl;
+        extract_media_from_descriptor(12, Schema::Video, library);
     } catch (const std::exception& e) {
         throw std::runtime_error(std::string("Video parsing failed: ") + e.what());
     }
 
     try {
-        std::cout << "[ZuneClassicParser] Extracting pictures from descriptor 16..." << std::endl;
-        extract_media_from_descriptor(16, Schema::Picture, library);   // Pictures
-        std::cout << "[ZuneClassicParser] Extracted " << library.picture_count << " pictures" << std::endl;
+        extract_media_from_descriptor(16, Schema::Picture, library);
     } catch (const std::exception& e) {
         throw std::runtime_error(std::string("Picture parsing failed: ") + e.what());
     }
 
     try {
-        std::cout << "[ZuneClassicParser] Extracting podcasts from descriptor 19..." << std::endl;
-        extract_media_from_descriptor(19, Schema::PodcastEpisode, library); // Podcast episodes
-        std::cout << "[ZuneClassicParser] Extracted " << library.podcast_count << " podcasts" << std::endl;
+        extract_media_from_descriptor(19, Schema::PodcastEpisode, library);
     } catch (const std::exception& e) {
         throw std::runtime_error(std::string("Podcast parsing failed: ") + e.what());
     }
 
     try {
-        std::cout << "[ZuneClassicParser] Extracting audiobooks from descriptor 27 (Classic mapping)..." << std::endl;
-        extract_media_from_descriptor(27, Schema::AudiobookTrack, library); // Audiobook tracks (Classic: 27, HD: 26)
-        std::cout << "[ZuneClassicParser] Extracted " << library.audiobook_count << " audiobooks" << std::endl;
+        extract_media_from_descriptor(20, Schema::PodcastShow, library);
+    } catch (const std::exception& e) {
+        throw std::runtime_error(std::string("PodcastShow parsing failed: ") + e.what());
+    }
+
+    try {
+        // Audiobook tracks live in descriptor 27 on Classic, 26 on HD.
+        extract_media_from_descriptor(27, Schema::AudiobookTrack, library);
     } catch (const std::exception& e) {
         throw std::runtime_error(std::string("Audiobook parsing failed: ") + e.what());
     }
 
-    // Move album metadata from cache (no tracks - consumer groups by album_ref)
     try {
-        std::cout << "[ZuneClassicParser] Moving album metadata from cache..." << std::endl;
-        std::cout << "[ZuneClassicParser] Album cache contains " << album_cache_.size() << " albums:" << std::endl;
-        
-        // Debug: Print all albums in cache
-        for (const auto& [atom_id, album] : album_cache_) {
-            std::cout << "[ZuneClassicParser]   Album: atom_id=0x" << std::hex << atom_id << std::dec
-                      << ", title=\"" << album.title << "\""
-                      << ", artist=\"" << album.artist_name << "\""
-                      << ", alb_ref=\"" << album.alb_reference << "\""
-                      << ", album_pid=0x" << std::hex << album.album_pid << std::dec << std::endl;
-        }
-        
         library.album_metadata = std::move(album_cache_);
         library.album_count = library.album_metadata.size();
-        std::cout << "[ZuneClassicParser] Moved " << library.album_count << " albums to library" << std::endl;
     } catch (const std::exception& e) {
         throw std::runtime_error(std::string("Album metadata move failed: ") + e.what());
     }
 
-    // Move artist metadata from cache
     try {
         library.artist_metadata = std::move(artist_cache_);
         library.artist_count = library.artist_metadata.size();
-        std::cout << "[ZuneClassicParser] Moved " << library.artist_count << " artists to library" << std::endl;
     } catch (const std::exception& e) {
         throw std::runtime_error(std::string("Artist metadata move failed: ") + e.what());
     }
 
-    // Move genre metadata from cache
     try {
         library.genre_metadata = std::move(genre_cache_);
         library.genre_count = library.genre_metadata.size();
-        std::cout << "[ZuneClassicParser] Moved " << library.genre_count << " genres to library" << std::endl;
     } catch (const std::exception& e) {
         throw std::runtime_error(std::string("Genre metadata move failed: ") + e.what());
     }
-
-    std::cout << "[ZuneClassicParser] ZMDB extraction complete: "
-              << library.track_count << " tracks, "
-              << library.album_count << " albums, "
-              << library.playlist_count << " playlists, "
-              << library.video_count << " videos, "
-              << library.picture_count << " pictures, "
-              << library.podcast_count << " podcasts, "
-              << library.audiobook_count << " audiobooks" << std::endl;
 
     return library;
 }
@@ -332,60 +271,36 @@ std::optional<ZMDBTrack> ZuneClassicParser::parse_music_track(
         metadata_offset += 6;
     }
 
-    // Resolve references
     if (album_ref != 0) {
-        std::cout << "[ZuneClassicParser::parse_music_track] Resolving album_ref=0x" << std::hex << album_ref << std::dec << std::endl;
         auto album_info = resolve_album_info(album_ref);
         if (album_info.has_value()) {
             track.album_name = album_info->second;
             track.album_ref = album_ref;
-            
-            // Get album artist name and GUID from album (like ZuneHD does)
+
             if (album_cache_.count(album_ref)) {
                 track.album_artist_name = album_cache_[album_ref].artist_name;
                 track.album_artist_guid = album_cache_[album_ref].artist_guid;
-                std::cout << "[ZuneClassicParser::parse_music_track] Set album artist: \"" << track.album_artist_name << "\" (GUID: \"" << track.album_artist_guid << "\")" << std::endl;
             }
-            
-            std::cout << "[ZuneClassicParser::parse_music_track] Resolved album: \"" << track.album_name << "\"" << std::endl;
-        } else {
-            std::cout << "[ZuneClassicParser::parse_music_track] Failed to resolve album_ref" << std::endl;
         }
     }
 
     if (artist_ref != 0) {
-        std::cout << "[ZuneClassicParser::parse_music_track] Resolving artist_ref=0x" << std::hex << artist_ref << std::dec << std::endl;
-        
-        // Ensure artist is fully parsed and cached (like ZuneHD does)
         if (!artist_cache_.count(artist_ref)) {
             if (index_table_.count(artist_ref)) {
                 uint32_t record_offset = index_table_[artist_ref];
                 auto record_opt = read_record_at_offset(zmdb_data_, record_offset);
                 if (record_opt.has_value()) {
-                    const auto& rec_data = record_opt->second;
-                    // Include all artists (including GUID/root artists) so albums can reference them
-                    auto artist = parse_artist(rec_data, artist_ref);
+                    auto artist = parse_artist(record_opt->second, artist_ref);
                     if (artist.has_value()) {
                         artist_cache_[artist_ref] = artist.value();
-                        std::cout << "[ZuneClassicParser::parse_music_track] Cached artist: \"" << artist->name << "\" with GUID: \"" << artist->guid << "\"" << std::endl;
-                    } else {
-                        std::cout << "[ZuneClassicParser::parse_music_track] Failed to parse artist record" << std::endl;
                     }
-                } else {
-                    std::cout << "[ZuneClassicParser::parse_music_track] Failed to read artist record at offset" << std::endl;
                 }
-            } else {
-                std::cout << "[ZuneClassicParser::parse_music_track] Artist ref not found in index table" << std::endl;
             }
         }
-        
-        // Get artist name and GUID from cache (like ZuneHD does)
+
         if (artist_cache_.count(artist_ref)) {
             track.artist_name = artist_cache_[artist_ref].name;
             track.artist_guid = artist_cache_[artist_ref].guid;
-            std::cout << "[ZuneClassicParser::parse_music_track] Resolved artist: \"" << track.artist_name << "\" (GUID: \"" << track.artist_guid << "\")" << std::endl;
-        } else {
-            std::cout << "[ZuneClassicParser::parse_music_track] Artist not found in cache after resolution attempt" << std::endl;
         }
     }
 
@@ -648,109 +563,155 @@ std::optional<ZMDBPodcast> ZuneClassicParser::parse_podcast_episode(
     const std::vector<uint8_t>& record_data,
     uint32_t atom_id
 ) {
-    if (record_data.size() < 32) {
+    // Classic audio podcast episode (Schema 0x10) — 32-byte fixed header.
+    //   +0x00 u32  filename_ref       Schema 0x05 (per-series subfolder)
+    //   +0x04 u32  podcast_show_ref   Schema 0x0f
+    //   +0x08 u32  duration_ms
+    //   +0x0c u32  bookmark_ms
+    //   +0x10 u64  publish_date       Windows FILETIME
+    //   +0x18 u16  reserved
+    //   +0x1a u16  codec_id           0x3009 = MP3
+    //   +0x1c u32  played_flag        bit 0x200 = marked played
+    //   +0x20      UTF-8 title (NUL-terminated), then variable section
+    //
+    // file_size_bytes is not stored on Classic; downstream sources it from
+    // MTP ObjectSize.
+    if (record_data.size() < 0x20) {
         return std::nullopt;
     }
 
     ZMDBPodcast podcast;
-    podcast.atom_id = atom_id;
+    podcast.media_type       = PodcastMediaType::Audio;
+    podcast.atom_id          = atom_id;
+    podcast.filename_ref     = read_uint32_le(record_data, 0x00);
+    podcast.podcast_show_ref = read_uint32_le(record_data, 0x04);
+    podcast.duration_ms      = read_uint32_le(record_data, 0x08);
+    podcast.bookmark_ms      = read_uint32_le(record_data, 0x0c);
+    podcast.publish_date     = read_uint64_le(record_data, 0x10);
+    podcast.codec_id         = read_uint16_le(record_data, 0x1a);
+    podcast.played_flag      = read_uint32_le(record_data, 0x1c);
 
-    // Read reference fields (0-15)
-    uint32_t show_name_ref = read_uint32_le(record_data, 0);
-    podcast.podcast_show_ref = read_uint32_le(record_data, 4);
-    podcast.duration_ms = read_uint32_le(record_data, 8);
-    podcast.ref3 = read_uint32_le(record_data, 12);
-
-    // Read timestamp and file size (16-27)
-    podcast.timestamp = read_uint64_le(record_data, 16);
-    podcast.file_size_bytes = read_uint32_le(record_data, 24);
-
-    // Read codec at offset 30-31
-    podcast.codec_id = read_uint16_le(record_data, 30);
-
-    // Resolve show name
-    if (show_name_ref != 0) {
-        podcast.show_name = resolve_string_reference(show_name_ref);
-    }
-
-    // Parse variable section starting at offset 36 (after 4 null bytes at 32-35)
-    size_t offset = 36;
-    if (offset >= record_data.size()) {
-        return podcast;
-    }
-
-    // 1. Episode title (UTF-8, null-terminated)
-    podcast.title = read_null_terminated_utf8(record_data, offset);
-    offset += podcast.title.length() + 1;
-
-    // 2. Author/email (UTF-16LE, double-null terminated)
-    if (offset < record_data.size()) {
-        podcast.author = read_utf16le_until_double_null(record_data, offset);
-        offset += (podcast.author.length() + 1) * 2;
-    }
-
-    // 3. Marker (2-3 bytes like "RF", "RFA", "RFC")
-    if (offset + 2 <= record_data.size()) {
-        std::string marker(reinterpret_cast<const char*>(&record_data[offset]), 2);
-        offset += 2;
-        if (offset < record_data.size() && std::isalpha(record_data[offset])) {
-            marker += static_cast<char>(record_data[offset]);
-            offset++;
-        }
-
-        // 4. Description (UTF-16LE starting with marker's last character)
-        if (offset < record_data.size() && !marker.empty()) {
-            // The description starts with the last character of the marker
-            std::vector<uint8_t> desc_data;
-            desc_data.push_back(marker.back());
-            desc_data.push_back(0);  // UTF-16LE encoding
-
-            // Read rest of description
-            while (offset + 1 < record_data.size()) {
-                if (record_data[offset] == 0 && record_data[offset + 1] == 0) {
-                    break;  // Double null terminator
-                }
-                desc_data.push_back(record_data[offset]);
-                desc_data.push_back(record_data[offset + 1]);
-                offset += 2;
-            }
-
-            podcast.description = utf16le_to_utf8(desc_data);
+    podcast.title = read_null_terminated_utf8(record_data, 0x20);
+    size_t variable_start = 0x20 + podcast.title.size() + 1;
+    auto fields = parse_backwards_varints(record_data, variable_start);
+    for (const auto& field : fields) {
+        switch (field.field_id) {
+            case PodcastFieldId::Author:
+                podcast.author = utf16le_to_utf8(field.field_data);
+                break;
+            case PodcastFieldId::Description:
+                podcast.description = utf16le_to_utf8(field.field_data);
+                break;
+            case PodcastFieldId::Url:
+                podcast.episode_url = utf16le_to_utf8(field.field_data);
+                break;
         }
     }
 
-    // Parse backwards varints for URL fields
-    size_t entry_size = get_entry_size_for_schema(Schema::PodcastEpisode);
-    if (entry_size > 0) {
-        auto fields = parse_backwards_varints(record_data, entry_size);
-        for (const auto& field : fields) {
-            // Large varint fields typically contain URLs
-            if (field.field_size > 100 && field.field_size < 1000) {
-                // URL format: marker byte + UTF-16LE + padding byte
-                if (field.field_data.size() > 3) {
-                    std::vector<uint8_t> url_data(
-                        field.field_data.begin() + 1,
-                        field.field_data.end() - 1
-                    );
-                    std::string url = utf16le_to_utf8(url_data);
-                    
-                    if (url.find("http") != std::string::npos) {
-                        if (url.find(".mp3") != std::string::npos || 
-                            url.find(".m4a") != std::string::npos ||
-                            url.find("/audio/") != std::string::npos) {
-                            podcast.audio_url = url;
-                        } else if (url.find(".rss") != std::string::npos || 
-                                   url.find("/rss") != std::string::npos ||
-                                   url.find("/feed") != std::string::npos) {
-                            podcast.rss_url = url;
-                        }
-                    }
-                }
-            }
-        }
+    if (podcast.podcast_show_ref != 0) {
+        podcast.show_name = resolve_string_reference(podcast.podcast_show_ref);
+    }
+    if (podcast.filename_ref != 0) {
+        podcast.folder_name = resolve_string_reference(podcast.filename_ref);
     }
 
     return podcast;
+}
+
+std::optional<ZMDBPodcast> ZuneClassicParser::parse_video_podcast_episode(
+    const std::vector<uint8_t>& record_data,
+    uint32_t atom_id
+) {
+    // Classic video podcast episode (Schema 0x02 with non-zero show_ref) —
+    // 40-byte fixed header. Layout differs from the audio episode header:
+    //   +0x00 u32  filename_ref
+    //   +0x04 u32  reserved
+    //   +0x08 u32  podcast_show_ref
+    //   +0x0c u32  duration_ms
+    //   +0x10 u32  bookmark_ms
+    //   +0x14 u32  reserved
+    //   +0x18 u64  publish_date
+    //   +0x20 u16  codec_id           0xB981 = WMV
+    //   +0x22 u16  reserved
+    //   +0x24 u32  played_flag
+    //   +0x28      UTF-8 title (NUL-terminated), then variable section
+    if (record_data.size() < 0x28) {
+        return std::nullopt;
+    }
+
+    ZMDBPodcast podcast;
+    podcast.media_type       = PodcastMediaType::Video;
+    podcast.atom_id          = atom_id;
+    podcast.filename_ref     = read_uint32_le(record_data, 0x00);
+    podcast.podcast_show_ref = read_uint32_le(record_data, 0x08);
+    podcast.duration_ms      = read_uint32_le(record_data, 0x0c);
+    podcast.bookmark_ms      = read_uint32_le(record_data, 0x10);
+    podcast.publish_date     = read_uint64_le(record_data, 0x18);
+    podcast.codec_id         = read_uint16_le(record_data, 0x20);
+    podcast.played_flag      = read_uint32_le(record_data, 0x24);
+
+    podcast.title = read_null_terminated_utf8(record_data, 0x28);
+    size_t variable_start = 0x28 + podcast.title.size() + 1;
+    auto fields = parse_backwards_varints(record_data, variable_start);
+    for (const auto& field : fields) {
+        switch (field.field_id) {
+            case PodcastFieldId::Filename:
+                podcast.episode_filename = utf16le_to_utf8(field.field_data);
+                break;
+            case PodcastFieldId::Author:
+                podcast.author = utf16le_to_utf8(field.field_data);
+                break;
+            case PodcastFieldId::Description:
+                podcast.description = utf16le_to_utf8(field.field_data);
+                break;
+            case PodcastFieldId::Url:
+                podcast.episode_url = utf16le_to_utf8(field.field_data);
+                break;
+        }
+    }
+
+    if (podcast.podcast_show_ref != 0) {
+        podcast.show_name = resolve_string_reference(podcast.podcast_show_ref);
+    }
+    if (podcast.filename_ref != 0) {
+        podcast.folder_name = resolve_string_reference(podcast.filename_ref);
+    }
+
+    return podcast;
+}
+
+std::optional<ZMDBPodcastShow> ZuneClassicParser::parse_podcast_show(
+    const std::vector<uint8_t>& record_data,
+    uint32_t atom_id
+) {
+    // PodcastShow layout is identical on Classic and HD.
+    if (record_data.size() < 0x09) {
+        return std::nullopt;
+    }
+
+    ZMDBPodcastShow show;
+    show.atom_id       = atom_id;
+    show.filename_ref  = read_uint32_le(record_data, 0x00);
+    show.is_subscribed = record_data[0x05] != 0;
+    show.name          = read_null_terminated_utf8(record_data, 0x08);
+
+    size_t variable_start = 0x08 + show.name.size() + 1;
+    auto fields = parse_backwards_varints(record_data, variable_start);
+    for (const auto& field : fields) {
+        switch (field.field_id) {
+            case PodcastFieldId::Filename:
+                show.ser_filename = utf16le_to_utf8(field.field_data);
+                break;
+            case PodcastFieldId::Author:
+                show.author = utf16le_to_utf8(field.field_data);
+                break;
+            case PodcastFieldId::Url:
+                show.feed_url = utf16le_to_utf8(field.field_data);
+                break;
+        }
+    }
+
+    return show;
 }
 
 std::optional<ZMDBAudiobook> ZuneClassicParser::parse_audiobook_track(
@@ -834,11 +795,7 @@ std::optional<ZMDBAlbum> ZuneClassicParser::parse_album(
     const std::vector<uint8_t>& record_data,
     uint32_t atom_id
 ) {
-    std::cout << "[ZuneClassicParser::parse_album] Parsing album with atom_id=0x" << std::hex << atom_id << std::dec 
-              << ", record_size=" << record_data.size() << std::endl;
-
     if (record_data.size() < 12) {
-        std::cout << "[ZuneClassicParser::parse_album] ERROR: Record too small (" << record_data.size() << " < 12)" << std::endl;
         return std::nullopt;
     }
 
@@ -889,32 +846,17 @@ std::optional<ZMDBAlbum> ZuneClassicParser::parse_album(
         }
     }
 
-    // Parse album filename (.alb reference) - ZuneClassic stores this as UTF-16LE after the title
-    // ZuneHD stores it in backwards varints, but ZuneClassic uses a different approach
-    if (title_end < record_data.size()) {
-        // Look for UTF-16LE string after the title
-        size_t utf16_start = title_end;
-        size_t utf16_end = utf16_start;
-        
-        // Find the end of the UTF-16LE string (double null terminator)
-        while (utf16_end + 1 < record_data.size()) {
-            if (record_data[utf16_end] == 0 && record_data[utf16_end + 1] == 0) {
-                break;
-            }
-            utf16_end += 2;
-        }
-        
-        if (utf16_end > utf16_start) {
-            std::vector<uint8_t> utf16_data(record_data.begin() + utf16_start, record_data.begin() + utf16_end);
-            album.alb_reference = utf16le_to_utf8(utf16_data);
-            std::cout << "[ZuneClassicParser::parse_album] Found alb_reference after title: \"" << album.alb_reference << "\"" << std::endl;
+    // Album records carry a backwards-varint trailer with fid=0x14 (16-byte
+    // GUID), fid=0x44 (.alb reference as UTF-16LE), and fid=0x1e (constant).
+    // Variable section starts at title_end — for short titles ("III", "IV")
+    // this can be below the default Schema::Album entry_size of 20.
+    auto fields = parse_backwards_varints(record_data, title_end);
+    for (const auto& field : fields) {
+        if (field.field_id == 0x44 && field.field_size > 2) {
+            album.alb_reference = utf16le_to_utf8(field.field_data);
+            break;
         }
     }
-
-    std::cout << "[ZuneClassicParser::parse_album] Album parsed: title=\"" << album.title 
-              << "\", artist=\"" << album.artist_name 
-              << "\", alb_ref=\"" << album.alb_reference 
-              << "\", album_pid=0x" << std::hex << album.album_pid << std::dec << std::endl;
 
     return album;
 }
@@ -1007,6 +949,7 @@ std::string ZuneClassicParser::resolve_string_reference(uint32_t atom_id) {
             }
             break;
         case Schema::AudiobookTitle: // 0x11
+        case Schema::PodcastShow:    // 0x0f — name UTF-8 at +0x08, same as AudiobookTitle
             if (record_data.size() > 8) {
                 result = read_null_terminated_utf8(record_data, 8);
             }
@@ -1066,43 +1009,27 @@ std::string ZuneClassicParser::resolve_genre(uint32_t atom_id) {
 }
 
 std::optional<std::pair<uint32_t, std::string>> ZuneClassicParser::resolve_album_info(uint32_t atom_id) {
-    std::cout << "[ZuneClassicParser::resolve_album_info] Resolving album atom_id=0x" << std::hex << atom_id << std::dec << std::endl;
-    
-    // Check cache
     if (album_cache_.count(atom_id)) {
         auto& album = album_cache_[atom_id];
-        std::cout << "[ZuneClassicParser::resolve_album_info] Found in cache: \"" << album.title 
-                  << "\" (cache size: " << album_cache_.size() << ")" << std::endl;
         return std::make_pair(album.atom_id, album.title);
     }
 
-    std::cout << "[ZuneClassicParser::resolve_album_info] Not in cache, looking up in index table..." << std::endl;
-    
-    // Lookup and parse album record
     if (!index_table_.count(atom_id)) {
-        std::cout << "[ZuneClassicParser::resolve_album_info] ERROR: atom_id not found in index table" << std::endl;
         return std::nullopt;
     }
 
     uint32_t record_offset = index_table_[atom_id];
-    std::cout << "[ZuneClassicParser::resolve_album_info] Found in index at offset=0x" << std::hex << record_offset << std::dec << std::endl;
-    
     auto record_opt = read_record_at_offset(zmdb_data_, record_offset);
     if (!record_opt.has_value()) {
-        std::cout << "[ZuneClassicParser::resolve_album_info] ERROR: Failed to read record" << std::endl;
         return std::nullopt;
     }
 
     auto album = parse_album(record_opt->second, atom_id);
     if (album.has_value()) {
-        std::cout << "[ZuneClassicParser::resolve_album_info] Adding to cache: \"" << album->title 
-                  << "\", alb_ref=\"" << album->alb_reference << "\" (cache size will be: " 
-                  << (album_cache_.size() + 1) << ")" << std::endl;
         album_cache_[atom_id] = album.value();
         return std::make_pair(album->atom_id, album->title);
     }
 
-    std::cout << "[ZuneClassicParser::resolve_album_info] ERROR: Failed to parse album" << std::endl;
     return std::nullopt;
 }
 
@@ -1126,23 +1053,14 @@ void ZuneClassicParser::extract_media_from_descriptor(
     uint8_t expected_schema,
     ZMDBLibrary& library
 ) {
-    std::cout << "[ZuneClassicParser::extract_media] Starting extraction from descriptor " << descriptor_idx 
-              << " for schema 0x" << std::hex << (int)expected_schema << std::dec << std::endl;
-
     if (descriptor_idx >= descriptors_.size()) {
-        std::cout << "[ZuneClassicParser::extract_media] ERROR: Descriptor index " << descriptor_idx 
-                  << " out of bounds (size: " << descriptors_.size() << ")" << std::endl;
         return;
     }
 
     const auto& desc = descriptors_[descriptor_idx];
     if (desc.entry_count == 0) {
-        std::cout << "[ZuneClassicParser::extract_media] Descriptor " << descriptor_idx << " is empty" << std::endl;
         return;
     }
-    
-    std::cout << "[ZuneClassicParser::extract_media] Processing " << desc.entry_count 
-              << " entries from descriptor " << descriptor_idx << std::endl;
 
     for (uint32_t i = 0; i < desc.entry_count; i++) {
         size_t entry_offset = desc.data_offset + (i * desc.entry_size);
@@ -1153,45 +1071,23 @@ void ZuneClassicParser::extract_media_from_descriptor(
         uint32_t atom_id = read_uint32_le(zmdb_data_, entry_offset);
         uint8_t schema_type = (atom_id >> 24) & 0xFF;
 
-        // Only log first few entries to avoid spam
-        if (i < 5 || (i == desc.entry_count - 1)) {
-            std::cout << "[ZuneClassicParser::extract_media] Entry " << i << ": atom_id=0x" << std::hex << atom_id 
-                      << ", schema_type=0x" << (int)schema_type << std::dec;
-            if (schema_type != expected_schema) {
-                std::cout << " (WARNING: expected 0x" << std::hex << (int)expected_schema << std::dec << ")";
-            }
-            std::cout << std::endl;
-        }
-
-        // Lookup record in index table
         if (!index_table_.count(atom_id)) {
-            if (i < 5) {
-                std::cout << "[ZuneClassicParser::extract_media] Entry " << i << ": Not found in index table" << std::endl;
-            }
             continue;
         }
 
         uint32_t record_offset = index_table_[atom_id];
         auto record_opt = read_record_at_offset(zmdb_data_, record_offset);
         if (!record_opt.has_value()) {
-            if (i < 5) {
-                std::cout << "[ZuneClassicParser::extract_media] Entry " << i << ": Failed to read record at offset 0x" 
-                          << std::hex << record_offset << std::dec << std::endl;
-            }
             continue;
         }
 
         const auto& record_data = record_opt->second;
 
-        // Apply filters
         if (should_filter_record(record_data, schema_type)) {
-            if (i < 5) {
-                std::cout << "[ZuneClassicParser::extract_media] Entry " << i << ": Filtered out" << std::endl;
-            }
             continue;
         }
 
-        // Parse based on schema type (use placement new to construct in pre-allocated array)
+        // Placement new into pre-allocated arrays — no reallocation.
         switch (schema_type) {
             case Schema::Music:
             {
@@ -1207,7 +1103,25 @@ void ZuneClassicParser::extract_media_from_descriptor(
 
             case Schema::Video:
             {
-                if (library.video_count < library.videos_capacity) {
+                // Schema 0x02 carries both videos and video-podcast
+                // episodes. Video-podcast records have a non-zero u32 at
+                // +0x08 whose schema byte is PodcastShow (0x0f); promote
+                // those into the podcast collection.
+                uint32_t show_ref = record_data.size() >= 0x0c
+                    ? read_uint32_le(record_data, 0x08) : 0;
+                bool is_video_podcast =
+                    show_ref != 0 && ((show_ref >> 24) & 0xff) == Schema::PodcastShow;
+
+                if (is_video_podcast) {
+                    if (library.podcast_count < library.podcasts_capacity) {
+                        auto podcast = parse_video_podcast_episode(record_data, atom_id);
+                        if (podcast.has_value()) {
+                            new (&library.podcasts[library.podcast_count])
+                                ZMDBPodcast(std::move(podcast.value()));
+                            library.podcast_count++;
+                        }
+                    }
+                } else if (library.video_count < library.videos_capacity) {
                     auto video = parse_video(record_data, atom_id);
                     if (video.has_value()) {
                         new (&library.videos[library.video_count]) ZMDBVideo(std::move(video.value()));
@@ -1243,11 +1157,9 @@ void ZuneClassicParser::extract_media_from_descriptor(
 
             case Schema::PodcastShow:
             {
-                if (record_data.size() > 8) {
-                    ZMDBPodcastShow show;
-                    show.atom_id = atom_id;
-                    show.name = read_null_terminated_utf8(record_data, 8);
-                    library.podcast_show_metadata[atom_id] = std::move(show);
+                auto show = parse_podcast_show(record_data, atom_id);
+                if (show.has_value()) {
+                    library.podcast_show_metadata[atom_id] = std::move(show.value());
                     library.podcast_show_count++;
                 }
                 break;
