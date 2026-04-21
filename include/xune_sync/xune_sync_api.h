@@ -42,7 +42,6 @@ struct ZuneMusicTrack {
     const char* album_artist_name;  // Album artist name (may differ from track artist)
     const char* album_artist_guid;  // Album artist GUID (optional)
     const char* genre;
-    const char* filename;
     int track_number;
     int disc_number;        // Disc number for multi-disc albums (field 0x6c, default=1)
     int duration_ms;

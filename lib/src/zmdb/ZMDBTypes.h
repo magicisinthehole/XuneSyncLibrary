@@ -47,17 +47,21 @@ struct ZMDBTrack {
     int track_number = 0;           // Track number (offset 24-25)
     int disc_number = 1;            // Disc number (varint field 0x6c, default=1 if absent)
     int duration_ms = 0;            // Duration in milliseconds (offset 16-19)
-    int file_size_bytes = 0;        // File size in bytes (offset 20-23)
+    int file_size_bytes = 0;        // File size in bytes (offset 20-23 on HD; not stored on Classic)
     uint16_t playcount = 0;         // Total play count (MTP UseCount — offset 26 HD, byte 22 Classic)
     uint16_t skip_count = 0;        // Skip count (varint field 0x63)
     uint32_t on_device_playcount = 0; // On-device plays only (varint field 0x62)
-    uint16_t codec_id = 0;          // Format code e.g. 0xb901=WMA (offset 28-29)
+    uint16_t codec_id = 0;          // MTP ObjectFormat (offset 24 Classic, 28 HD) — 0x3009 MP3, 0xB901 WMA, 0xB215 M4a, etc.
     uint8_t rating = 0;             // Rating: 0=neutral, 8=liked, 3=disliked (offset 30)
     uint64_t last_played_timestamp = 0; // Windows FILETIME of last play/skip event (varint field 0x70)
     uint32_t atom_id = 0;
     uint32_t album_ref = 0;         // Album atom_id reference for grouping tracks
     uint32_t genre_ref = 0;         // Genre atom_id reference
-    std::string filename;
+    // Schema 0x05 reference at record offset 12 — resolves to the album's
+    // .alb filename (e.g. "Unknown Album.alb"). ZMDB track records do NOT
+    // store a per-file track filename; the authoritative track filename is
+    // the MTP ObjectInfo.Filename property, outside ZMDB.
+    std::string album_alb_ref;
 };
 
 // Album structure (metadata only - tracks are grouped separately)
@@ -86,14 +90,68 @@ struct ZMDBGenre {
     uint32_t atom_id = 0;
 };
 
-// Video structure
+// Video structure (non-podcast videos; video podcasts promoted into ZMDBPodcast).
+//
+// Fixed-header layout (forensically verified — see
+// research/format-fixtures/parser-forensics.md):
+//   Classic (Zune 30, Zune 120 HDD)       HD (Zune HD)
+//   +0x00 u32 folder_ref (Schema 0x05)    +0x00 same
+//   +0x04 u32 title_ref  (Schema 0x0a)    +0x04 same
+//   +0x08 u32 ref2 (always 0)             +0x08 same
+//   +0x0c u32 duration_ms                 +0x0c same
+//   +0x10 u32 unknown                     +0x10 u32 unknown
+//   +0x14…0x17 zeros                      +0x14…0x17 zeros
+//   +0x18 u64 release_date (FILETIME)     +0x18 same
+//   +0x20 u16 codec_id                    +0x20 u32 file_size_bytes (HD-only)
+//   +0x22 u16 playcount (MTP UseCount)    +0x24 u16 codec_id
+//   +0x24 u16 reserved                    +0x26 u16 playcount (MTP UseCount)
+//   +0x26 u16 category                    +0x28 u16 reserved
+//   +0x28+   title UTF-8 NUL-terminated   +0x2a u16 category
+//                                         +0x2c+   title UTF-8 NUL-terminated
+//
+//   Category is the on-device UI bucket, not the Zune-software UI category.
+//   Firmware models only three content-type buckets plus a catch-all:
+//     1 = Other (Specials, News, Personal — anything not in TV/Music/Movies)
+//     2 = Movies
+//     4 = TV (Series)
+//     5 = Music
+//   Code 3 not observed. Codes 0, 33-38 are MTP upload-side MetaGenre values
+//   that the device remaps to the four ZMDB codes at storage time.
+//
+// After the title (NUL-terminated UTF-8) comes the backwards-varint section,
+// then the trailing 6-byte records. Both walk backwards from the end:
+//   0x44 UTF-16  filename
+//   0x41 UTF-16  description
+//   0x46 UTF-16  artist_name (Music category)
+//   0x50 u32     episode_number (Series category)
+//   0x4f u32     season_number (Series category)
+//   0x1e u32     unknown (always value=1)
+//   0x62 u32     on_device_playcount
+//   0x70 u64     last_played_timestamp (Windows FILETIME)
 struct ZMDBVideo {
-    std::string title;
+    std::string title;          // Resolved title_ref → Schema 0x0a record. For Series-category
+                                // videos this is the Series Title (MTP 0xDA9A); for other
+                                // categories it equals episode_title.
+    std::string episode_title;  // In-record UTF-8 title at offset 0x28 (Classic) / 0x2c (HD).
+                                // Sourced from MTP 0xDC44 Name. For Series-category videos
+                                // this is the Episode Title; for other categories it's the
+                                // same as title.
     std::string folder;
-    uint32_t ref2 = 0;              // Reference field at offset 8, purpose unknown
-    int file_size_bytes = 0;
-    uint32_t codec_id = 0;
-    std::string filename;
+    uint32_t ref2 = 0;                 // u32 at offset 8; always 0 in observed data
+    uint32_t duration_ms = 0;          // ms (offset 12)
+    uint32_t unknown_0x10 = 0;         // u32 at offset 16; varies, meaning not identified
+    uint64_t release_date_filetime = 0; // Windows FILETIME at offset 24 (0x18); 0 = not set
+    uint32_t file_size_bytes = 0;      // HD-only (offset 32); 0 on Classic
+    uint16_t codec_id = 0;             // MTP ObjectFormat — 0xB981 WMV, 0xB216 MP4-video
+    uint16_t playcount = 0;            // Total play count (MTP UseCount) — fixed-header u16
+    uint16_t category = 0;             // On-device category: 1=Other, 2=Movies, 4=TV (Series), 5=Music
+    std::string filename;              // UTF-16LE filename from backwards-varint field 0x44
+    std::string description;           // UTF-16LE from field 0x41
+    std::string artist_name;           // UTF-16LE from field 0x46 (Music category)
+    uint32_t season_number = 0;        // u32 from field 0x4f (Series category)
+    uint32_t episode_number = 0;       // u32 from field 0x50 (Series category)
+    uint32_t on_device_playcount = 0;  // u32 from field 0x62
+    uint64_t last_played_timestamp = 0; // FILETIME from field 0x70
     uint32_t atom_id = 0;
 };
 

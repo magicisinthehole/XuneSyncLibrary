@@ -175,7 +175,7 @@ static void WriteLibraryJson(const zmdb::ZMDBLibrary& lib, std::ostream& out) {
         out << "      \"album_ref\": \"" << HexU32(t.album_ref) << "\",\n";
         out << "      \"genre\": \"" << JsonEscape(t.genre) << "\",\n";
         out << "      \"genre_ref\": \"" << HexU32(t.genre_ref) << "\",\n";
-        out << "      \"filename\": \"" << JsonEscape(t.filename) << "\",\n";
+        out << "      \"album_alb_ref\": \"" << JsonEscape(t.album_alb_ref) << "\",\n";
         out << "      \"track_number\": " << t.track_number << ",\n";
         out << "      \"disc_number\": " << t.disc_number << ",\n";
         out << "      \"duration_ms\": " << t.duration_ms << ",\n";
@@ -306,11 +306,22 @@ static void WriteLibraryJson(const zmdb::ZMDBLibrary& lib, std::ostream& out) {
         out << "    {\n";
         out << "      \"atom_id\": \"" << HexU32(v.atom_id) << "\",\n";
         out << "      \"title\": \"" << JsonEscape(v.title) << "\",\n";
+        out << "      \"episode_title\": \"" << JsonEscape(v.episode_title) << "\",\n";
         out << "      \"folder\": \"" << JsonEscape(v.folder) << "\",\n";
         out << "      \"filename\": \"" << JsonEscape(v.filename) << "\",\n";
+        out << "      \"description\": \"" << JsonEscape(v.description) << "\",\n";
+        out << "      \"artist_name\": \"" << JsonEscape(v.artist_name) << "\",\n";
+        out << "      \"category\": " << v.category << ",\n";
+        out << "      \"season_number\": " << v.season_number << ",\n";
+        out << "      \"episode_number\": " << v.episode_number << ",\n";
+        out << "      \"duration_ms\": " << v.duration_ms << ",\n";
         out << "      \"file_size_bytes\": " << v.file_size_bytes << ",\n";
+        out << "      \"release_date_filetime\": " << v.release_date_filetime << ",\n";
         out << "      \"codec_id\": \"0x" << std::hex << std::setw(4)
-            << std::setfill('0') << v.codec_id << "\"\n" << std::dec;
+            << std::setfill('0') << v.codec_id << "\",\n" << std::dec;
+        out << "      \"playcount\": " << v.playcount << ",\n";
+        out << "      \"on_device_playcount\": " << v.on_device_playcount << ",\n";
+        out << "      \"last_played_filetime\": " << v.last_played_timestamp << "\n";
         out << "    }" << (i + 1 < lib.video_count ? "," : "") << "\n";
     }
     out << "  ]\n";

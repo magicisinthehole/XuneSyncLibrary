@@ -81,6 +81,32 @@ namespace PodcastFieldId {
     constexpr uint8_t Constant    = 0x1e;  // shows only, UINT32=1
 }
 
+// Backwards-varint field IDs used on non-podcast Video records (Schema 0x02).
+namespace VideoFieldId {
+    constexpr uint8_t Description    = 0x41;  // UTF-16LE
+    constexpr uint8_t Filename       = 0x44;  // UTF-16LE
+    constexpr uint8_t Artist         = 0x46;  // UTF-16LE (Music category)
+    constexpr uint8_t Season         = 0x4f;  // u32 (Series category)
+    constexpr uint8_t Episode        = 0x50;  // u32 (Series category)
+    constexpr uint8_t Unknown1e      = 0x1e;  // u32, always =1 in observed data
+    constexpr uint8_t OnDevicePlays  = 0x62;  // u32 (shared with audio tracks)
+    constexpr uint8_t LastPlayed     = 0x70;  // u64 FILETIME (shared with audio tracks)
+}
+
+/**
+ * Walk the backwards-varint section of a Video record and populate the
+ * relevant ZMDBVideo fields (filename, description, artist, season, episode,
+ * on_device_playcount, last_played_timestamp). Called by both Classic and HD
+ * parsers — the trailing-section format is family-independent.
+ *
+ * @param record_data Complete video record data
+ * @param video Output struct; fields corresponding to discovered varints set
+ */
+void parse_video_trailing_fields(
+    const std::vector<uint8_t>& record_data,
+    ZMDBVideo& video
+);
+
 /**
  * Read uint32 little-endian from buffer.
  *

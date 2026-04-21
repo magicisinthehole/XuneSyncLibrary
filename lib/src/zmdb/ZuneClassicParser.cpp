@@ -310,7 +310,10 @@ std::optional<ZMDBTrack> ZuneClassicParser::parse_music_track(
     }
 
     if (album_filename_ref != 0) {
-        track.filename = resolve_string_reference(album_filename_ref);
+        // This resolves to the album's .alb filename (e.g. "Unknown Album.alb"),
+        // not the track's on-disk filename. Track filenames live in MTP
+        // ObjectInfo.Filename, not in ZMDB.
+        track.album_alb_ref = resolve_string_reference(album_filename_ref);
     }
 
     // Parse backwards varints for optional fields
@@ -372,47 +375,36 @@ std::optional<ZMDBVideo> ZuneClassicParser::parse_video(
     ZMDBVideo video;
     video.atom_id = atom_id;
 
-    // Read reference fields
+    // Classic fixed-header layout (see ZMDBVideo doc):
+    //   +0x00 folder_ref        +0x18 release_date (FILETIME)
+    //   +0x04 title_ref          +0x20 codec_id u16
+    //   +0x08 ref2 (zero)        +0x22 playcount u16
+    //   +0x0c duration_ms        +0x24 reserved
+    //   +0x10 unknown u32        +0x26 category u16
+    //                           +0x28 title UTF-8 NUL-terminated
     uint32_t folder_ref = read_uint32_le(record_data, 0);
-    uint32_t title_ref = read_uint32_le(record_data, 4);
-    video.ref2 = read_uint32_le(record_data, 8);  // Purpose unknown
-    uint32_t file_ref = read_uint32_le(record_data, 12);
+    uint32_t title_ref  = read_uint32_le(record_data, 4);
+    video.ref2 = read_uint32_le(record_data, 8);
 
-    // Read metadata at offset 32+
-    if (record_data.size() >= 40) {
-        video.file_size_bytes = read_uint32_le(record_data, 32);
-        video.codec_id = read_uint32_le(record_data, 36);
+    if (record_data.size() >= 16) video.duration_ms  = read_uint32_le(record_data, 12);
+    if (record_data.size() >= 20) video.unknown_0x10 = read_uint32_le(record_data, 16);
+    if (record_data.size() >= 32) video.release_date_filetime = read_uint64_le(record_data, 24);
+    if (record_data.size() >= 34) video.codec_id  = read_uint16_le(record_data, 32);
+    if (record_data.size() >= 36) video.playcount = read_uint16_le(record_data, 34);
+    if (record_data.size() >= 40) video.category  = read_uint16_le(record_data, 38);
+    // Classic video records do not store file_size_bytes in the fixed header.
+    video.file_size_bytes = 0;
+
+    if (folder_ref != 0) video.folder = resolve_string_reference(folder_ref);
+    if (title_ref  != 0) video.title  = resolve_string_reference(title_ref);
+
+    // In-record UTF-8 title at offset 0x28 — for Series-category videos this
+    // is the Episode Title (distinct from title which is the Series Title).
+    if (record_data.size() > 0x28) {
+        video.episode_title = read_null_terminated_utf8(record_data, 0x28);
     }
 
-    // Resolve references
-    if (folder_ref != 0) {
-        video.folder = resolve_string_reference(folder_ref);
-    }
-
-    if (title_ref != 0) {
-        video.title = resolve_string_reference(title_ref);
-    }
-
-    // Parse filename from backwards varints (field 0x44)
-    size_t entry_size = get_entry_size_for_schema(Schema::Video);
-    if (entry_size > 0) {
-        auto fields = parse_backwards_varints(record_data, entry_size);
-        for (const auto& field : fields) {
-            if (field.field_id == 0x44 && field.field_size > 2) {
-                // Handle padding bytes
-                if (field.field_data[0] == 0x00 && field.field_data[field.field_size - 1] == 0x00) {
-                    video.filename = utf16le_to_utf8(std::vector<uint8_t>(
-                        field.field_data.begin() + 1,
-                        field.field_data.end() - 1
-                    ));
-                } else {
-                    video.filename = utf16le_to_utf8(field.field_data);
-                }
-                break;
-            }
-        }
-    }
-
+    parse_video_trailing_fields(record_data, video);
     return video;
 }
 

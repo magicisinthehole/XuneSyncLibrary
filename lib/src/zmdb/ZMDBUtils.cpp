@@ -111,6 +111,58 @@ size_t get_entry_size_for_schema(uint8_t schema_type) {
     }
 }
 
+// UTF-16LE backwards-varint strings on video records sometimes carry a leading
+// 0x00 padding byte plus a trailing 0x00 byte around the actual UTF-16LE
+// payload. Strip them when present before conversion.
+static std::string video_utf16le_field_to_utf8(const std::vector<uint8_t>& data) {
+    if (data.size() >= 2 && data[0] == 0x00 && data[data.size() - 1] == 0x00) {
+        return utf16le_to_utf8(std::vector<uint8_t>(data.begin() + 1, data.end() - 1));
+    }
+    return utf16le_to_utf8(data);
+}
+
+void parse_video_trailing_fields(
+    const std::vector<uint8_t>& record_data,
+    ZMDBVideo& video
+) {
+    size_t entry_size = get_entry_size_for_schema(Schema::Video);
+    if (entry_size == 0 || record_data.size() <= entry_size) {
+        return;
+    }
+
+    auto fields = parse_backwards_varints(record_data, entry_size);
+    for (const auto& f : fields) {
+        switch (f.field_id) {
+            case VideoFieldId::Filename:
+                if (f.field_size > 2) video.filename = video_utf16le_field_to_utf8(f.field_data);
+                break;
+            case VideoFieldId::Description:
+                if (f.field_size > 2) video.description = video_utf16le_field_to_utf8(f.field_data);
+                break;
+            case VideoFieldId::Artist:
+                if (f.field_size > 2) video.artist_name = video_utf16le_field_to_utf8(f.field_data);
+                break;
+            case VideoFieldId::Season:
+                if (f.field_size == 4) video.season_number = read_uint32_le(f.field_data, 0);
+                break;
+            case VideoFieldId::Episode:
+                if (f.field_size == 4) video.episode_number = read_uint32_le(f.field_data, 0);
+                break;
+            case VideoFieldId::OnDevicePlays:
+                if (f.field_size == 4) video.on_device_playcount = read_uint32_le(f.field_data, 0);
+                break;
+            case VideoFieldId::LastPlayed:
+                if (f.field_size == 8) video.last_played_timestamp = read_uint64_le(f.field_data, 0);
+                break;
+            case VideoFieldId::Unknown1e:
+                // Observed as u32=1 on every video record; semantics unknown. Skip.
+                break;
+            default:
+                break;
+        }
+    }
+}
+
 std::string utf16le_to_utf8(const std::vector<uint8_t>& data) {
     std::string result;
     result.reserve(data.size() / 2);  // Estimate
