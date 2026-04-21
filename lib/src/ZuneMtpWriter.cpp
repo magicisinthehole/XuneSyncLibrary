@@ -275,36 +275,57 @@ uint32_t MtpWriter::CreateTrack(
     const SessionPtr& session, uint32_t storageId, uint32_t albumFolderId,
     const TrackProperties& props, uint16_t formatCode, uint64_t fileSize)
 {
-    bool hasRating = (props.rating >= 0);
-    bool hasPlayCount = (props.play_count >= 0);
-    uint32_t propCount = 13 + (props.is_hd ? 2 : 0) + (hasRating ? 1 : 0) + (hasPlayCount ? 1 : 0);
+    // Unified-with-omission: empty/zero identity fields are omitted from the
+    // property list so the device firmware auto-creates sentinel-GUID
+    // placeholder artist/album/genre records (matches the original Zune
+    // software's untagged-upload behaviour — pcap-verified on Zune 30 + HD).
+    const bool hasArtist       = !props.artist.empty();
+    const bool hasAlbumName    = !props.album_name.empty();
+    const bool hasAlbumArtist  = !props.album_artist.empty();
+    const bool hasGenre        = !props.genre.empty();
+    const bool hasDateAuthored = !props.date_authored.empty();
+    const bool hasTrack        = props.track_number > 0;
+    const bool hasRating       = props.rating >= 0;
+    const bool hasPlayCount    = props.play_count > 0;
+    const bool hasArtistMetaId = props.is_hd && props.artist_meta_id != 0;
+
+    uint32_t propCount =
+        7  // Always: MetaGenre, ObjectFileName, Name, DC9D, ZuneCollectionId, ZunePropDAB2, Duration
+        + (hasAlbumName ? 1 : 0)
+        + (hasAlbumArtist ? 1 : 0)
+        + (hasArtist ? 1 : 0)
+        + (hasDateAuthored ? 1 : 0)
+        + (hasTrack ? 1 : 0)
+        + (hasGenre ? 1 : 0)
+        + (hasRating ? 1 : 0)
+        + (hasPlayCount ? 1 : 0)
+        + (props.is_hd ? 1 : 0)      // DAB8 always sent on HD
+        + (hasArtistMetaId ? 1 : 0); // DAB9 only when a real artist metadata object is linked
 
     mtp::ByteArray propList;
     mtp::OutputStream os(propList);
     os.Write32(propCount);
 
-    // Exact pcap order
     WritePropU16(os, MtpProp::MetaGenre, 1);
     WritePropString(os, MtpProp::ObjectFileName, props.filename);
-    WritePropString(os, MtpProp::AlbumName, props.album_name);
+    if (hasAlbumName)    WritePropString(os, MtpProp::AlbumName, props.album_name);
     WritePropString(os, MtpProp::Name, props.title);
-    WritePropString(os, MtpProp::AlbumArtist, props.album_artist);
-    WritePropU16(os, MtpProp::DC9D, 0);  // Always 0 on Zune
+    if (hasAlbumArtist)  WritePropString(os, MtpProp::AlbumArtist, props.album_artist);
+    WritePropU16(os, MtpProp::DC9D, 0);
     WritePropU8(os, MtpProp::ZuneCollectionId, 0);
-    WritePropString(os, MtpProp::Artist, props.artist);
-    WritePropString(os, MtpProp::DateAuthored, props.date_authored);
+    if (hasArtist)       WritePropString(os, MtpProp::Artist, props.artist);
+    if (hasDateAuthored) WritePropString(os, MtpProp::DateAuthored, props.date_authored);
     WritePropU8(os, MtpProp::ZunePropDAB2, 0);
     if (props.is_hd) {
         WritePropU32(os, MtpProp::DiscNumber, props.disc_number > 0 ? props.disc_number : 1);
-        WritePropU32(os, MtpProp::ArtistId, props.artist_meta_id);
+        if (hasArtistMetaId)
+            WritePropU32(os, MtpProp::ArtistId, props.artist_meta_id);
     }
     WritePropU32(os, MtpProp::Duration, props.duration_ms);
-    if (hasRating)
-        WritePropU16(os, MtpProp::Rating, static_cast<uint16_t>(props.rating));
-    if (hasPlayCount)
-        WritePropU32(os, MtpProp::UseCount, static_cast<uint32_t>(props.play_count));
-    WritePropU16(os, MtpProp::Track, props.track_number);
-    WritePropString(os, MtpProp::Genre, props.genre.empty() ? "Unknown" : props.genre);
+    if (hasRating)    WritePropU16(os, MtpProp::Rating, static_cast<uint16_t>(props.rating));
+    if (hasPlayCount) WritePropU32(os, MtpProp::UseCount, static_cast<uint32_t>(props.play_count));
+    if (hasTrack)     WritePropU16(os, MtpProp::Track, props.track_number);
+    if (hasGenre)     WritePropString(os, MtpProp::Genre, props.genre);
 
     auto resp = session->SendObjectPropList(
         mtp::StorageId(storageId),
@@ -319,10 +340,10 @@ void MtpWriter::UpdateTrackProperties(
     const SessionPtr& session, uint32_t trackMtpId,
     const TrackProperties& props)
 {
-    // SetObjectPropList (0x9806). Track metadata updates use the generic
-    // per-track fields observed in the official software captures. Post-create
-    // album-title/album-artist edits are handled on album objects, not by
-    // rewriting track AlbumName/AlbumArtist on Classic.
+    // SetObjectPropList (0x9806). Post-create album-title/album-artist edits
+    // are handled on album objects, not by rewriting track AlbumName/AlbumArtist.
+    // Artist / Genre / Track / DateAuthored always sent — the caller passes an
+    // empty string (or 0) to explicitly clear a value on the device.
     uint32_t propCount = 11 + (props.is_hd ? 2 : 0);
     auto h = trackMtpId;
 
@@ -343,7 +364,7 @@ void MtpWriter::UpdateTrackProperties(
     WritePropU32(os, MtpProp::Duration, props.duration_ms, h);
     WritePropU16(os, MtpProp::Track, props.track_number, h);
     WritePropString(os, MtpProp::Artist, props.artist, h);
-    WritePropString(os, MtpProp::Genre, props.genre.empty() ? "Unknown" : props.genre, h);
+    WritePropString(os, MtpProp::Genre, props.genre, h);
     WritePropString(os, MtpProp::DateAuthored, props.date_authored, h);
 
     session->SetObjectPropList(propList);
