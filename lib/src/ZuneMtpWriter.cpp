@@ -344,14 +344,15 @@ void MtpWriter::UpdateTrackProperties(
     // are handled on album objects, not by rewriting track AlbumName/AlbumArtist.
     // Artist / Genre / Track / DateAuthored always sent — the caller passes an
     // empty string (or 0) to explicitly clear a value on the device.
-    uint32_t propCount = 11 + (props.is_hd ? 2 : 0);
+    // ObjectFileName is immutable post-create (set at CreateObject time) and
+    // is not part of the update batch.
+    uint32_t propCount = 10 + (props.is_hd ? 2 : 0);
     auto h = trackMtpId;
 
     mtp::ByteArray propList;
     mtp::OutputStream os(propList);
     os.Write32(propCount);
 
-    WritePropString(os, MtpProp::ObjectFileName, props.filename, h);
     WritePropU8(os, MtpProp::ZuneCollectionId, 0, h);
     WritePropU16(os, MtpProp::MetaGenre, 1, h);
     WritePropU8(os, MtpProp::ZunePropDAB2, 0, h);

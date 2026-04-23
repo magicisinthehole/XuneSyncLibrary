@@ -271,17 +271,8 @@ std::optional<ZMDBTrack> ZuneClassicParser::parse_music_track(
         metadata_offset += 6;
     }
 
-    if (album_ref != 0) {
-        auto album_info = resolve_album_info(album_ref);
-        if (album_info.has_value()) {
-            track.album_name = album_info->second;
-            track.album_ref = album_ref;
-
-            if (album_cache_.count(album_ref)) {
-                track.album_artist_name = album_cache_[album_ref].artist_name;
-                track.album_artist_guid = album_cache_[album_ref].artist_guid;
-            }
-        }
+    if (album_ref != 0 && resolve_album_info(album_ref).has_value()) {
+        track.album_ref = album_ref;
     }
 
     if (artist_ref != 0) {

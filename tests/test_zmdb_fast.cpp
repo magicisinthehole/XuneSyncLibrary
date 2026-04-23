@@ -76,11 +76,19 @@ void PrintLibrarySummary(ZuneMusicLibrary* library, const std::string& label) {
 }
 
 void PrintFirstArtists(ZuneMusicLibrary* library, int count = 5) {
-    // Group tracks by artist
+    // Build album_ref → title lookup.
+    std::map<uint32_t, std::string> album_title_by_ref;
+    for (uint32_t i = 0; i < library->album_count; ++i) {
+        album_title_by_ref[library->albums[i].atom_id] =
+            library->albums[i].title ? library->albums[i].title : "";
+    }
+
     std::map<std::string, std::set<std::string>> artist_albums;
     for (uint32_t i = 0; i < library->track_count; ++i) {
         const auto& track = library->tracks[i];
-        artist_albums[track.artist_name].insert(track.album_name);
+        auto album_it = album_title_by_ref.find(track.album_ref);
+        artist_albums[track.artist_name].insert(
+            album_it != album_title_by_ref.end() ? album_it->second : "");
     }
 
     std::cout << "\nFirst " << std::min(count, (int)artist_albums.size()) << " Artists:\n";
@@ -132,11 +140,14 @@ bool ExportLibraryToJson(ZuneMusicLibrary* library, const std::string& output_fi
         album_map[library->albums[i].atom_id] = &library->albums[i];
     }
 
-    // Group tracks by artist -> album
+    // Group tracks by artist -> album (album title resolved via album_map)
     std::map<std::string, std::map<std::string, std::vector<const ZuneMusicTrack*>>> grouped;
     for (uint32_t i = 0; i < library->track_count; ++i) {
         const auto& track = library->tracks[i];
-        grouped[track.artist_name][track.album_name].push_back(&track);
+        auto album_it = album_map.find(track.album_ref);
+        std::string album_title = (album_it != album_map.end() && album_it->second->title)
+            ? album_it->second->title : "";
+        grouped[track.artist_name][album_title].push_back(&track);
     }
 
     json_file << "{\n";
@@ -192,14 +203,22 @@ bool ExportLibraryToJson(ZuneMusicLibrary* library, const std::string& output_fi
 
             for (size_t track_idx = 0; track_idx < tracks.size(); ++track_idx) {
                 const auto* track = tracks[track_idx];
+                auto track_album_it = album_map.find(track->album_ref);
+                const bool track_album_known = track_album_it != album_map.end();
+                const char* track_album_title = track_album_known && track_album_it->second->title
+                    ? track_album_it->second->title : "";
+                const char* track_album_artist = track_album_known && track_album_it->second->artist_name
+                    ? track_album_it->second->artist_name : "";
+                const char* track_album_artist_guid = track_album_known && track_album_it->second->artist_guid
+                    ? track_album_it->second->artist_guid : "";
 
                 json_file << "            {\n";
                 json_file << "              \"title\": \"" << JsonEscape(track->title) << "\",\n";
                 json_file << "              \"artist\": \"" << JsonEscape(track->artist_name) << "\",\n";
                 json_file << "              \"artistGuid\": \"" << JsonEscape(track->artist_guid) << "\",\n";
-                json_file << "              \"album\": \"" << JsonEscape(track->album_name) << "\",\n";
-                json_file << "              \"albumArtist\": \"" << JsonEscape(track->album_artist_name) << "\",\n";
-                json_file << "              \"albumArtistGuid\": \"" << JsonEscape(track->album_artist_guid) << "\",\n";
+                json_file << "              \"album\": \"" << JsonEscape(track_album_title) << "\",\n";
+                json_file << "              \"albumArtist\": \"" << JsonEscape(track_album_artist) << "\",\n";
+                json_file << "              \"albumArtistGuid\": \"" << JsonEscape(track_album_artist_guid) << "\",\n";
                 json_file << "              \"genre\": \"" << JsonEscape(track->genre) << "\",\n";
                 json_file << "              \"trackNumber\": " << track->track_number << ",\n";
                 json_file << "              \"discNumber\": " << track->disc_number << ",\n";

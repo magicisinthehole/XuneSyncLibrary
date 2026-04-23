@@ -165,13 +165,15 @@ static void WriteLibraryJson(const zmdb::ZMDBLibrary& lib, std::ostream& out) {
     for (int i = 0; i < lib.track_count; ++i) {
         const auto& t = lib.tracks[i];
         out << "    {\n";
+        auto album_it = lib.album_metadata.find(t.album_ref);
+        const bool album_known = album_it != lib.album_metadata.end();
         out << "      \"atom_id\": \"" << HexU32(t.atom_id) << "\",\n";
         out << "      \"title\": \"" << JsonEscape(t.title) << "\",\n";
         out << "      \"artist\": \"" << JsonEscape(t.artist_name) << "\",\n";
         out << "      \"artist_guid\": \"" << JsonEscape(t.artist_guid) << "\",\n";
-        out << "      \"album\": \"" << JsonEscape(t.album_name) << "\",\n";
-        out << "      \"album_artist\": \"" << JsonEscape(t.album_artist_name) << "\",\n";
-        out << "      \"album_artist_guid\": \"" << JsonEscape(t.album_artist_guid) << "\",\n";
+        out << "      \"album\": \"" << JsonEscape(album_known ? album_it->second.title : "") << "\",\n";
+        out << "      \"album_artist\": \"" << JsonEscape(album_known ? album_it->second.artist_name : "") << "\",\n";
+        out << "      \"album_artist_guid\": \"" << JsonEscape(album_known ? album_it->second.artist_guid : "") << "\",\n";
         out << "      \"album_ref\": \"" << HexU32(t.album_ref) << "\",\n";
         out << "      \"genre\": \"" << JsonEscape(t.genre) << "\",\n";
         out << "      \"genre_ref\": \"" << HexU32(t.genre_ref) << "\",\n";

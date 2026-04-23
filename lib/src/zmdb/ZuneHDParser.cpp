@@ -272,17 +272,11 @@ std::optional<ZMDBTrack> ZuneHDParser::parse_music_track(
         }
     }
 
-    // Resolve references
+    // Resolve album reference to populate album_cache_ (via side effect). Albums
+    // reachable only through track references enter the output library_metadata
+    // via this call; without it, library.album_metadata ends up empty.
     if (album_ref != 0) {
-        auto album_info = resolve_album_info(album_ref);
-        if (album_info.has_value()) {
-            track.album_name = album_info->second;
-            // Get album artist name and GUID from album
-            if (album_cache_.count(album_ref)) {
-                track.album_artist_name = album_cache_[album_ref].artist_name;
-                track.album_artist_guid = album_cache_[album_ref].artist_guid;
-            }
-        }
+        resolve_album_info(album_ref);
     }
 
     if (artist_ref != 0) {

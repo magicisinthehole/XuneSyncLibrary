@@ -241,9 +241,6 @@ ZuneMusicLibrary* MtpReader::ReadMusicLibrary(
             result->tracks[i].title = strdup(t.title.c_str());
             result->tracks[i].artist_name = strdup(t.artist_name.c_str());
             result->tracks[i].artist_guid = strdup(t.artist_guid.c_str());
-            result->tracks[i].album_name = strdup(t.album_name.c_str());
-            result->tracks[i].album_artist_name = strdup(t.album_artist_name.c_str());
-            result->tracks[i].album_artist_guid = strdup(t.album_artist_guid.c_str());
             result->tracks[i].genre = strdup(t.genre.c_str());
             result->tracks[i].track_number = t.track_number;
             result->tracks[i].disc_number = t.disc_number;
@@ -387,9 +384,6 @@ void MtpReader::FreeLibrary(ZuneMusicLibrary* library) {
         free((void*)library->tracks[i].title);
         free((void*)library->tracks[i].artist_name);
         free((void*)library->tracks[i].artist_guid);
-        free((void*)library->tracks[i].album_name);
-        free((void*)library->tracks[i].album_artist_name);
-        free((void*)library->tracks[i].album_artist_guid);
         free((void*)library->tracks[i].genre);
     }
     delete[] library->tracks;

@@ -1073,7 +1073,7 @@ XUNE_SYNC_API int zune_mtp_update_track_properties(
         if (!session) return -2;
 
         zune::TrackProperties tp;
-        tp.filename     = props->filename ? props->filename : "";
+        // filename intentionally skipped — ObjectFileName is immutable post-create.
         tp.title        = props->title ? props->title : "";
         tp.artist       = props->artist ? props->artist : "";
         tp.genre        = props->genre ? props->genre : "";

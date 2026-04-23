@@ -54,12 +54,22 @@ std::string BuildLibraryJson(ZuneMusicLibrary* library,
                               const std::string& device_serial = "") {
     std::ostringstream json;
 
-    // Group tracks by artist -> album
+    // album_ref → title lookup
+    std::map<uint32_t, std::string> album_title_by_ref;
+    for (uint32_t i = 0; i < library->album_count; ++i) {
+        album_title_by_ref[library->albums[i].atom_id] =
+            library->albums[i].title ? library->albums[i].title : "";
+    }
+
+    // Group tracks by artist -> album (album title resolved via album_ref)
     std::map<std::string, std::map<std::string, std::vector<const ZuneMusicTrack*>>> grouped;
 
     for (uint32_t i = 0; i < library->track_count; ++i) {
         const auto& track = library->tracks[i];
-        grouped[track.artist_name][track.album_name].push_back(&track);
+        auto album_it = album_title_by_ref.find(track.album_ref);
+        const std::string& album_title = album_it != album_title_by_ref.end()
+            ? album_it->second : "";
+        grouped[track.artist_name][album_title].push_back(&track);
     }
 
     // Start JSON object
@@ -93,11 +103,14 @@ std::string BuildLibraryJson(ZuneMusicLibrary* library,
 
             for (size_t track_idx = 0; track_idx < tracks.size(); ++track_idx) {
                 const auto* track = tracks[track_idx];
+                auto track_album_it = album_title_by_ref.find(track->album_ref);
+                const std::string& track_album_title = track_album_it != album_title_by_ref.end()
+                    ? track_album_it->second : "";
 
                 json << "            {\n";
                 json << "              \"title\": \"" << EscapeJsonString(track->title) << "\",\n";
                 json << "              \"artist\": \"" << EscapeJsonString(track->artist_name) << "\",\n";
-                json << "              \"album\": \"" << EscapeJsonString(track->album_name) << "\",\n";
+                json << "              \"album\": \"" << EscapeJsonString(track_album_title) << "\",\n";
                 json << "              \"track_number\": " << track->track_number << ",\n";
                 json << "              \"duration_ms\": " << track->duration_ms << ",\n";
                 json << "              \"filename\": \"" << EscapeJsonString(track->filename) << "\"\n";
@@ -194,11 +207,19 @@ int main(int argc, char* argv[]) {
     std::cout << "  Albums: " << library->album_count << "\n";
     std::cout << "  Artworks: " << library->artwork_count << "\n\n";
 
-    // Group for summary display
+    // Group for summary display (album title resolved via album_ref)
+    std::map<uint32_t, std::string> summary_album_title_by_ref;
+    for (uint32_t i = 0; i < library->album_count; ++i) {
+        summary_album_title_by_ref[library->albums[i].atom_id] =
+            library->albums[i].title ? library->albums[i].title : "";
+    }
+
     std::map<std::string, std::set<std::string>> artist_albums;
     for (uint32_t i = 0; i < library->track_count; ++i) {
         const auto& track = library->tracks[i];
-        artist_albums[track.artist_name].insert(track.album_name);
+        auto album_it = summary_album_title_by_ref.find(track.album_ref);
+        artist_albums[track.artist_name].insert(
+            album_it != summary_album_title_by_ref.end() ? album_it->second : "");
     }
 
     // Print library summary

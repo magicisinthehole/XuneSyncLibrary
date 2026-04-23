@@ -38,9 +38,6 @@ struct ZuneMusicTrack {
     const char* title;
     const char* artist_name;
     const char* artist_guid;        // Artist GUID (MusicBrainz UUID, optional)
-    const char* album_name;
-    const char* album_artist_name;  // Album artist name (may differ from track artist)
-    const char* album_artist_guid;  // Album artist GUID (optional)
     const char* genre;
     int track_number;
     int disc_number;        // Disc number for multi-disc albums (field 0x6c, default=1)
@@ -890,7 +887,7 @@ struct ZuneFolderDiscovery {
 
 /// Track properties for upload
 struct ZuneTrackProps {
-    const char* filename;
+    const char* filename;          ///< Used by create_track only; ignored by update_track_properties
     const char* title;
     const char* artist;
     const char* album_name;
@@ -920,7 +917,7 @@ struct ZuneAlbumProps {
 /// Update track metadata via SetObjectPropList (0x9806).
 /// Sends all writable track properties in a single batch.
 /// @param track_mtp_id MTP object ID of the track to update
-/// @param props Track properties (album_name/album_artist/rating fields are ignored)
+/// @param props Track properties (filename/album_name/album_artist/rating fields are ignored)
 /// @return 0 on success, negated MTP ResponseType on device error, -1 on other error
 XUNE_SYNC_API int zune_mtp_update_track_properties(
     zune_device_handle_t handle,
