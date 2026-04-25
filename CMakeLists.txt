@@ -34,14 +34,13 @@ if(UNIX AND NOT APPLE)
     endif()
 endif()
 
-# Check if AFTL is already built
-if(NOT EXISTS "${AFTL_LIBRARY}")
-    message(STATUS "AFTL library not found, building it first...")
+# Configure AFTL on first run; always invoke its build so source changes
+# are picked up incrementally.
+if(NOT EXISTS "${AFTL_BUILD_DIR}/CMakeCache.txt")
+    message(STATUS "Configuring AFTL library...")
 
-    # Create build directory
     file(MAKE_DIRECTORY ${AFTL_BUILD_DIR})
 
-    # Configure AFTL
     set(AFTL_CMAKE_ARGS
         -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
         -DCMAKE_POSITION_INDEPENDENT_CODE=ON
@@ -75,20 +74,17 @@ if(NOT EXISTS "${AFTL_LIBRARY}")
     if(NOT AFTL_CMAKE_RESULT EQUAL 0)
         message(FATAL_ERROR "Failed to configure AFTL library")
     endif()
+endif()
 
-    # Build AFTL
-    execute_process(
-        COMMAND ${CMAKE_COMMAND} --build ${AFTL_BUILD_DIR} --target mtp-ng-static --config ${CMAKE_BUILD_TYPE}
-        RESULT_VARIABLE AFTL_BUILD_RESULT
-    )
+# Always invoke the AFTL build; CMake's underlying generator handles
+# incremental rebuilds when AFTL sources change.
+execute_process(
+    COMMAND ${CMAKE_COMMAND} --build ${AFTL_BUILD_DIR} --target mtp-ng-static --config ${CMAKE_BUILD_TYPE}
+    RESULT_VARIABLE AFTL_BUILD_RESULT
+)
 
-    if(NOT AFTL_BUILD_RESULT EQUAL 0)
-        message(FATAL_ERROR "Failed to build AFTL library")
-    endif()
-
-    message(STATUS "AFTL library built successfully")
-else()
-    message(STATUS "Using existing AFTL library at ${AFTL_LIBRARY}")
+if(NOT AFTL_BUILD_RESULT EQUAL 0)
+    message(FATAL_ERROR "Failed to build AFTL library")
 endif()
 
 # Find dependencies
