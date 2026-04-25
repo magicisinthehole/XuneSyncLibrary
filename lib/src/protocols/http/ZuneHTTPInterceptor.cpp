@@ -298,6 +298,12 @@ bool ZuneHTTPInterceptor::DiscoverEndpoints() {
         int endpoint_count = usb_interface_->GetEndpointsCount();
         Log("Scanning " + std::to_string(endpoint_count) + " endpoints for HTTP traffic");
 
+        auto hex_addr = [](uint8_t a) {
+            std::ostringstream oss;
+            oss << "0x" << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(a);
+            return oss.str();
+        };
+
         for (int i = 0; i < endpoint_count; ++i) {
             mtp::usb::EndpointPtr ep = usb_interface_->GetEndpoint(i);
             uint8_t address = ep->GetAddress();
@@ -309,8 +315,8 @@ bool ZuneHTTPInterceptor::DiscoverEndpoints() {
                                    (type == mtp::usb::EndpointType::Interrupt) ? "Interrupt" : "Other";
             std::string dir_str = (direction == mtp::usb::EndpointDirection::Out) ? "OUT" : "IN";
 
-            Log("  Endpoint " + std::to_string(i) + ": address=0x" +
-                std::to_string(address) + " type=" + type_str + " dir=" + dir_str);
+            Log("  Endpoint " + std::to_string(i) + ": address=" + hex_addr(address) +
+                " type=" + type_str + " dir=" + dir_str);
 
             // Match bulk endpoints by type and direction (address varies by device model)
             // Zune HD (Pavo): OUT=0x01, IN=0x01 (0x81 on wire)
@@ -318,11 +324,11 @@ bool ZuneHTTPInterceptor::DiscoverEndpoints() {
             if (type == mtp::usb::EndpointType::Bulk) {
                 if (direction == mtp::usb::EndpointDirection::Out) {
                     endpoint_out_ = ep;
-                    Log("  → Found HTTP OUT endpoint: 0x" + std::to_string(address));
+                    Log("  → Found HTTP OUT endpoint: " + hex_addr(address));
                 }
                 else if (direction == mtp::usb::EndpointDirection::In) {
                     endpoint_in_ = ep;
-                    Log("  → Found HTTP IN endpoint: 0x" + std::to_string(address));
+                    Log("  → Found HTTP IN endpoint: " + hex_addr(address));
                 }
             }
 
@@ -330,7 +336,7 @@ bool ZuneHTTPInterceptor::DiscoverEndpoints() {
             if (type == mtp::usb::EndpointType::Interrupt &&
                 direction == mtp::usb::EndpointDirection::In) {
                 endpoint_interrupt_ = ep;
-                Log("  → Found interrupt endpoint: 0x" + std::to_string(address));
+                Log("  → Found interrupt endpoint: " + hex_addr(address));
             }
         }
 
