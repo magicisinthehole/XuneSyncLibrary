@@ -436,7 +436,11 @@ else()
 endif()
 
 # ── Shared source list for tests and tools ────────────────────────────────
-# Tests and tools compile sources directly (not linking xune_sync shared lib)
+# Tests and tools compile sources directly (not linking xune_sync shared lib).
+# xune_sync_api.cpp is intentionally excluded — it is the C-ABI shim for the
+# shared library only. Compiling it into an executable on Windows triggers
+# C2491 because the API header marks the symbols __declspec(dllimport) when
+# ZUNE_WIRELESS_EXPORTS is unset (and the test isn't a DLL).
 set(XUNE_CORE_SOURCES
     lib/src/ZuneDevice.cpp
     lib/src/ZuneDeviceIdentification.cpp
@@ -451,7 +455,6 @@ set(XUNE_CORE_SOURCES
     lib/src/zmdb/ZMDBParserFactory.cpp
     lib/src/ptpip_client.cpp
     lib/src/ssdp_discovery.cpp
-    lib/src/xune_sync_api.cpp
     lib/src/protocols/http/ZuneHTTPInterceptor.cpp
     lib/src/protocols/ppp/PPPParser.cpp
     lib/src/protocols/ppp/PPPFrameBuilder.cpp
